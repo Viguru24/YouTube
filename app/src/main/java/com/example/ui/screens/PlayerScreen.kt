@@ -28,6 +28,7 @@ import com.example.data.model.GoogleAccount
 import com.example.data.model.VideoEntity
 import com.example.data.model.VideoNoteEntity
 import com.example.ui.components.AiTranscriptView
+import com.example.ui.components.VideoControlDeck
 import com.example.ui.components.YouTubePlayerView
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
@@ -129,6 +130,13 @@ fun PlayerScreen(
                 onPlayerReady = { wv ->
                     webViewInstance = wv
                 }
+            )
+
+            // Video Easy-Control Deck (10 Smart Features)
+            VideoControlDeck(
+                webView = webViewInstance,
+                videoTitle = video.title,
+                videoId = video.youtubeId
             )
 
             // Video Header Title & Channel

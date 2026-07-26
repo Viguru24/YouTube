@@ -195,7 +195,7 @@ private fun buildYouTubeIFrameHtml(videoId: String, startSeconds: Int): String {
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             html, body { width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
-            .video-container { position: relative; width: 100%; height: 100%; }
+            .video-container { position: relative; width: 100%; height: 100%; filter: none; transition: filter 0.3s ease; }
             iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
             
             /* Built-in AdBlock Styles */
@@ -208,28 +208,123 @@ private fun buildYouTubeIFrameHtml(videoId: String, startSeconds: Int): String {
           </style>
         </head>
         <body>
-          <div class="video-container">
+          <div class="video-container" id="container">
             <iframe id="ytplayer"
-              src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&enablejsapi=1&fs=1&rel=0&iv_load_policy=3&modestbranding=1&controls=1&showinfo=0&start=$startSeconds"
+              src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&enablejsapi=1&fs=1&rel=0&iv_load_policy=3&modestbranding=1&controls=1&showinfo=0&cc_load_policy=1&start=$startSeconds"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowfullscreen>
             </iframe>
           </div>
           <script>
-            function seekToSeconds(seconds) {
-              var iframe = document.getElementById('ytplayer');
-              if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage('{"event":"command","func":"seekTo","args":[' + seconds + ',true]}', '*');
-                iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":[]}', '*');
+            var playerIframe = document.getElementById('ytplayer');
+            var abStart = -1;
+            var abEnd = -1;
+
+            function sendCommand(func, args) {
+              if (playerIframe && playerIframe.contentWindow) {
+                var message = JSON.stringify({
+                  event: 'command',
+                  func: func,
+                  args: args || []
+                });
+                playerIframe.contentWindow.postMessage(message, '*');
               }
             }
 
+            function seekToSeconds(seconds) {
+              sendCommand('seekTo', [seconds, true]);
+              sendCommand('playVideo');
+            }
+
+            function seekRelative(deltaSeconds) {
+              if (deltaSeconds < 0) {
+                sendCommand('seekTo', [Math.max(0, (window.lastTime || 0) + deltaSeconds), true]);
+              } else {
+                sendCommand('seekTo', [(window.lastTime || 0) + deltaSeconds, true]);
+              }
+            }
+
+            function stepFrame(deltaSeconds) {
+              var target = Math.max(0, (window.lastTime || 0) + deltaSeconds);
+              sendCommand('seekTo', [target, true]);
+              sendCommand('pauseVideo');
+            }
+
+            function playVideo() { sendCommand('playVideo'); }
+            function pauseVideo() { sendCommand('pauseVideo'); }
+            
+            function setPlaybackRate(rate) {
+              sendCommand('setPlaybackRate', [rate]);
+            }
+
+            function toggleMute(shouldMute) {
+              if (shouldMute) {
+                sendCommand('mute');
+              } else {
+                sendCommand('unMute');
+              }
+            }
+
+            function setPlaybackQuality(quality) {
+              sendCommand('setPlaybackQuality', [quality]);
+            }
+
+            function toggleCaptions(enabled) {
+              if (enabled) {
+                sendCommand('loadModule', ['captions']);
+                sendCommand('setOption', ['captions', 'track', {'languageCode': 'en'}]);
+              } else {
+                sendCommand('unloadModule', ['captions']);
+              }
+            }
+
+            function setAbLoop(startSec, endSec) {
+              abStart = startSec;
+              abEnd = endSec;
+              if (abStart >= 0) {
+                seekToSeconds(abStart);
+              }
+            }
+
+            function clearAbLoop() {
+              abStart = -1;
+              abEnd = -1;
+            }
+
+            function setVisualFilter(filterName) {
+              var container = document.getElementById('container');
+              if (!container) return;
+              if (filterName === 'night') {
+                container.style.filter = 'contrast(1.1) brightness(0.8) sepia(0.2)';
+              } else if (filterName === 'warm') {
+                container.style.filter = 'sepia(0.4) saturate(1.2)';
+              } else if (filterName === 'mono') {
+                container.style.filter = 'grayscale(1.0)';
+              } else {
+                container.style.filter = 'none';
+              }
+            }
+
+            // Listen to player messages to update current time cache & AB loop check
+            window.addEventListener('message', function(event) {
+              try {
+                var data = JSON.parse(event.data);
+                if (data.info && typeof data.info.currentTime === 'number') {
+                  window.lastTime = data.info.currentTime;
+                  if (abStart >= 0 && abEnd > abStart) {
+                    if (window.lastTime >= abEnd) {
+                      seekToSeconds(abStart);
+                    }
+                  }
+                }
+              } catch(e) {}
+            });
+
             // Auto-Skip Ad listener inside iframe parent
             setInterval(function() {
-              var iframe = document.getElementById('ytplayer');
-              if (iframe && iframe.contentWindow) {
+              if (playerIframe && playerIframe.contentWindow) {
                 try {
-                  var doc = iframe.contentDocument || iframe.contentWindow.document;
+                  var doc = playerIframe.contentDocument || playerIframe.contentWindow.document;
                   if (doc) {
                     var skipBtn = doc.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');
                     if (skipBtn) skipBtn.click();
