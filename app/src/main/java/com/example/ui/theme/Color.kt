@@ -3,9 +3,9 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // YouTube Dark Theme Palette
-val YouTubeRed = Color(0xFFFF0000)
-val DarkRed = Color(0xFFCC0000)
-val CrimsonAccent = Color(0xFFFF4E4E)
+val YouTubeRed = Color(0xFFFF5722) // Vibrant Orange Accent
+val DarkRed = Color(0xFFE65100)
+val CrimsonAccent = Color(0xFFFF8A65)
 
 val DarkBackground = Color(0xFF0F0F0F)
 val DarkSurface = Color(0xFF181818)

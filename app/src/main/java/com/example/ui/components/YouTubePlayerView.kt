@@ -1,339 +1,426 @@
 package com.example.ui.components
 
-import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import java.io.ByteArrayInputStream
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.example.data.remote.SponsorBlockService
+import com.example.data.remote.SponsorSegment
+import com.example.data.remote.YouTubeStreamExtractor
+import com.example.ui.theme.YouTubeRed
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubePlayerView(
     videoId: String,
     startSeconds: Int = 0,
+    areAdvertsEnabled: Boolean = false,
     modifier: Modifier = Modifier,
-    onPlayerReady: (WebView) -> Unit = {}
+    onPlayerReady: (Any) -> Unit = {}
 ) {
     val context = LocalContext.current
+    var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
+    var isLoading by remember(videoId) { mutableStateOf(true) }
+    var statusLog by remember(videoId) { mutableStateOf("Initializing Native ExoPlayer Engine...") }
+    var showDebugConsole by remember { mutableStateOf(false) }
+    val debugLogs = remember(videoId) { mutableStateListOf<String>() }
 
-    val webView = remember(videoId) {
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.loadWithOverviewMode = true
-            settings.useWideViewPort = true
+    var savedPositionMs by rememberSaveable(videoId) { mutableLongStateOf(-1L) }
+    var hasPreparedMedia by rememberSaveable(videoId) { mutableStateOf(false) }
 
-            webChromeClient = WebChromeClient()
-            webViewClient = object : WebViewClient() {
-                override fun shouldInterceptRequest(
-                    view: WebView?,
-                    request: WebResourceRequest?
-                ): WebResourceResponse? {
-                    val url = request?.url?.toString() ?: ""
-                    if (isAdUrl(url)) {
-                        return WebResourceResponse(
-                            "text/plain",
-                            "UTF-8",
-                            ByteArrayInputStream(ByteArray(0))
-                        )
-                    }
-                    return super.shouldInterceptRequest(view, request)
-                }
+    // Video Playback Controls Overlay State
+    var isPlayingState by remember { mutableStateOf(true) }
+    var isMutedState by remember { mutableStateOf(false) }
+    var showControlsOverlay by remember { mutableStateOf(false) }
+    var currentPosMs by remember { mutableLongStateOf(0L) }
+    var totalDurationMs by remember { mutableLongStateOf(0L) }
 
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    injectAdBlockScript(view)
-                }
-            }
+    // SponsorBlock In-Video Sponsor Skip State
+    var sponsorSegments by remember(videoId) { mutableStateOf<List<SponsorSegment>>(emptyList()) }
+    var lastSkippedSegmentKey by remember(videoId) { mutableStateOf("") }
 
-            val htmlContent = buildYouTubeIFrameHtml(videoId, startSeconds)
-            loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlContent, "text/html", "utf-8", null)
+    fun addLog(msg: String) {
+        val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
+        debugLogs.add(entry)
+    }
+
+    val exoPlayer = remember(videoId) {
+        ExoPlayer.Builder(context).build().apply {
+            playWhenReady = true
         }
     }
 
     DisposableEffect(videoId) {
-        onPlayerReady(webView)
         onDispose {
-            webView.loadUrl("about:blank")
-            webView.destroy()
+            try {
+                val pos = exoPlayer.currentPosition
+                if (pos > 0) {
+                    savedPositionMs = pos
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+            exoPlayer.release()
+        }
+    }
+
+    // Fetch SponsorBlock skip segments for video
+    LaunchedEffect(videoId) {
+        val segments = SponsorBlockService.getSponsorSegments(videoId)
+        if (segments.isNotEmpty()) {
+            sponsorSegments = segments
+            addLog("SponsorBlock: Loaded ${segments.size} in-video sponsor skip segment(s) ⏭️")
+        }
+    }
+
+    // Position ticker: saves current playback timestamp & automatically skips SponsorBlock segments
+    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments) {
+        if (hasPreparedMedia) {
+            while (isActive) {
+                try {
+                    val pos = exoPlayer.currentPosition
+                    if (pos > 0) {
+                        savedPositionMs = pos
+                        currentPosMs = pos
+                    }
+                    val dur = exoPlayer.duration
+                    if (dur > 0) {
+                        totalDurationMs = dur
+                    }
+                    isPlayingState = exoPlayer.isPlaying
+
+                    // SponsorBlock Automated Segment Auto-Skip
+                    if (sponsorSegments.isNotEmpty()) {
+                        for (seg in sponsorSegments) {
+                            if (pos in seg.startMs..(seg.endMs - 400)) {
+                                val segKey = "${seg.startMs}_${seg.endMs}"
+                                if (lastSkippedSegmentKey != segKey) {
+                                    lastSkippedSegmentKey = segKey
+                                    exoPlayer.seekTo(seg.endMs)
+                                    val durationSec = (seg.endMs - seg.startMs) / 1000
+                                    val skipMsg = "Auto-Skipped ${seg.category.replaceFirstChar { it.uppercase() }} Read (${durationSec}s) ⏭️"
+                                    addLog("SponsorBlock: $skipMsg")
+                                    Toast.makeText(context, skipMsg, Toast.LENGTH_SHORT).show()
+                                }
+                                break
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                delay(300)
+            }
+        }
+    }
+
+    LaunchedEffect(videoId) {
+        isLoading = true
+        addLog("Extracting direct MP4 stream URL via InnerTube API for videoId: $videoId")
+        val url = YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+        if (url != null) {
+            streamUrl = url
+            isLoading = false
+            addLog("Stream Extracted Successfully! MP4 URL: ${url.take(80)}...")
+        } else {
+            isLoading = false
+            statusLog = "Stream extraction pending or video restricted."
+            addLog("Failed to extract direct MP4 stream URL across all profiles")
+        }
+    }
+
+    LaunchedEffect(streamUrl) {
+        streamUrl?.let { url ->
+            if (!hasPreparedMedia) {
+                val mediaItem = MediaItem.fromUri(url)
+                exoPlayer.setMediaItem(mediaItem)
+                val targetSeekMs = if (savedPositionMs > 0) {
+                    savedPositionMs
+                } else if (startSeconds > 0) {
+                    (startSeconds * 1000).toLong()
+                } else 0L
+
+                if (targetSeekMs > 0) {
+                    exoPlayer.seekTo(targetSeekMs)
+                }
+                exoPlayer.prepare()
+                exoPlayer.play()
+                hasPreparedMedia = true
+                onPlayerReady(exoPlayer)
+                addLog("ExoPlayer Prepared & Playing Native Stream at ${targetSeekMs / 1000}s")
+            }
         }
     }
 
     Box(
         modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            .fillMaxSize()
             .background(Color.Black)
+            .clickable { showControlsOverlay = !showControlsOverlay },
+        contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.matchParentSize()
-        )
-
-        // AdBlock Active Status Badge
-        Surface(
-            shape = RoundedCornerShape(bottomEnd = 8.dp),
-            color = Color(0xFF1E88E5).copy(alpha = 0.9f),
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .testTag("adblock_active_badge")
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+        if (isLoading) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Extracting Direct Native Stream (0 WebViews)...", color = Color.White, fontSize = 12.sp)
+            }
+        } else if (streamUrl != null) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                    }
+                },
+                update = { view ->
+                    view.player = exoPlayer
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("native_exoplayer_view")
+            )
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(16.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Shield,
-                    contentDescription = "AdBlock Active",
-                    tint = Color.White,
-                    modifier = Modifier.size(12.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "AdBlock Active",
+                    text = "Playback Unavailable",
                     color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = statusLog,
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        // Touch On-Screen Controls Overlay (Play/Pause, Rewind -10s, Forward +10s, Time Scrubber)
+        AnimatedVisibility(
+            visible = showControlsOverlay && streamUrl != null && !isLoading,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.55f))
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Center Controls: Rewind -10s, Play/Pause, Fast Forward +10s
+                Row(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            val target = (exoPlayer.currentPosition - 10000).coerceAtLeast(0)
+                            exoPlayer.seekTo(target)
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(Icons.Filled.Replay10, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                                isPlayingState = false
+                            } else {
+                                exoPlayer.play()
+                                isPlayingState = true
+                            }
+                        },
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(YouTubeRed, CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val target = (exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration)
+                            exoPlayer.seekTo(target)
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(Icons.Filled.Forward10, contentDescription = "+10s", tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                }
+
+                // Bottom Control Bar: Time Scrubber + Timestamp + Mute
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        IconButton(
+                            onClick = {
+                                isMutedState = !isMutedState
+                                exoPlayer.volume = if (isMutedState) 0f else 1f
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                contentDescription = "Mute",
+                                tint = Color.White
+                            )
+                        }
+                    }
+
+                    Slider(
+                        value = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                        onValueChange = { fraction ->
+                            val targetMs = (fraction * totalDurationMs).toLong()
+                            exoPlayer.seekTo(targetMs)
+                        },
+                        colors = SliderDefaults.colors(
+                            thumbColor = YouTubeRed,
+                            activeTrackColor = YouTubeRed,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
+        // Floating Debug Console Icon Button
+        IconButton(
+            onClick = { showDebugConsole = !showDebugConsole },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .size(32.dp)
+                .background(Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(16.dp))
+                .testTag("debug_console_toggle_btn")
+        ) {
+            Icon(
+                imageVector = Icons.Filled.BugReport,
+                contentDescription = "Debug Logs",
+                tint = if (showDebugConsole) Color.Green else Color.White,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        // Overlay Debug Logs Overlay Panel
+        AnimatedVisibility(
+            visible = showDebugConsole,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.92f))
+                .padding(12.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Native Extractor Debug Console",
+                        color = Color.Green,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Row {
+                        IconButton(onClick = {
+                            val textToCopy = debugLogs.joinToString("\n")
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Debug Logs", textToCopy))
+                            Toast.makeText(context, "Logs Copied to Clipboard 📋", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(imageVector = Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color.White)
+                        }
+                        IconButton(onClick = { showDebugConsole = false }) {
+                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+                }
+                HorizontalDivider(color = Color.DarkGray)
+                Spacer(modifier = Modifier.height(6.dp))
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(debugLogs) { log ->
+                        Text(
+                            text = log,
+                            color = if (log.contains("Successfully")) Color.Green else if (log.contains("Failed")) Color.Red else Color.LightGray,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-/**
- * Checks whether a network request URL belongs to an advertisement server or analytics tracking domain.
- */
-private fun isAdUrl(url: String): Boolean {
-    val lower = url.lowercase()
-    return lower.contains("googleads") ||
-            lower.contains("doubleclick.net") ||
-            lower.contains("pagead2") ||
-            lower.contains("adservice.google") ||
-            lower.contains("pubads") ||
-            lower.contains("/pagead/") ||
-            lower.contains("/api/stats/ads") ||
-            lower.contains("get_midroll_info") ||
-            lower.contains("youtube.com/ptracking") ||
-            lower.contains("googlesyndication.com")
-}
-
-/**
- * Injects CSS and JavaScript to suppress ad overlays and auto-skip any pre-roll/mid-roll video ads.
- */
-private fun injectAdBlockScript(view: WebView?) {
-    val js = """
-        (function() {
-            var css = `
-                .video-ads, .ytp-ad-module, .ytp-ad-overlay-container, .ytp-ad-text,
-                .ytp-ad-skip-button-slot, .ytp-ad-image-overlay, .annotation,
-                .ytp-pause-overlay, .ytp-paid-content-overlay, .ytp-ad-progress-bar-container,
-                ytd-action-companion-ad-renderer, ytd-display-ad-renderer,
-                ytd-promoted-sparkles-web-renderer, ytd-compact-promoted-item-renderer,
-                ytd-in-feed-ad-layout-renderer, .ytp-ad-overlay-image {
-                    display: none !important;
-                    visibility: hidden !important;
-                    opacity: 0 !important;
-                    pointer-events: none !important;
-                }
-            `;
-            var style = document.createElement('style');
-            style.type = 'text/css';
-            style.appendChild(document.createTextNode(css));
-            document.head.appendChild(style);
-
-            setInterval(function() {
-                var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container');
-                if (skipBtn) {
-                    skipBtn.click();
-                }
-                var video = document.querySelector('video');
-                var adShowing = document.querySelector('.ad-showing, .video-ads, .ytp-ad-text');
-                if (video && adShowing) {
-                    video.muted = true;
-                    video.playbackRate = 16.0;
-                    if (video.duration && !isNaN(video.duration)) {
-                        video.currentTime = video.duration - 0.1;
-                    }
-                }
-            }, 300);
-        })();
-    """.trimIndent()
-
-    view?.evaluateJavascript(js, null)
-}
-
-private fun buildYouTubeIFrameHtml(videoId: String, startSeconds: Int): String {
-    return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            html, body { width: 100%; height: 100%; background-color: #000000; overflow: hidden; }
-            .video-container { position: relative; width: 100%; height: 100%; filter: none; transition: filter 0.3s ease; }
-            iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
-            
-            /* Built-in AdBlock Styles */
-            .video-ads, .ytp-ad-module, .ytp-ad-overlay-container, .ytp-ad-text,
-            .ytp-ad-skip-button-slot, .ytp-ad-image-overlay, .annotation,
-            .ytp-pause-overlay, .ytp-paid-content-overlay, ytd-action-companion-ad-renderer {
-              display: none !important;
-              visibility: hidden !important;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="video-container" id="container">
-            <iframe id="ytplayer"
-              src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&enablejsapi=1&fs=1&rel=0&iv_load_policy=3&modestbranding=1&controls=1&showinfo=0&cc_load_policy=1&start=$startSeconds"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowfullscreen>
-            </iframe>
-          </div>
-          <script>
-            var playerIframe = document.getElementById('ytplayer');
-            var abStart = -1;
-            var abEnd = -1;
-
-            function sendCommand(func, args) {
-              if (playerIframe && playerIframe.contentWindow) {
-                var message = JSON.stringify({
-                  event: 'command',
-                  func: func,
-                  args: args || []
-                });
-                playerIframe.contentWindow.postMessage(message, '*');
-              }
-            }
-
-            function seekToSeconds(seconds) {
-              sendCommand('seekTo', [seconds, true]);
-              sendCommand('playVideo');
-            }
-
-            function seekRelative(deltaSeconds) {
-              if (deltaSeconds < 0) {
-                sendCommand('seekTo', [Math.max(0, (window.lastTime || 0) + deltaSeconds), true]);
-              } else {
-                sendCommand('seekTo', [(window.lastTime || 0) + deltaSeconds, true]);
-              }
-            }
-
-            function stepFrame(deltaSeconds) {
-              var target = Math.max(0, (window.lastTime || 0) + deltaSeconds);
-              sendCommand('seekTo', [target, true]);
-              sendCommand('pauseVideo');
-            }
-
-            function playVideo() { sendCommand('playVideo'); }
-            function pauseVideo() { sendCommand('pauseVideo'); }
-            
-            function setPlaybackRate(rate) {
-              sendCommand('setPlaybackRate', [rate]);
-            }
-
-            function toggleMute(shouldMute) {
-              if (shouldMute) {
-                sendCommand('mute');
-              } else {
-                sendCommand('unMute');
-              }
-            }
-
-            function setPlaybackQuality(quality) {
-              sendCommand('setPlaybackQuality', [quality]);
-            }
-
-            function toggleCaptions(enabled) {
-              if (enabled) {
-                sendCommand('loadModule', ['captions']);
-                sendCommand('setOption', ['captions', 'track', {'languageCode': 'en'}]);
-              } else {
-                sendCommand('unloadModule', ['captions']);
-              }
-            }
-
-            function setAbLoop(startSec, endSec) {
-              abStart = startSec;
-              abEnd = endSec;
-              if (abStart >= 0) {
-                seekToSeconds(abStart);
-              }
-            }
-
-            function clearAbLoop() {
-              abStart = -1;
-              abEnd = -1;
-            }
-
-            function setVisualFilter(filterName) {
-              var container = document.getElementById('container');
-              if (!container) return;
-              if (filterName === 'night') {
-                container.style.filter = 'contrast(1.1) brightness(0.8) sepia(0.2)';
-              } else if (filterName === 'warm') {
-                container.style.filter = 'sepia(0.4) saturate(1.2)';
-              } else if (filterName === 'mono') {
-                container.style.filter = 'grayscale(1.0)';
-              } else {
-                container.style.filter = 'none';
-              }
-            }
-
-            // Listen to player messages to update current time cache & AB loop check
-            window.addEventListener('message', function(event) {
-              try {
-                var data = JSON.parse(event.data);
-                if (data.info && typeof data.info.currentTime === 'number') {
-                  window.lastTime = data.info.currentTime;
-                  if (abStart >= 0 && abEnd > abStart) {
-                    if (window.lastTime >= abEnd) {
-                      seekToSeconds(abStart);
-                    }
-                  }
-                }
-              } catch(e) {}
-            });
-
-            // Auto-Skip Ad listener inside iframe parent
-            setInterval(function() {
-              if (playerIframe && playerIframe.contentWindow) {
-                try {
-                  var doc = playerIframe.contentDocument || playerIframe.contentWindow.document;
-                  if (doc) {
-                    var skipBtn = doc.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');
-                    if (skipBtn) skipBtn.click();
-                  }
-                } catch(e) {}
-              }
-            }, 300);
-          </script>
-        </body>
-        </html>
-    """.trimIndent()
+private fun formatMs(ms: Long): String {
+    if (ms <= 0) return "00:00"
+    val totalSec = ms / 1000
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return String.format("%02d:%02d", mins, secs)
 }

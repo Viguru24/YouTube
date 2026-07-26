@@ -62,4 +62,10 @@ object YouTubeUtils {
             0
         }
     }
+    /**
+     * Fallback video search helper (returns empty list so real live InnerTube search results take full priority).
+     */
+    fun searchYouTubeVideos(query: String): List<com.example.data.model.VideoEntity> {
+        return emptyList()
+    }
 }

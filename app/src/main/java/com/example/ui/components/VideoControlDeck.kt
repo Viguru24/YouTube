@@ -31,12 +31,14 @@ import com.example.ui.theme.YouTubeRed
 
 @Composable
 fun VideoControlDeck(
-    webView: WebView?,
+    webView: Any? = null,
     videoTitle: String = "YouTube Video",
     videoId: String = "",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val exoPlayer = webView as? androidx.media3.exoplayer.ExoPlayer
+    val realWebView = webView as? WebView
 
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
@@ -98,7 +100,11 @@ fun VideoControlDeck(
             }
 
             override fun onFinish() {
-                webView?.loadUrl("javascript:pauseVideo()")
+                if (exoPlayer != null) {
+                    exoPlayer.pause()
+                } else {
+                    realWebView?.loadUrl("javascript:pauseVideo()")
+                }
                 isPlaying = false
                 sleepTimerMinutes = 0
                 sleepTimerText = ""
@@ -126,6 +132,41 @@ fun VideoControlDeck(
         }
     }
 
+    fun execVideo(jsCmd: String) {
+        if (exoPlayer != null) {
+            when {
+                jsCmd.contains("v.play()") || jsCmd.contains("play()") -> exoPlayer.play()
+                jsCmd.contains("v.pause()") || jsCmd.contains("pause()") -> exoPlayer.pause()
+                jsCmd.contains("+= 5") -> exoPlayer.seekTo(exoPlayer.currentPosition + 5000)
+                jsCmd.contains("-= 5") -> exoPlayer.seekTo(exoPlayer.currentPosition - 5000)
+                jsCmd.contains("v.muted = true") -> exoPlayer.volume = 0f
+                jsCmd.contains("v.muted = false") -> exoPlayer.volume = 1f
+            }
+        } else {
+            val script = """
+                (function() {
+                    function getVideo() {
+                        var v = document.querySelector('video');
+                        if (v) return v;
+                        var els = document.getElementsByTagName('*');
+                        for (var i = 0; i < els.length; i++) {
+                            if (els[i].shadowRoot) {
+                                var sv = els[i].shadowRoot.querySelector('video');
+                                if (sv) return sv;
+                            }
+                        }
+                        return null;
+                    }
+                    var v = getVideo();
+                    if (v) {
+                        $jsCmd
+                    }
+                })();
+            """.trimIndent()
+            realWebView?.evaluateJavascript(script, null)
+        }
+    }
+
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -150,7 +191,7 @@ fun VideoControlDeck(
                 // -Skip Back Button with customizable interval indicator
                 OutlinedIconButton(
                     onClick = {
-                        webView?.loadUrl("javascript:seekRelative(-$skipStepSeconds)")
+                        execVideo("v.currentTime = Math.max(0, v.currentTime - $skipStepSeconds);")
                         Toast.makeText(context, "-${skipStepSeconds}s", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("skip_back_btn")
@@ -165,7 +206,7 @@ fun VideoControlDeck(
                 // Frame Step -1 Button
                 IconButton(
                     onClick = {
-                        webView?.loadUrl("javascript:stepFrame(-0.033)")
+                        execVideo("v.currentTime = Math.max(0, v.currentTime - 0.033);")
                         Toast.makeText(context, "-1 Frame", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("step_frame_back_btn")
@@ -177,33 +218,29 @@ fun VideoControlDeck(
                     )
                 }
 
-                // Play / Pause Large Central Button
+                // Play / Pause Compact Central Button
                 FilledIconButton(
                     onClick = {
                         isPlaying = !isPlaying
-                        if (isPlaying) {
-                            webView?.loadUrl("javascript:playVideo()")
-                        } else {
-                            webView?.loadUrl("javascript:pauseVideo()")
-                        }
+                        execVideo("if (v.paused) { v.play(); } else { v.pause(); }")
                     },
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = YouTubeRed),
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(32.dp)
                         .testTag("toggle_play_pause_btn")
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
                         tint = Color.White,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
                 // Frame Step +1 Button
                 IconButton(
                     onClick = {
-                        webView?.loadUrl("javascript:stepFrame(0.033)")
+                        execVideo("v.currentTime = v.currentTime + 0.033;")
                         Toast.makeText(context, "+1 Frame", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("step_frame_forward_btn")
@@ -218,7 +255,7 @@ fun VideoControlDeck(
                 // +Skip Forward Button
                 OutlinedIconButton(
                     onClick = {
-                        webView?.loadUrl("javascript:seekRelative($skipStepSeconds)")
+                        execVideo("v.currentTime = v.currentTime + $skipStepSeconds;")
                         Toast.makeText(context, "+${skipStepSeconds}s", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.testTag("skip_forward_btn")
@@ -234,7 +271,7 @@ fun VideoControlDeck(
                 IconButton(
                     onClick = {
                         isMuted = !isMuted
-                        webView?.loadUrl("javascript:toggleMute($isMuted)")
+                        execVideo("v.muted = $isMuted;")
                     },
                     modifier = Modifier.testTag("toggle_mute_btn")
                 ) {
@@ -246,87 +283,9 @@ fun VideoControlDeck(
                 }
             }
 
-            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-            // Row 2: Playback Speed Control & Fine Stepper (+0.1x / -0.1x)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Speed:",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-
-                // Fine speed down button (-0.1x)
-                IconButton(
-                    onClick = {
-                        selectedSpeed = (selectedSpeed - 0.1f).coerceAtLeast(0.25f)
-                        val formatted = String.format("%.2f", selectedSpeed)
-                        webView?.loadUrl("javascript:setPlaybackRate($formatted)")
-                        Toast.makeText(context, "Speed: ${formatted}x", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(imageVector = Icons.Filled.Remove, contentDescription = "Speed Down", modifier = Modifier.size(16.dp))
-                }
-
-                Text(
-                    text = "${String.format("%.2f", selectedSpeed)}x",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = YouTubeRed,
-                    modifier = Modifier.padding(horizontal = 4.dp)
-                )
-
-                // Fine speed up button (+0.1x)
-                IconButton(
-                    onClick = {
-                        selectedSpeed = (selectedSpeed + 0.1f).coerceAtMost(3.0f)
-                        val formatted = String.format("%.2f", selectedSpeed)
-                        webView?.loadUrl("javascript:setPlaybackRate($formatted)")
-                        Toast.makeText(context, "Speed: ${formatted}x", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(imageVector = Icons.Filled.Add, contentDescription = "Speed Up", modifier = Modifier.size(16.dp))
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    speedOptions.forEach { speed ->
-                        val isSelected = (selectedSpeed == speed)
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                selectedSpeed = speed
-                                webView?.loadUrl("javascript:setPlaybackRate($speed)")
-                            },
-                            label = {
-                                Text(
-                                    text = if (speed == 1.0f) "1x" else "${speed}x",
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = YouTubeRed,
-                                selectedLabelColor = Color.White
-                            ),
-                            modifier = Modifier.height(28.dp)
-                        )
-                    }
-                }
-            }
-
-            // Row 3: Horizontal Scroll Deck for All Smart Tools
+            // Row 2: Horizontal Scroll Deck for All Smart Tools
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -334,6 +293,119 @@ fun VideoControlDeck(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Playback Speed Pull-Up / Dropdown Menu
+                var showSpeedMenu by remember { mutableStateOf(false) }
+                Box {
+                    AssistChip(
+                        onClick = { showSpeedMenu = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Speed,
+                                contentDescription = "Speed",
+                                tint = YouTubeRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = if (selectedSpeed == 1.0f) "Speed: 1x" else "Speed: ${selectedSpeed}x",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        modifier = Modifier.testTag("speed_menu_chip")
+                    )
+
+                    DropdownMenu(
+                        expanded = showSpeedMenu,
+                        onDismissRequest = { showSpeedMenu = false }
+                    ) {
+                        speedOptions.forEach { speed ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (speed == 1.0f) "1.0x (Normal)" else "${speed}x",
+                                        fontWeight = if (selectedSpeed == speed) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedSpeed == speed) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    selectedSpeed = speed
+                                    showSpeedMenu = false
+                                    if (exoPlayer != null) {
+                                        exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(speed)
+                                    } else {
+                                        realWebView?.loadUrl("javascript:setPlaybackRate($speed)")
+                                    }
+                                    Toast.makeText(context, "Playback Speed: ${speed}x", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Video Resolution / Quality Selector Chip
+                var showQualityMenu by remember { mutableStateOf(false) }
+                Box {
+                    AssistChip(
+                        onClick = { showQualityMenu = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.HighQuality,
+                                contentDescription = "Resolution",
+                                tint = YouTubeRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = "Quality: $selectedQuality",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        modifier = Modifier.testTag("quality_menu_chip")
+                    )
+
+                    DropdownMenu(
+                        expanded = showQualityMenu,
+                        onDismissRequest = { showQualityMenu = false }
+                    ) {
+                        qualityOptions.forEach { quality ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = quality,
+                                        fontWeight = if (selectedQuality == quality) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedQuality == quality) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                    )
+                                },
+                                onClick = {
+                                    selectedQuality = quality
+                                    showQualityMenu = false
+                                    Toast.makeText(context, "Video Resolution: $quality", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Subtitles / Captions (CC) Toggle Chip
+                AssistChip(
+                    onClick = {
+                        captionsEnabled = !captionsEnabled
+                        Toast.makeText(context, if (captionsEnabled) "Captions/Subtitles (CC) Enabled 💬" else "Captions Disabled", Toast.LENGTH_SHORT).show()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.ClosedCaption,
+                            contentDescription = "Subtitles / Captions (CC)",
+                            tint = if (captionsEnabled) YouTubeRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    label = { Text(if (captionsEnabled) "CC On" else "CC Off", fontSize = 12.sp) }
+                )
                 // Feature 1: Skip Step Config (e.g. 5s, 10s, 15s)
                 AssistChip(
                     onClick = { showSkipStepDialog = true },
@@ -396,7 +468,7 @@ fun VideoControlDeck(
                                         onClick = {
                                             abLoopPointB = 120
                                             isAbLoopActive = true
-                                            webView?.loadUrl("javascript:setAbLoop($abLoopPointA, $abLoopPointB)")
+                                            realWebView?.loadUrl("javascript:setAbLoop($abLoopPointA, $abLoopPointB)")
                                             Toast.makeText(context, "A/B Loop Started!", Toast.LENGTH_SHORT).show()
                                             showAbLoopDialog = false
                                         }
@@ -411,7 +483,7 @@ fun VideoControlDeck(
                                             isAbLoopActive = false
                                             abLoopPointA = -1
                                             abLoopPointB = -1
-                                            webView?.loadUrl("javascript:clearAbLoop()")
+                                            realWebView?.loadUrl("javascript:clearAbLoop()")
                                             Toast.makeText(context, "A/B Loop Cleared", Toast.LENGTH_SHORT).show()
                                             showAbLoopDialog = false
                                         },
@@ -454,7 +526,7 @@ fun VideoControlDeck(
                                 onClick = {
                                     activeFilter = mode
                                     showFilterMenu = false
-                                    webView?.loadUrl("javascript:setVisualFilter('${mode.lowercase()}')")
+                                    realWebView?.loadUrl("javascript:setVisualFilter('${mode.lowercase()}')")
                                 }
                             )
                         }
@@ -515,7 +587,7 @@ fun VideoControlDeck(
                 AssistChip(
                     onClick = {
                         captionsEnabled = !captionsEnabled
-                        webView?.loadUrl("javascript:toggleCaptions($captionsEnabled)")
+                        realWebView?.loadUrl("javascript:toggleCaptions($captionsEnabled)")
                     },
                     leadingIcon = {
                         Icon(
@@ -528,38 +600,6 @@ fun VideoControlDeck(
                     label = { Text(if (captionsEnabled) "CC On" else "CC Off", fontSize = 12.sp) }
                 )
 
-                // Feature 7: Quality Selector
-                var showQualityMenu by remember { mutableStateOf(false) }
-                Box {
-                    AssistChip(
-                        onClick = { showQualityMenu = true },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Filled.Hd,
-                                contentDescription = "Quality",
-                                tint = YouTubeRed,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        label = { Text(selectedQuality, fontSize = 12.sp) }
-                    )
-
-                    DropdownMenu(
-                        expanded = showQualityMenu,
-                        onDismissRequest = { showQualityMenu = false }
-                    ) {
-                        qualityOptions.forEach { quality ->
-                            DropdownMenuItem(
-                                text = { Text(quality) },
-                                onClick = {
-                                    selectedQuality = quality
-                                    showQualityMenu = false
-                                    webView?.loadUrl("javascript:setPlaybackQuality('${quality.lowercase()}')")
-                                }
-                            )
-                        }
-                    }
-                }
 
                 // Feature 8: Sleep Timer
                 var showSleepMenu by remember { mutableStateOf(false) }
@@ -711,7 +751,11 @@ fun VideoControlDeck(
                         listOf("00:00 Intro" to 0, "02:00 Mid" to 120, "05:00 Ending" to 300).forEach { (label, sec) ->
                             SuggestionChip(
                                 onClick = {
-                                    webView?.loadUrl("javascript:seekToSeconds($sec)")
+                                    if (exoPlayer != null) {
+                                        exoPlayer.seekTo((sec * 1000).toLong())
+                                    } else {
+                                        realWebView?.loadUrl("javascript:seekToSeconds($sec)")
+                                    }
                                     showJumpDialog = false
                                 },
                                 label = { Text(label, fontSize = 11.sp) }
@@ -724,7 +768,11 @@ fun VideoControlDeck(
                 Button(
                     onClick = {
                         val seconds = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(customTimeInput)
-                        webView?.loadUrl("javascript:seekToSeconds($seconds)")
+                        if (exoPlayer != null) {
+                            exoPlayer.seekTo((seconds * 1000).toLong())
+                        } else {
+                            realWebView?.loadUrl("javascript:seekToSeconds($seconds)")
+                        }
                         showJumpDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)

@@ -3,7 +3,9 @@ package com.example.ui.screens
 import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,96 +50,137 @@ fun PlayerScreen(
     onDeleteNote: (noteId: Long) -> Unit,
     onSelectOtherVideo: (VideoEntity) -> Unit,
     onOpenGoogleAuth: () -> Unit,
+    areAdvertsEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var webViewInstance by remember { mutableStateOf<Any?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0: AI Transcript, 1: Bookmarks & Notes, 2: Playlist Queue
 
     var showAddNoteDialog by remember { mutableStateOf(false) }
     var noteInputText by remember { mutableStateOf("") }
     var timeInputText by remember { mutableStateOf("01:00") }
 
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    var isMaximized by remember { mutableStateOf(false) }
+
+    val isFullscreen = isLandscape || isMaximized
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Now Playing",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(
-                        onClick = onBackClick,
-                        modifier = Modifier.testTag("player_back_btn")
-                    ) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { onFavoriteToggle(video) }) {
-                        Icon(
-                            imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                            contentDescription = "Favorite",
-                            tint = if (video.isFavorite) GoldStar else LocalContentColor.current
+            if (!isFullscreen) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Now Playing",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    IconButton(onClick = { onWatchLaterToggle(video) }) {
-                        Icon(
-                            imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                            contentDescription = "Watch Later"
-                        )
-                    }
-
-                    // Google Account Avatar Button
-                    IconButton(
-                        onClick = onOpenGoogleAuth,
-                        modifier = Modifier.testTag("player_google_auth_btn")
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray),
-                            contentAlignment = Alignment.Center
+                    },
+                    navigationIcon = {
+                        IconButton(
+                            onClick = onBackClick,
+                            modifier = Modifier.testTag("player_back_btn")
                         ) {
-                            Text(
-                                text = googleAccount.avatarInitials,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { onFavoriteToggle(video) }) {
+                            Icon(
+                                imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = "Favorite",
+                                tint = if (video.isFavorite) GoldStar else LocalContentColor.current
                             )
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                        IconButton(onClick = { onWatchLaterToggle(video) }) {
+                            Icon(
+                                imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                                contentDescription = "Watch Later"
+                            )
+                        }
+
+                        // Google Account Avatar Button
+                        IconButton(
+                            onClick = onOpenGoogleAuth,
+                            modifier = Modifier.testTag("player_google_auth_btn")
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = googleAccount.avatarInitials,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
                 )
-            )
+            }
         },
         modifier = modifier
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
         ) {
-            // YouTube IFrame Player View
+            // YouTube IFrame Player View (Single location in Compose tree for both portrait & landscape)
             YouTubePlayerView(
                 videoId = video.youtubeId,
                 startSeconds = video.lastPositionSeconds,
+                areAdvertsEnabled = areAdvertsEnabled,
                 onPlayerReady = { wv ->
                     webViewInstance = wv
+                },
+                modifier = if (isFullscreen) {
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount > 40f) {
+                                    isMaximized = false
+                                    val activity = context as? android.app.Activity
+                                    activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                    onBackClick()
+                                }
+                            }
+                        }
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount < -40f) {
+                                    isMaximized = true
+                                    val activity = context as? android.app.Activity
+                                    activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                } else if (dragAmount > 40f) {
+                                    onBackClick()
+                                }
+                            }
+                        }
                 }
             )
 
-            // Video Easy-Control Deck (10 Smart Features)
-            VideoControlDeck(
-                webView = webViewInstance,
-                videoTitle = video.title,
-                videoId = video.youtubeId
-            )
+            if (!isFullscreen) {
+                // Video Easy-Control Deck (10 Smart Features)
+                VideoControlDeck(
+                    webView = webViewInstance,
+                    videoTitle = video.title,
+                    videoId = video.youtubeId
+                )
 
             // Video Header Title & Channel
             Column(
@@ -249,7 +292,12 @@ fun PlayerScreen(
                             AiTranscriptView(
                                 video = video,
                                 onSeekToTimestamp = { seconds ->
-                                    webViewInstance?.loadUrl("javascript:seekToSeconds($seconds)")
+                                    val exo = webViewInstance as? androidx.media3.exoplayer.ExoPlayer
+                                    if (exo != null) {
+                                        exo.seekTo((seconds * 1000).toLong())
+                                    } else {
+                                        (webViewInstance as? android.webkit.WebView)?.loadUrl("javascript:seekToSeconds($seconds)")
+                                    }
                                 },
                                 onSaveKeyPointAsNote = { sec, timeStr, text ->
                                     onAddNote(sec, timeStr, text)
@@ -314,7 +362,12 @@ fun PlayerScreen(
                                 NoteItemRow(
                                     note = note,
                                     onJumpToTime = { seconds ->
-                                        webViewInstance?.loadUrl("javascript:seekToSeconds($seconds)")
+                                        val exo = webViewInstance as? androidx.media3.exoplayer.ExoPlayer
+                                        if (exo != null) {
+                                            exo.seekTo((seconds * 1000).toLong())
+                                        } else {
+                                            (webViewInstance as? android.webkit.WebView)?.loadUrl("javascript:seekToSeconds($seconds)")
+                                        }
                                     },
                                     onDeleteNote = onDeleteNote
                                 )
@@ -358,6 +411,7 @@ fun PlayerScreen(
                 }
             }
         }
+    }
     }
 
     // Add Timestamped Note Dialog

@@ -12,10 +12,8 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# ProGuard rules for NewPipeExtractor & Rhino JS Engine
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.javascript.**
+-keep class org.schabi.newpipe.** { *; }
+-dontwarn org.schabi.newpipe.**

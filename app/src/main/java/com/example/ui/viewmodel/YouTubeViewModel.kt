@@ -20,7 +20,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val repository = YouTubeRepository(db.videoDao(), db.videoNoteDao(), db.playlistCategoryDao())
 
     // Google Auth Account state
-    private val _googleAccount = MutableStateFlow(GoogleAccount(isSignedIn = true))
+    private val _googleAccount = MutableStateFlow(GoogleAccount(isSignedIn = false))
     val googleAccount: StateFlow<GoogleAccount> = _googleAccount.asStateFlow()
 
     fun signInGoogle(name: String, email: String) {
@@ -52,6 +52,71 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val searchQuery = MutableStateFlow("")
     val selectedCategory = MutableStateFlow("All")
 
+    // Adverts (Ads ON / OFF) Settings state
+    private val _areAdvertsEnabled = MutableStateFlow(false) // Default AdBlock Active (Adverts OFF)
+    val areAdvertsEnabled: StateFlow<Boolean> = _areAdvertsEnabled.asStateFlow()
+
+    fun setAdvertsEnabled(enabled: Boolean) {
+        _areAdvertsEnabled.value = enabled
+    }
+
+    // Real Live YouTube Search & Category Results state
+    private val _liveSearchResults = MutableStateFlow<List<VideoEntity>>(emptyList())
+    val liveSearchResults: StateFlow<List<VideoEntity>> = _liveSearchResults.asStateFlow()
+
+    private val _categoryVideos = MutableStateFlow<List<VideoEntity>>(emptyList())
+    val categoryVideos: StateFlow<List<VideoEntity>> = _categoryVideos.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            searchQuery
+                .collectLatest { query ->
+                    val trimmed = query.trim()
+                    if (trimmed.isNotBlank()) {
+                        _liveSearchResults.value = emptyList() // Instantly clear stale results!
+                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed)
+                        _liveSearchResults.value = realVideos
+                    } else {
+                        _liveSearchResults.value = emptyList()
+                    }
+                }
+        }
+
+        viewModelScope.launch {
+            selectedCategory.collectLatest { category ->
+                if (category != "All") {
+                    val searchTopic = when (category) {
+                        "Tech & Code" -> "Android coding tutorial programming tech"
+                        "Music" -> "Trending music videos official 2026"
+                        "Tutorials" -> "Full tutorial how to guide"
+                        "Gaming" -> "Gaming walkthrough 4K 60fps"
+                        else -> "$category trending videos"
+                    }
+                    val fetched = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(searchTopic)
+                    _categoryVideos.value = fetched
+                } else {
+                    _categoryVideos.value = emptyList()
+                }
+            }
+        }
+    }
+
+    fun loadMoreCategoryVideos() {
+        val currentCategory = selectedCategory.value
+        val currentQuery = searchQuery.value
+        viewModelScope.launch {
+            val searchTerm = if (currentQuery.isNotBlank()) currentQuery else if (currentCategory != "All") currentCategory else "Trending YouTube videos"
+            val additionalQueries = listOf("best $searchTerm 2026", "$searchTerm full playlist", "new $searchTerm review", "$searchTerm 4K", "popular $searchTerm")
+            val nextQuery = additionalQueries.random()
+            val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(nextQuery)
+            if (newBatch.isNotEmpty()) {
+                val updated = (_categoryVideos.value + newBatch).distinctBy { it.youtubeId }
+                _categoryVideos.value = updated
+            }
+        }
+    }
+
     // Video streams
     val categories: StateFlow<List<PlaylistCategoryEntity>> = repository.categories
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -67,9 +132,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             filtered = filtered.filter { it.category.equals(category, ignoreCase = true) }
         }
         if (query.isNotBlank()) {
+            val trimmedQuery = query.trim()
+            val extractedId = YouTubeUtils.extractVideoId(trimmedQuery)
             filtered = filtered.filter {
-                it.title.contains(query, ignoreCase = true) ||
-                it.channelName.contains(query, ignoreCase = true)
+                it.title.contains(trimmedQuery, ignoreCase = true) ||
+                it.channelName.contains(trimmedQuery, ignoreCase = true) ||
+                it.category.contains(trimmedQuery, ignoreCase = true) ||
+                it.youtubeId.equals(trimmedQuery, ignoreCase = true) ||
+                (extractedId != null && it.youtubeId.equals(extractedId, ignoreCase = true))
             }
         }
         filtered
@@ -99,6 +169,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         if (id == null) flowOf(emptyList())
         else repository.getNotesForVideo(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun playVideo(video: VideoEntity) {
+        viewModelScope.launch {
+            repository.saveVideo(video)
+            repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
+            _activeVideoId.value = video.youtubeId
+        }
+    }
 
     fun setActiveVideo(youtubeId: String, startSeconds: Int = 0) {
         _activeVideoId.value = youtubeId
@@ -167,6 +245,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
 
             onSuccess(extractedId)
+        }
+    }
+
+    fun refreshFeed() {
+        val currentQuery = searchQuery.value
+        if (currentQuery.isNotEmpty()) {
+            searchQuery.value = ""
+            searchQuery.value = currentQuery
         }
     }
 

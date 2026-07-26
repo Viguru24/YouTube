@@ -18,7 +18,7 @@ android {
     minSdk = 24
     targetSdk = 36
     versionCode = 1
-    versionName = "1.0"
+    versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -46,7 +46,9 @@ android {
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug { 
+      signingConfig = if (file("${rootDir}/debug.keystore").exists()) signingConfigs.getByName("debugConfig") else signingConfigs.getByName("debug")
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -114,6 +116,11 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
+  implementation("androidx.media3:media3-exoplayer:1.3.1")
+  implementation("androidx.media3:media3-ui:1.3.1")
+  implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+  implementation("org.mozilla:rhino:1.7.15")
+  implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:13.0.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

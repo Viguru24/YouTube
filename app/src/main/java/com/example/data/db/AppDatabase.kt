@@ -71,15 +71,15 @@ abstract class AppDatabase : RoomDatabase() {
             // Default Curated Videos
             val defaultVideos = listOf(
                 VideoEntity(
-                    youtubeId = "M576WGiDBdQ",
-                    title = "Jetpack Compose Basics - Modern Android UI Development",
-                    channelName = "Android Developers",
-                    thumbnailUrl = "https://img.youtube.com/vi/M576WGiDBdQ/hqdefault.jpg",
-                    durationText = "14:20",
-                    category = "Tech & Code",
+                    youtubeId = "jfKfPfyJRdk",
+                    title = "Lofi Hip Hop Radio - Beats to Relax / Study to",
+                    channelName = "Lofi Girl",
+                    thumbnailUrl = "https://img.youtube.com/vi/jfKfPfyJRdk/hqdefault.jpg",
+                    durationText = "LIVE",
+                    category = "Focus & Ambient",
                     isFavorite = true,
-                    isWatchLater = false,
-                    notesCount = 2
+                    isWatchLater = true,
+                    notesCount = 1
                 ),
                 VideoEntity(
                     youtubeId = "jfKfPfyJRdk",

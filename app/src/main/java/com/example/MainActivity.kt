@@ -53,6 +53,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
     var showAddVideoDialog by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val favoriteVideos by viewModel.favoriteVideos.collectAsStateWithLifecycle()
@@ -60,9 +61,12 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val googleAccount by viewModel.googleAccount.collectAsStateWithLifecycle()
+    val areAdvertsEnabled by viewModel.areAdvertsEnabled.collectAsStateWithLifecycle()
 
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val liveSearchResults by viewModel.liveSearchResults.collectAsStateWithLifecycle()
+    val categoryVideos by viewModel.categoryVideos.collectAsStateWithLifecycle()
 
     val activeVideoId by viewModel.activeVideoId.collectAsStateWithLifecycle()
     val activeVideo by viewModel.activeVideo.collectAsStateWithLifecycle()
@@ -83,8 +87,9 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
                 },
                 onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
-                onSelectOtherVideo = { v -> viewModel.setActiveVideo(v.youtubeId) },
-                onOpenGoogleAuth = { showGoogleAuthDialog = true }
+                onSelectOtherVideo = { v -> viewModel.playVideo(v) },
+                onOpenGoogleAuth = { showGoogleAuthDialog = true },
+                areAdvertsEnabled = areAdvertsEnabled
             )
         } else {
             // Main Bottom Bar Layout Screen
@@ -168,12 +173,17 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             googleAccount = googleAccount,
                             onCategorySelected = { viewModel.selectedCategory.value = it },
                             onSearchQueryChanged = { viewModel.searchQuery.value = it },
-                            onVideoClick = { v -> viewModel.setActiveVideo(v.youtubeId) },
+                            onVideoClick = { v -> viewModel.playVideo(v) },
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
                             onOpenAddVideoDialog = { showAddVideoDialog = true },
-                            onOpenGoogleAuth = { showGoogleAuthDialog = true }
+                            onOpenGoogleAuth = { showGoogleAuthDialog = true },
+                            onOpenSettings = { showSettingsDialog = true },
+                            onRefreshFeed = { viewModel.refreshFeed() },
+                            liveSearchResults = liveSearchResults,
+                            categoryVideos = categoryVideos,
+                            onLoadMore = { viewModel.loadMoreCategoryVideos() }
                         )
                         1 -> LibraryScreen(
                             categories = categories,
@@ -181,7 +191,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             watchLaterVideos = watchLaterVideos,
                             allVideos = videos,
                             googleAccount = googleAccount,
-                            onVideoClick = { v -> viewModel.setActiveVideo(v.youtubeId) },
+                            onVideoClick = { v -> viewModel.playVideo(v) },
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
@@ -191,7 +201,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                         )
                         2 -> HistoryScreen(
                             historyVideos = watchHistory,
-                            onVideoClick = { v -> viewModel.setActiveVideo(v.youtubeId) },
+                            onVideoClick = { v -> viewModel.playVideo(v) },
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
@@ -248,6 +258,15 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     viewModel.signOutGoogle()
                     showGoogleAuthDialog = false
                 }
+            )
+        }
+
+        // App Settings Dialog
+        if (showSettingsDialog) {
+            com.example.ui.components.SettingsDialog(
+                areAdvertsEnabled = areAdvertsEnabled,
+                onAdvertsToggle = { viewModel.setAdvertsEnabled(it) },
+                onDismiss = { showSettingsDialog = false }
             )
         }
     }
