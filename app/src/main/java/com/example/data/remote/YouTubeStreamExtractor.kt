@@ -1,17 +1,22 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.util.DiagnosticLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
 import java.net.URLDecoder
+import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 object YouTubeStreamExtractor {
     private val client = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
@@ -76,6 +81,7 @@ object YouTubeStreamExtractor {
         val clientProfiles = listOf(
             Triple("ANDROID_VR", "1.59.19", false),
             Triple("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", true),
+            Triple("ANDROID_TESTSUITE", "1.9.0", false),
             Triple("ANDROID", "19.09.37", false),
             Triple("IOS", "19.09.3", false)
         )
@@ -120,7 +126,8 @@ object YouTubeStreamExtractor {
                     while (matcher.find()) {
                         val rawUrl = matcher.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
                         if (rawUrl.contains("googlevideo.com")) {
-                            logD("YouTubeStreamExtractor", "[$clientName] Found progressive stream URL: $rawUrl")
+                            logD("YouTubeStreamExtractor", "[$clientName] Found progressive stream URL for $videoId: $rawUrl")
+                            DiagnosticLogger.logHealthy("StreamExtractor", "[$clientName] Native MP4 extracted for $videoId")
                             return@withContext rawUrl
                         }
                     }
@@ -132,7 +139,8 @@ object YouTubeStreamExtractor {
                         val rawCipher = cipherMatcher.group(2)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
                         val cipherUrl = parseCipher(rawCipher)
                         if (cipherUrl.isNotEmpty() && cipherUrl.contains("googlevideo.com")) {
-                            logD("YouTubeStreamExtractor", "[$clientName] Found cipher stream URL: $cipherUrl")
+                            logD("YouTubeStreamExtractor", "[$clientName] Found cipher stream URL for $videoId: $cipherUrl")
+                            DiagnosticLogger.logHealthy("StreamExtractor", "[$clientName] Cipher MP4 extracted for $videoId")
                             return@withContext cipherUrl
                         }
                     }
@@ -141,7 +149,54 @@ object YouTubeStreamExtractor {
                 logD("YouTubeStreamExtractor", "Error extracting stream for $videoId: ${e.message}")
             }
         }
+
+        // Fallback: Open-source Piped stream extractor API mirror for 100% video resolution
+        val fallbackUrl = fetchPipedDirectStreamUrl(videoId)
+        if (!fallbackUrl.isNullOrEmpty()) {
+            DiagnosticLogger.logWarning("StreamExtractor", "Piped fallback active for $videoId")
+            return@withContext fallbackUrl
+        }
+
+        DiagnosticLogger.logError("StreamExtractor", "Failed to extract stream for $videoId")
         return@withContext null
+    }
+
+    private fun fetchPipedDirectStreamUrl(videoId: String): String? {
+        val pipedStreamEndpoints = listOf(
+            "https://pipedapi.kavin.rocks/streams/$videoId",
+            "https://api.piped.privacydev.net/streams/$videoId",
+            "https://pipedapi.mha.fi/streams/$videoId"
+        )
+
+        for (url in pipedStreamEndpoints) {
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val bodyString = response.body?.string() ?: return@use
+                        val jsonObj = JSONObject(bodyString)
+                        val videoStreams = jsonObj.optJSONArray("videoStreams")
+                        if (videoStreams != null && videoStreams.length() > 0) {
+                            for (i in 0 until videoStreams.length()) {
+                                val stream = videoStreams.getJSONObject(i)
+                                val streamUrl = stream.optString("url", "")
+                                if (streamUrl.contains("googlevideo.com")) {
+                                    logD("YouTubeStreamExtractor", "Extracted direct MP4 stream URL via Piped API mirror for $videoId")
+                                    return streamUrl
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logD("YouTubeStreamExtractor", "Piped stream endpoint $url error: ${e.message}")
+            }
+        }
+        return null
     }
 
     private fun parseCipher(cipher: String): String {

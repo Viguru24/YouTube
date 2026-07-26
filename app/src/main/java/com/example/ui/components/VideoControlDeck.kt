@@ -135,12 +135,46 @@ fun VideoControlDeck(
     fun execVideo(jsCmd: String) {
         if (exoPlayer != null) {
             when {
-                jsCmd.contains("v.play()") || jsCmd.contains("play()") -> exoPlayer.play()
-                jsCmd.contains("v.pause()") || jsCmd.contains("pause()") -> exoPlayer.pause()
-                jsCmd.contains("+= 5") -> exoPlayer.seekTo(exoPlayer.currentPosition + 5000)
-                jsCmd.contains("-= 5") -> exoPlayer.seekTo(exoPlayer.currentPosition - 5000)
-                jsCmd.contains("v.muted = true") -> exoPlayer.volume = 0f
-                jsCmd.contains("v.muted = false") -> exoPlayer.volume = 1f
+                jsCmd.contains("play()") || jsCmd.contains("v.play()") -> {
+                    exoPlayer.play()
+                    isPlaying = true
+                }
+                jsCmd.contains("pause()") || jsCmd.contains("v.pause()") -> {
+                    exoPlayer.pause()
+                    isPlaying = false
+                }
+                jsCmd.contains("currentTime -") || jsCmd.contains("-=") -> {
+                    val target = (exoPlayer.currentPosition - (skipStepSeconds * 1000L)).coerceAtLeast(0L)
+                    exoPlayer.seekTo(target)
+                }
+                jsCmd.contains("currentTime +") || jsCmd.contains("+=") -> {
+                    val target = (exoPlayer.currentPosition + (skipStepSeconds * 1000L)).coerceAtMost(exoPlayer.duration)
+                    exoPlayer.seekTo(target)
+                }
+                jsCmd.contains("0.033") && jsCmd.contains("-") -> {
+                    val target = (exoPlayer.currentPosition - 33L).coerceAtLeast(0L)
+                    exoPlayer.seekTo(target)
+                }
+                jsCmd.contains("0.033") && jsCmd.contains("+") -> {
+                    val target = (exoPlayer.currentPosition + 33L).coerceAtMost(exoPlayer.duration)
+                    exoPlayer.seekTo(target)
+                }
+                jsCmd.contains("v.muted = true") -> {
+                    exoPlayer.volume = 0f
+                    isMuted = true
+                }
+                jsCmd.contains("v.muted = false") -> {
+                    exoPlayer.volume = 1f
+                    isMuted = false
+                }
+                jsCmd.contains("v.loop = true") -> {
+                    exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+                    isLooping = true
+                }
+                jsCmd.contains("v.loop = false") -> {
+                    exoPlayer.repeatMode = androidx.media3.common.Player.REPEAT_MODE_OFF
+                    isLooping = false
+                }
             }
         } else {
             val script = """
@@ -148,19 +182,10 @@ fun VideoControlDeck(
                     function getVideo() {
                         var v = document.querySelector('video');
                         if (v) return v;
-                        var els = document.getElementsByTagName('*');
-                        for (var i = 0; i < els.length; i++) {
-                            if (els[i].shadowRoot) {
-                                var sv = els[i].shadowRoot.querySelector('video');
-                                if (sv) return sv;
-                            }
-                        }
                         return null;
                     }
                     var v = getVideo();
-                    if (v) {
-                        $jsCmd
-                    }
+                    if (v) { $jsCmd }
                 })();
             """.trimIndent()
             realWebView?.evaluateJavascript(script, null)

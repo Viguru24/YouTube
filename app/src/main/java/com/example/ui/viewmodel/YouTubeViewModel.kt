@@ -19,9 +19,49 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val db = AppDatabase.getInstance(application)
     private val repository = YouTubeRepository(db.videoDao(), db.videoNoteDao(), db.playlistCategoryDao())
 
-    // Google Auth Account state
+    private val prefs = application.getSharedPreferences("google_accounts_prefs", android.content.Context.MODE_PRIVATE)
+
+    // Google Auth Account state & Saved Multi-Account List
     private val _googleAccount = MutableStateFlow(GoogleAccount(isSignedIn = false))
     val googleAccount: StateFlow<GoogleAccount> = _googleAccount.asStateFlow()
+
+    private val _savedAccounts = MutableStateFlow<List<GoogleAccount>>(emptyList())
+    val savedAccounts: StateFlow<List<GoogleAccount>> = _savedAccounts.asStateFlow()
+
+    init {
+        loadSavedAccounts()
+    }
+
+    private fun loadSavedAccounts() {
+        val savedJson = prefs.getString("accounts_list", "") ?: ""
+        val accountsList = mutableListOf<GoogleAccount>()
+
+        if (savedJson.isNotBlank()) {
+            try {
+                val lines = savedJson.split(";")
+                for (line in lines) {
+                    val parts = line.split("|")
+                    if (parts.size >= 2) {
+                        val name = parts[0]
+                        val email = parts[1]
+                        val initials = name.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").ifEmpty { "G" }.uppercase()
+                        accountsList.add(GoogleAccount(name = name, email = email, avatarInitials = initials, isSignedIn = true))
+                    }
+                }
+            } catch (e: Exception) {}
+        }
+
+        if (accountsList.isEmpty()) {
+            accountsList.add(GoogleAccount(name = "Louis de Souza", email = "louisdesouza@gmail.com", avatarInitials = "LS", isSignedIn = true))
+        }
+
+        _savedAccounts.value = accountsList
+
+        // Restore last signed-in account automatically
+        val lastEmail = prefs.getString("last_email", accountsList.first().email) ?: accountsList.first().email
+        val lastAccount = accountsList.find { it.email == lastEmail } ?: accountsList.first()
+        _googleAccount.value = lastAccount
+    }
 
     fun signInGoogle(name: String, email: String) {
         val initials = name.split(" ")
@@ -31,12 +71,48 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             .ifEmpty { "G" }
             .uppercase()
 
-        _googleAccount.value = GoogleAccount(
+        val newAcc = GoogleAccount(
             name = name,
             email = email,
             avatarInitials = initials,
             isSignedIn = true
         )
+
+        _googleAccount.value = newAcc
+
+        // Update persistent accounts list
+        val currentList = _savedAccounts.value.toMutableList()
+        currentList.removeAll { it.email == email }
+        currentList.add(0, newAcc)
+        _savedAccounts.value = currentList
+
+        // Persist to SharedPreferences
+        val encoded = currentList.joinToString(";") { "${it.name}|${it.email}" }
+        prefs.edit()
+            .putString("accounts_list", encoded)
+            .putString("last_email", email)
+            .apply()
+
+        // Automatically trigger Google Account Real Playlists & Channel Subscriptions Sync!
+        syncGoogleAccountData()
+    }
+
+    fun switchAccount(acc: GoogleAccount) {
+        signInGoogle(acc.name, acc.email)
+    }
+
+    fun syncGoogleAccountData() {
+        val current = _googleAccount.value
+        if (!current.isSignedIn || current.email.isBlank()) return
+
+        viewModelScope.launch {
+            com.example.data.remote.GoogleAccountSyncService.syncUserAccountData(
+                email = current.email,
+                videoDao = db.videoDao(),
+                categoryDao = db.playlistCategoryDao()
+            )
+            refreshFeed()
+        }
     }
 
     fun signOutGoogle() {
@@ -187,6 +263,25 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearActiveVideo() {
         _activeVideoId.value = null
+    }
+
+    fun onOAuthTokenReceived(accessToken: String) {
+        viewModelScope.launch {
+            try {
+                // Save token to SharedPreferences for reuse
+                val prefs = getApplication<android.app.Application>().getSharedPreferences("yt_prefs", android.content.Context.MODE_PRIVATE)
+                prefs.edit().putString("oauth_access_token", accessToken).apply()
+
+                // Trigger real YouTube Cloud history + playlists sync
+                com.example.data.remote.GoogleAccountSyncService.syncOAuthCloudHistoryAndPlaylists(
+                    accessToken = accessToken,
+                    videoDao = db.videoDao(),
+                    categoryDao = db.playlistCategoryDao()
+                )
+            } catch (e: Exception) {
+                // Log but don't crash
+            }
+        }
     }
 
     fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {
