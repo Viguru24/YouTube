@@ -1,0 +1,6 @@
+{
+  "name": "Personal YouTube Player",
+  "description": "A personal YouTube video client, playlist manager, timestamped note-taker, and watch history tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

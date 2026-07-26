@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Red rounded YouTube pill container -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M26,38 C26,32 30,30 54,30 C78,30 82,32 82,38 L82,70 C82,76 78,78 54,78 C30,78 26,76 26,70 Z" />
+    <!-- White center play triangle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M46,44 L66,54 L46,64 Z" />
+</vector>
