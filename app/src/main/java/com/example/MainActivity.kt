@@ -76,23 +76,53 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (activeVideo != null) {
-            // Full Screen Player View
-            PlayerScreen(
-                video = activeVideo!!,
-                notes = activeNotes,
-                playlistVideos = videos,
-                googleAccount = googleAccount,
-                onBackClick = { viewModel.clearActiveVideo() },
-                onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
-                onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
-                onAddNote = { timeSec, timeStr, noteText ->
-                    viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
-                },
-                onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
-                onSelectOtherVideo = { v -> viewModel.playVideo(v) },
-                onOpenGoogleAuth = { showGoogleAuthDialog = true },
-                areAdvertsEnabled = areAdvertsEnabled
-            )
+            val isShort = com.example.util.YouTubeUtils.isShortVideo(activeVideo!!)
+            if (isShort) {
+                // Full Screen Portrait Shorts Player View with swipe gestures
+                com.example.ui.components.ShortsPlayerView(
+                    videoId = activeVideo!!.youtubeId,
+                    videoTitle = activeVideo!!.title,
+                    channelName = activeVideo!!.channelName,
+                    isFavorite = activeVideo!!.isFavorite,
+                    isWatchLater = activeVideo!!.isWatchLater,
+                    onBackClick = { viewModel.clearActiveVideo() },
+                    onNextShort = {
+                        val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                        val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
+                        if (currentIndex >= 0 && currentIndex < shorts.size - 1) {
+                            viewModel.playVideo(shorts[currentIndex + 1])
+                        }
+                    },
+                    onPreviousShort = {
+                        val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                        val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
+                        if (currentIndex > 0) {
+                            viewModel.playVideo(shorts[currentIndex - 1])
+                        }
+                    },
+                    onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
+                    onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },
+                    onPositionUpdate = { _ -> }
+                )
+            } else {
+                // Standard Landscape/Portrait Video Player Screen
+                PlayerScreen(
+                    video = activeVideo!!,
+                    notes = activeNotes,
+                    playlistVideos = videos,
+                    googleAccount = googleAccount,
+                    onBackClick = { viewModel.clearActiveVideo() },
+                    onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
+                    onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
+                    onAddNote = { timeSec, timeStr, noteText ->
+                        viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
+                    },
+                    onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
+                    onSelectOtherVideo = { v -> viewModel.playVideo(v) },
+                    onOpenGoogleAuth = { showGoogleAuthDialog = true },
+                    areAdvertsEnabled = areAdvertsEnabled
+                )
+            }
         } else {
             // Main Bottom Bar Layout Screen
             Scaffold(

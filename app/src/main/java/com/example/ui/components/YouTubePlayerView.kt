@@ -245,106 +245,14 @@ fun YouTubePlayerView(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.55f))
         ) {
+            // Hoist Speed / Quality / CC state so bottom bar can access them
+            var showSpeedMenu by remember { mutableStateOf(false) }
+            var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
+            var showQualityMenu by remember { mutableStateOf(false) }
+            var selectedQuality by remember { mutableStateOf("Auto") }
+            var ccEnabled by remember { mutableStateOf(true) }
+
             Box(modifier = Modifier.fillMaxSize()) {
-                // Top Right: Subtle Speed & Quality Controls
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    var showSpeedMenu by remember { mutableStateOf(false) }
-                    var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-                    Box {
-                        Text(
-                            text = "${selectedSpeed}x",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                                .clickable { showSpeedMenu = true }
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                        DropdownMenu(
-                            expanded = showSpeedMenu,
-                            onDismissRequest = { showSpeedMenu = false }
-                        ) {
-                            listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
-                                DropdownMenuItem(
-                                    text = { Text("${s}x", fontSize = 12.sp) },
-                                    onClick = {
-                                        selectedSpeed = s
-                                        showSpeedMenu = false
-                                        exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    var showQualityMenu by remember { mutableStateOf(false) }
-                    var selectedQuality by remember { mutableStateOf("Auto") }
-                    Box {
-                        Text(
-                            text = selectedQuality,
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                                .clickable { showQualityMenu = true }
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                        DropdownMenu(
-                            expanded = showQualityMenu,
-                            onDismissRequest = { showQualityMenu = false }
-                        ) {
-                            listOf("1080p", "720p", "480p", "Auto").forEach { q ->
-                                DropdownMenuItem(
-                                    text = { Text(q, fontSize = 12.sp) },
-                                    onClick = {
-                                        selectedQuality = q
-                                        showQualityMenu = false
-                                        val (maxWidth, maxHeight) = when (q) {
-                                            "1080p" -> Pair(1920, 1080)
-                                            "720p"  -> Pair(1280, 720)
-                                            "480p"  -> Pair(854, 480)
-                                            else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
-                                        }
-                                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                            .buildUpon()
-                                            .setMaxVideoSize(maxWidth, maxHeight)
-                                            .build()
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    // CC Button inside video overlay
-                    var ccEnabled by remember { mutableStateOf(true) }
-                    Text(
-                        text = "CC",
-                        color = if (ccEnabled) Color.White else Color.White.copy(alpha = 0.4f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .background(
-                                if (ccEnabled) Color.White.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.4f),
-                                RoundedCornerShape(4.dp)
-                            )
-                            .clickable {
-                                ccEnabled = !ccEnabled
-                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                    .buildUpon()
-                                    .setIgnoredTextSelectionFlags(if (ccEnabled) 0 else androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
-                                    .build()
-                            }
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    )
-                }
 
                 // Center Controls: Quick Rewind -10s & Fast Forward +10s
                 Row(
@@ -384,6 +292,7 @@ fun YouTubePlayerView(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
+                    // Bottom row: timestamp | 1x | Quality | CC | 🔊
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -396,17 +305,105 @@ fun YouTubePlayerView(
                             fontWeight = FontWeight.Bold
                         )
 
-                        IconButton(
-                            onClick = {
-                                isMutedState = !isMutedState
-                                exoPlayer.volume = if (isMutedState) 0f else 1f
-                            }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                                contentDescription = "Mute",
-                                tint = Color.White
+                            // Speed button
+                            Box {
+                                Text(
+                                    text = "${selectedSpeed}x",
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                        .clickable { showSpeedMenu = true }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                                DropdownMenu(expanded = showSpeedMenu, onDismissRequest = { showSpeedMenu = false }) {
+                                    listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
+                                        DropdownMenuItem(
+                                            text = { Text("${s}x", fontSize = 12.sp) },
+                                            onClick = {
+                                                selectedSpeed = s
+                                                showSpeedMenu = false
+                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Quality button
+                            Box {
+                                Text(
+                                    text = selectedQuality,
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier
+                                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                        .clickable { showQualityMenu = true }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                                DropdownMenu(expanded = showQualityMenu, onDismissRequest = { showQualityMenu = false }) {
+                                    listOf("1080p", "720p", "480p", "Auto").forEach { q ->
+                                        DropdownMenuItem(
+                                            text = { Text(q, fontSize = 12.sp) },
+                                            onClick = {
+                                                selectedQuality = q
+                                                showQualityMenu = false
+                                                val (maxW, maxH) = when (q) {
+                                                    "1080p" -> Pair(1920, 1080)
+                                                    "720p"  -> Pair(1280, 720)
+                                                    "480p"  -> Pair(854, 480)
+                                                    else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
+                                                }
+                                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                                    .buildUpon().setMaxVideoSize(maxW, maxH).build()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // CC toggle button
+                            Text(
+                                text = "CC",
+                                color = if (ccEnabled) Color.White else Color.White.copy(alpha = 0.35f),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier
+                                    .background(
+                                        if (ccEnabled) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.4f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .clickable {
+                                        ccEnabled = !ccEnabled
+                                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                            .buildUpon()
+                                            .setIgnoredTextSelectionFlags(if (ccEnabled) 0 else androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
+                                            .build()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
                             )
+
+                            // Mute/Volume button
+                            IconButton(
+                                onClick = {
+                                    isMutedState = !isMutedState
+                                    exoPlayer.volume = if (isMutedState) 0f else 1f
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                    contentDescription = "Mute",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 

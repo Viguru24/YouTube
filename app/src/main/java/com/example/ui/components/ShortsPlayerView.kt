@@ -212,56 +212,42 @@ fun ShortsPlayerView(
                             useController = false
                             keepScreenOn = true
                             setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT // Fit full vertical frame without cropping
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            // FIX: post onResume() so surface is created BEFORE video renders.
+                            // Without this, ExoPlayer starts rendering before SurfaceView calls
+                            // surfaceCreated(), causing audio-only black screen until a tap
+                            // triggers recomposition. post{} schedules after the layout pass.
+                            post { onResume() }
                         }
                     },
                     update = { view ->
                         if (view.player != exoPlayer) {
                             view.player = exoPlayer
                         }
+                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         view.onResume()
                         if (isPlayingState) exoPlayer.playWhenReady = true
                     },
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            layoutParams = ViewGroup.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = true
-                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                            webChromeClient = WebChromeClient()
-                            webViewClient = WebViewClient()
-                            val html = """
-                                <!DOCTYPE html>
-                                <html>
-                                <head>
-                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                    <style>
-                                        body, html { margin:0; padding:0; width:100%; height:100%; background-color:#000; overflow:hidden; }
-                                        iframe { width:100%; height:100%; border:0; }
-                                    </style>
-                                </head>
-                                <body>
-                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&controls=0&rel=0&loop=1&playlist=$videoId" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-                                </body>
-                                </html>
-                            """.trimIndent()
-                            loadDataWithBaseURL("https://www.youtube.com", html, "text/html", "utf-8", null)
-                        }
-                    },
-                    update = { view -> view.onResume() },
-                    modifier = Modifier.fillMaxSize()
-                )
+            }
+        }
 
+        // If stream extraction failed, show a plain error — no WebView iframe fallback.
+        // WebView iframes trigger YouTube Error 150 (embedding disabled). The same
+        // native extractor used for regular videos must be used here too.
+        if (!isLoading && streamUrl == null) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(40.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Stream unavailable", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("Swipe to next Short", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+                }
             }
         }
 
@@ -379,58 +365,36 @@ fun ShortsPlayerView(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Interactive Timeline Scrubber displaying Elapsed & Remaining Time
-            val activePosMs = if (isScrubbing) scrubPositionMs.toLong() else currentPositionMs
-            val durMs = if (totalDurationMs > 0) totalDurationMs else 1L
-            val elapsedSec = (activePosMs / 1000).toInt()
-            val remainingSec = ((totalDurationMs - activePosMs).coerceAtLeast(0L) / 1000).toInt()
-
-            val elapsedStr = String.format("%d:%02d", elapsedSec / 60, elapsedSec % 60)
-            val remainingStr = String.format("-%d:%02d", remainingSec / 60, remainingSec % 60)
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = elapsedStr,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-
-                Slider(
-                    value = activePosMs.toFloat().coerceIn(0f, durMs.toFloat()),
-                    onValueChange = { newValue ->
-                        isScrubbing = true
-                        scrubPositionMs = newValue
-                    },
-                    onValueChangeFinished = {
-                        isScrubbing = false
-                        exoPlayer.seekTo(scrubPositionMs.toLong())
-                    },
-                    valueRange = 0f..durMs.toFloat(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = YouTubeRed,
-                        activeTrackColor = YouTubeRed,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.35f)
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(20.dp)
-                        .padding(horizontal = 4.dp)
-                )
-
-                Text(
-                    text = remainingStr,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.9f)
-                )
-            }
         }
+
+        // Thin, barely-visible scrubber — pinned to absolute bottom edge
+        val activePosMs = if (isScrubbing) scrubPositionMs.toLong() else currentPositionMs
+        val durMs = if (totalDurationMs > 0) totalDurationMs else 1L
+        Slider(
+            value = activePosMs.toFloat().coerceIn(0f, durMs.toFloat()),
+            onValueChange = { v ->
+                isScrubbing = true
+                scrubPositionMs = v
+            },
+            onValueChangeFinished = {
+                isScrubbing = false
+                exoPlayer.seekTo(scrubPositionMs.toLong())
+            },
+            valueRange = 0f..durMs.toFloat(),
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White.copy(alpha = 0.45f),
+                activeTrackColor = Color.White.copy(alpha = 0.6f),
+                inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+                disabledThumbColor = Color.Transparent,
+                disabledActiveTrackColor = Color.Transparent
+            ),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .height(16.dp)
+                .padding(horizontal = 0.dp)
+        )
 
         // 5. Right-Side Action Controls: Resolution Selector & Watch Later
         Column(
