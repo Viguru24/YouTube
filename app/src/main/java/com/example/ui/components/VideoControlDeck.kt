@@ -228,54 +228,26 @@ fun VideoControlDeck(
                     )
                 }
 
-                // Frame Step -1 Button
-                IconButton(
-                    onClick = {
-                        execVideo("v.currentTime = Math.max(0, v.currentTime - 0.033);")
-                        Toast.makeText(context, "-1 Frame", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.testTag("step_frame_back_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.FirstPage,
-                        contentDescription = "-1 Frame",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                // Frame Step +1 Button — removed (use seek bar instead)
 
-                // Play / Pause Compact Central Button
-                FilledIconButton(
+                // Play / Pause — small outlined button, no filled red
+                OutlinedIconButton(
                     onClick = {
                         isPlaying = !isPlaying
                         execVideo("if (v.paused) { v.play(); } else { v.pause(); }")
                     },
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = YouTubeRed),
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .testTag("toggle_play_pause_btn")
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
-                // Frame Step +1 Button
-                IconButton(
-                    onClick = {
-                        execVideo("v.currentTime = v.currentTime + 0.033;")
-                        Toast.makeText(context, "+1 Frame", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.testTag("step_frame_forward_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.LastPage,
-                        contentDescription = "+1 Frame",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
 
                 // +Skip Forward Button
                 OutlinedIconButton(

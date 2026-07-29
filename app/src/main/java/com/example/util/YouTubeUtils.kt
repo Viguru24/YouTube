@@ -156,7 +156,7 @@ object YouTubeUtils {
         if (publishedText.isBlank()) return Long.MAX_VALUE / 2 // Neutral middle value if date missing
         val lower = publishedText.lowercase().trim()
 
-        if (lower.contains("just now") || lower.contains("moments ago") || lower.contains("second")) {
+        if (lower.contains("just now") || lower.contains("moments ago")) {
             return 0L
         }
 

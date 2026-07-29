@@ -45,6 +45,8 @@ fun YouTubePlayerView(
     videoId: String,
     startSeconds: Int = 0,
     areAdvertsEnabled: Boolean = false,
+    showDebugConsole: Boolean = false,
+    onToggleDebugConsole: () -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -52,7 +54,6 @@ fun YouTubePlayerView(
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
     var statusLog by remember(videoId) { mutableStateOf("Initializing Native ExoPlayer Engine...") }
-    var showDebugConsole by remember { mutableStateOf(false) }
     val debugLogs = remember(videoId) { mutableStateListOf<String>() }
 
     var savedPositionMs by rememberSaveable(videoId) { mutableLongStateOf(-1L) }
@@ -103,13 +104,17 @@ fun YouTubePlayerView(
         }
     }
 
+    // Scrubber drag state (smooth scrubbing without ticker fighting)
+    var isDraggingScrubber by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+
     // Position ticker: saves current playback timestamp & automatically skips SponsorBlock segments
-    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments) {
+    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments, isDraggingScrubber) {
         if (hasPreparedMedia) {
             while (isActive) {
                 try {
                     val pos = exoPlayer.currentPosition
-                    if (pos > 0) {
+                    if (pos > 0 && !isDraggingScrubber) {
                         savedPositionMs = pos
                         currentPosMs = pos
                     }
@@ -118,28 +123,10 @@ fun YouTubePlayerView(
                         totalDurationMs = dur
                     }
                     isPlayingState = exoPlayer.isPlaying
-
-                    // SponsorBlock Automated Segment Auto-Skip
-                    if (sponsorSegments.isNotEmpty()) {
-                        for (seg in sponsorSegments) {
-                            if (pos in seg.startMs..(seg.endMs - 400)) {
-                                val segKey = "${seg.startMs}_${seg.endMs}"
-                                if (lastSkippedSegmentKey != segKey) {
-                                    lastSkippedSegmentKey = segKey
-                                    exoPlayer.seekTo(seg.endMs)
-                                    val durationSec = (seg.endMs - seg.startMs) / 1000
-                                    val skipMsg = "Auto-Skipped ${seg.category.replaceFirstChar { it.uppercase() }} Read (${durationSec}s) ⏭️"
-                                    addLog("SponsorBlock: $skipMsg")
-                                    Toast.makeText(context, skipMsg, Toast.LENGTH_SHORT).show()
-                                }
-                                break
-                            }
-                        }
-                    }
                 } catch (e: Exception) {
                     // Ignore
                 }
-                delay(300)
+                delay(100)
             }
         }
     }
@@ -182,11 +169,30 @@ fun YouTubePlayerView(
         }
     }
 
+    // Auto-hide controls overlay after 3 seconds of inactivity (paused while scrubbing)
+    LaunchedEffect(showControlsOverlay, isDraggingScrubber) {
+        if (showControlsOverlay && !isDraggingScrubber) {
+            delay(3000)
+            if (!isDraggingScrubber) {
+                showControlsOverlay = false
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable { showControlsOverlay = !showControlsOverlay },
+            .clickable {
+                if (streamUrl != null && !isLoading) {
+                    // Force-start playback on first touch (Android audio focus requires user gesture)
+                    if (!exoPlayer.isPlaying && !exoPlayer.isLoading) {
+                        exoPlayer.play()
+                        isPlayingState = true
+                    }
+                    showControlsOverlay = !showControlsOverlay
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         if (isLoading) {
@@ -240,10 +246,110 @@ fun YouTubePlayerView(
                 .background(Color.Black.copy(alpha = 0.55f))
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Center Controls: Rewind -10s, Play/Pause, Fast Forward +10s
+                // Top Right: Subtle Speed & Quality Controls
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var showSpeedMenu by remember { mutableStateOf(false) }
+                    var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
+                    Box {
+                        Text(
+                            text = "${selectedSpeed}x",
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                .clickable { showSpeedMenu = true }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
+                        DropdownMenu(
+                            expanded = showSpeedMenu,
+                            onDismissRequest = { showSpeedMenu = false }
+                        ) {
+                            listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
+                                DropdownMenuItem(
+                                    text = { Text("${s}x", fontSize = 12.sp) },
+                                    onClick = {
+                                        selectedSpeed = s
+                                        showSpeedMenu = false
+                                        exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    var showQualityMenu by remember { mutableStateOf(false) }
+                    var selectedQuality by remember { mutableStateOf("Auto") }
+                    Box {
+                        Text(
+                            text = selectedQuality,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                .clickable { showQualityMenu = true }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
+                        DropdownMenu(
+                            expanded = showQualityMenu,
+                            onDismissRequest = { showQualityMenu = false }
+                        ) {
+                            listOf("1080p", "720p", "480p", "Auto").forEach { q ->
+                                DropdownMenuItem(
+                                    text = { Text(q, fontSize = 12.sp) },
+                                    onClick = {
+                                        selectedQuality = q
+                                        showQualityMenu = false
+                                        val (maxWidth, maxHeight) = when (q) {
+                                            "1080p" -> Pair(1920, 1080)
+                                            "720p"  -> Pair(1280, 720)
+                                            "480p"  -> Pair(854, 480)
+                                            else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
+                                        }
+                                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                            .buildUpon()
+                                            .setMaxVideoSize(maxWidth, maxHeight)
+                                            .build()
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // CC Button inside video overlay
+                    var ccEnabled by remember { mutableStateOf(true) }
+                    Text(
+                        text = "CC",
+                        color = if (ccEnabled) Color.White else Color.White.copy(alpha = 0.4f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(
+                                if (ccEnabled) Color.White.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.4f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .clickable {
+                                ccEnabled = !ccEnabled
+                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                    .buildUpon()
+                                    .setIgnoredTextSelectionFlags(if (ccEnabled) 0 else androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
+                                    .build()
+                            }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    )
+                }
+
+                // Center Controls: Quick Rewind -10s & Fast Forward +10s
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(48.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -252,32 +358,10 @@ fun YouTubePlayerView(
                             exoPlayer.seekTo(target)
                         },
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            .size(44.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
                     ) {
-                        Icon(Icons.Filled.Replay10, contentDescription = "-10s", tint = Color.White, modifier = Modifier.size(28.dp))
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (exoPlayer.isPlaying) {
-                                exoPlayer.pause()
-                                isPlayingState = false
-                            } else {
-                                exoPlayer.play()
-                                isPlayingState = true
-                            }
-                        },
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(YouTubeRed, CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = "Play/Pause",
-                            tint = Color.White,
-                            modifier = Modifier.size(36.dp)
-                        )
+                        Icon(Icons.Filled.Replay10, contentDescription = "-10s", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
                     }
 
                     IconButton(
@@ -286,10 +370,10 @@ fun YouTubePlayerView(
                             exoPlayer.seekTo(target)
                         },
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            .size(44.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
                     ) {
-                        Icon(Icons.Filled.Forward10, contentDescription = "+10s", tint = Color.White, modifier = Modifier.size(28.dp))
+                        Icon(Icons.Filled.Forward10, contentDescription = "+10s", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
                     }
                 }
 
@@ -326,40 +410,37 @@ fun YouTubePlayerView(
                         }
                     }
 
+                    val activeSliderValue = if (isDraggingScrubber) {
+                        dragFraction
+                    } else if (totalDurationMs > 0) {
+                        (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+                    } else 0f
+
                     Slider(
-                        value = if (totalDurationMs > 0) (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f) else 0f,
+                        value = activeSliderValue,
                         onValueChange = { fraction ->
-                            val targetMs = (fraction * totalDurationMs).toLong()
+                            isDraggingScrubber = true
+                            dragFraction = fraction
+                            currentPosMs = (fraction * totalDurationMs).toLong()
+                        },
+                        onValueChangeFinished = {
+                            val targetMs = (dragFraction * totalDurationMs).toLong()
                             exoPlayer.seekTo(targetMs)
+                            isDraggingScrubber = false
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = YouTubeRed,
-                            activeTrackColor = YouTubeRed,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                            thumbColor = YouTubeRed.copy(alpha = 0.85f),
+                            activeTrackColor = YouTubeRed.copy(alpha = 0.7f),
+                            inactiveTrackColor = Color.White.copy(alpha = 0.2f)
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(16.dp)
                     )
                 }
             }
         }
 
-        // Floating Debug Console Icon Button
-        IconButton(
-            onClick = { showDebugConsole = !showDebugConsole },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .size(32.dp)
-                .background(Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(16.dp))
-                .testTag("debug_console_toggle_btn")
-        ) {
-            Icon(
-                imageVector = Icons.Filled.BugReport,
-                contentDescription = "Debug Logs",
-                tint = if (showDebugConsole) Color.Green else Color.White,
-                modifier = Modifier.size(18.dp)
-            )
-        }
 
         // Overlay Debug Logs Overlay Panel
         AnimatedVisibility(
@@ -392,7 +473,7 @@ fun YouTubePlayerView(
                         }) {
                             Icon(imageVector = Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color.White)
                         }
-                        IconButton(onClick = { showDebugConsole = false }) {
+                        IconButton(onClick = { onToggleDebugConsole() }) {
                             Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
                         }
                     }

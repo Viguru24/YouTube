@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.components.AddCategoryDialog
 import com.example.ui.components.AddVideoDialog
@@ -99,6 +101,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
+                            .height(52.dp)
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
@@ -108,14 +111,15 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 0) Icons.Filled.Home else Icons.Outlined.Home,
-                                    contentDescription = "Home"
+                                    contentDescription = "Home",
+                                    modifier = Modifier.size(18.dp)
                                 )
                             },
-                            label = { Text("Home", fontWeight = FontWeight.SemiBold) },
+                            label = { Text("Home", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed
+                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_home")
                         )
@@ -126,14 +130,15 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 1) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
-                                    contentDescription = "Library"
+                                    contentDescription = "Library",
+                                    modifier = Modifier.size(18.dp)
                                 )
                             },
-                            label = { Text("Library", fontWeight = FontWeight.SemiBold) },
+                            label = { Text("Library", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed
+                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_library")
                         )
@@ -144,14 +149,15 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 2) Icons.Filled.History else Icons.Outlined.History,
-                                    contentDescription = "History"
+                                    contentDescription = "History",
+                                    modifier = Modifier.size(18.dp)
                                 )
                             },
-                            label = { Text("History", fontWeight = FontWeight.SemiBold) },
+                            label = { Text("History", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed
+                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_history")
                         )

@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -29,12 +28,9 @@ import coil.compose.AsyncImage
 import com.example.data.model.GoogleAccount
 import com.example.data.model.VideoEntity
 import com.example.data.model.VideoNoteEntity
-import com.example.ui.components.AiTranscriptView
-import com.example.ui.components.VideoControlDeck
 import com.example.ui.components.YouTubePlayerView
 import com.example.ui.theme.GoldStar
-import com.example.ui.theme.YouTubeRed
-import com.example.util.YouTubeUtils
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,11 +50,7 @@ fun PlayerScreen(
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: AI Transcript, 1: Bookmarks & Notes, 2: Playlist Queue
-
-    var showAddNoteDialog by remember { mutableStateOf(false) }
-    var noteInputText by remember { mutableStateOf("") }
-    var timeInputText by remember { mutableStateOf("01:00") }
+    var showDebugConsole by remember { mutableStateOf(false) }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -87,6 +79,7 @@ fun PlayerScreen(
                         }
                     },
                     actions = {
+                        // Favorite toggle
                         IconButton(onClick = { onFavoriteToggle(video) }) {
                             Icon(
                                 imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -94,30 +87,47 @@ fun PlayerScreen(
                                 tint = if (video.isFavorite) GoldStar else LocalContentColor.current
                             )
                         }
+                        // Watch Later toggle
                         IconButton(onClick = { onWatchLaterToggle(video) }) {
                             Icon(
                                 imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
                                 contentDescription = "Watch Later"
                             )
                         }
-
-                        // Google Account Avatar Button
+                        // Debug console toggle — small, dim, tucked in top bar
+                        IconButton(
+                            onClick = { showDebugConsole = !showDebugConsole },
+                            modifier = Modifier.testTag("debug_console_toggle_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.BugReport,
+                                contentDescription = "Debug Logs",
+                                tint = if (showDebugConsole)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Google Account Avatar
                         IconButton(
                             onClick = onOpenGoogleAuth,
                             modifier = Modifier.testTag("player_google_auth_btn")
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(30.dp)
+                                    .size(28.dp)
                                     .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray),
+                                    .background(
+                                        if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray
+                                    ),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = googleAccount.avatarInitials,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
+                                    fontSize = 11.sp
                                 )
                             }
                         }
@@ -135,14 +145,14 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
         ) {
-            // YouTube IFrame Player View (Single location in Compose tree for both portrait & landscape)
+            // Native ExoPlayer view — touch to show controls (scrub bar, speed, quality, mute, ±10s)
             YouTubePlayerView(
                 videoId = video.youtubeId,
                 startSeconds = video.lastPositionSeconds,
                 areAdvertsEnabled = areAdvertsEnabled,
-                onPlayerReady = { wv ->
-                    webViewInstance = wv
-                },
+                showDebugConsole = showDebugConsole,
+                onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
+                onPlayerReady = { wv -> webViewInstance = wv },
                 modifier = if (isFullscreen) {
                     Modifier
                         .fillMaxSize()
@@ -151,7 +161,8 @@ fun PlayerScreen(
                                 if (dragAmount > 40f) {
                                     isMaximized = false
                                     val activity = context as? android.app.Activity
-                                    activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                    activity?.requestedOrientation =
+                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                                     onBackClick()
                                 }
                             }
@@ -165,7 +176,8 @@ fun PlayerScreen(
                                 if (dragAmount < -40f) {
                                     isMaximized = true
                                     val activity = context as? android.app.Activity
-                                    activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                    activity?.requestedOrientation =
+                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                                 } else if (dragAmount > 40f) {
                                     onBackClick()
                                 }
@@ -174,365 +186,57 @@ fun PlayerScreen(
                 }
             )
 
+            // Below-video content (portrait only)
             if (!isFullscreen) {
-                // Video Easy-Control Deck (10 Smart Features)
-                VideoControlDeck(
-                    webView = webViewInstance,
-                    videoTitle = video.title,
-                    videoId = video.youtubeId
-                )
-
-            // Video Header Title & Channel
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                val otherVideos = playlistVideos.filter { it.youtubeId != video.youtubeId }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = video.channelName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        AssistChip(
-                            onClick = { },
-                            label = { Text(video.category, style = MaterialTheme.typography.labelSmall) },
-                            modifier = Modifier.height(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        AssistChip(
-                            onClick = { },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Filled.Shield,
-                                    contentDescription = "Ad-Free",
-                                    tint = Color(0xFF1E88E5),
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            },
-                            label = { Text("Ad-Free", style = MaterialTheme.typography.labelSmall, color = Color(0xFF1E88E5), fontWeight = FontWeight.Bold) },
-                            modifier = Modifier.height(28.dp)
-                        )
-                    }
-
-                    Button(
-                        onClick = { showAddNoteDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier
-                            .height(32.dp)
-                            .testTag("add_note_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.BookmarkAdd,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Note", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-
-            // Tab Row for AI Transcript, Bookmarks, and Queue
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.background,
-                contentColor = YouTubeRed
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("AI Transcript") },
-                    icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
-                    modifier = Modifier.testTag("tab_ai_transcript")
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Bookmarks (${notes.size})") },
-                    icon = { Icon(Icons.Filled.StickyNote2, contentDescription = null) },
-                    modifier = Modifier.testTag("tab_bookmarks")
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text("Queue") },
-                    icon = { Icon(Icons.Filled.PlaylistPlay, contentDescription = null) },
-                    modifier = Modifier.testTag("tab_queue")
-                )
-            }
-
-            // Tab Content
-            when (selectedTab) {
-                0 -> {
-                    // AI Transcript View
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 24.dp)
-                    ) {
-                        item {
-                            AiTranscriptView(
-                                video = video,
-                                onSeekToTimestamp = { seconds ->
-                                    val exo = webViewInstance as? androidx.media3.exoplayer.ExoPlayer
-                                    if (exo != null) {
-                                        exo.seekTo((seconds * 1000).toLong())
-                                    } else {
-                                        (webViewInstance as? android.webkit.WebView)?.loadUrl("javascript:seekToSeconds($seconds)")
-                                    }
-                                },
-                                onSaveKeyPointAsNote = { sec, timeStr, text ->
-                                    onAddNote(sec, timeStr, text)
-                                }
+                    // Title + Channel
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Text(
+                                text = video.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = video.channelName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                        )
                     }
-                }
 
-                1 -> {
-                    // Bookmarks & Timestamp Notes Tab
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "Custom Bookmarks",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Tap timestamp to jump video",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-
-                        if (notes.isEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(24.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "No notes saved for this video yet. Tap 'Add Note' or save key points from the AI Transcript tab!",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        } else {
-                            items(notes, key = { it.id }) { note ->
-                                NoteItemRow(
-                                    note = note,
-                                    onJumpToTime = { seconds ->
-                                        val exo = webViewInstance as? androidx.media3.exoplayer.ExoPlayer
-                                        if (exo != null) {
-                                            exo.seekTo((seconds * 1000).toLong())
-                                        } else {
-                                            (webViewInstance as? android.webkit.WebView)?.loadUrl("javascript:seekToSeconds($seconds)")
-                                        }
-                                    },
-                                    onDeleteNote = onDeleteNote
-                                )
-                            }
-                        }
-                    }
-                }
-
-                2 -> {
-                    // Playlist Queue Tab
-                    val otherVideos = playlistVideos.filter { it.youtubeId != video.youtubeId }
-                    LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
+                    // Up Next
+                    if (otherVideos.isNotEmpty()) {
                         item {
                             Text(
-                                text = "Next in Playlist",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                text = "Up Next",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
                             )
                         }
-
-                        if (otherVideos.isEmpty()) {
-                            item {
-                                Text(
-                                    text = "No other videos in queue.",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        } else {
-                            items(otherVideos, key = { "rel_${it.youtubeId}" }) { other ->
-                                PlaylistQueueItem(
-                                    video = other,
-                                    onClick = { onSelectOtherVideo(other) }
-                                )
-                            }
+                        items(otherVideos, key = { "q_${it.youtubeId}" }) { other ->
+                            PlaylistQueueItem(
+                                video = other,
+                                onClick = { onSelectOtherVideo(other) }
+                            )
                         }
                     }
                 }
-            }
-        }
-    }
-    }
-
-    // Add Timestamped Note Dialog
-    if (showAddNoteDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddNoteDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Filled.BookmarkAdd, contentDescription = null, tint = YouTubeRed)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Timestamp Note")
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = timeInputText,
-                        onValueChange = { timeInputText = it },
-                        label = { Text("Timestamp (MM:SS or HH:MM:SS)") },
-                        placeholder = { Text("02:15") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Filled.Timer, contentDescription = null)
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("note_timestamp_input")
-                    )
-
-                    OutlinedTextField(
-                        value = noteInputText,
-                        onValueChange = { noteInputText = it },
-                        label = { Text("Note / Bookmark Comment") },
-                        placeholder = { Text("e.g. Important code demo here...") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth().testTag("note_text_input")
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (noteInputText.isNotBlank()) {
-                            val seconds = YouTubeUtils.parseFormattedTimeToSeconds(timeInputText)
-                            onAddNote(seconds, timeInputText, noteInputText)
-                            noteInputText = ""
-                            showAddNoteDialog = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                    modifier = Modifier.testTag("confirm_save_note_btn")
-                ) {
-                    Text("Save Bookmark Note")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddNoteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun NoteItemRow(
-    note: VideoNoteEntity,
-    onJumpToTime: (Int) -> Unit,
-    onDeleteNote: (Long) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Timestamp Chip (Click to jump!)
-            Surface(
-                onClick = { onJumpToTime(note.timestampSeconds) },
-                shape = RoundedCornerShape(8.dp),
-                color = YouTubeRed,
-                modifier = Modifier.testTag("jump_time_btn_${note.id}")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = "Jump",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = note.timestampFormatted,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = note.noteText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-
-            IconButton(onClick = { onDeleteNote(note.id) }) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Delete Note",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -566,20 +270,22 @@ private fun PlaylistQueueItem(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.Black.copy(alpha = 0.8f))
-                        .padding(horizontal = 3.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = video.durationText,
-                        color = Color.White,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                if (video.durationText.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = video.durationText,
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 

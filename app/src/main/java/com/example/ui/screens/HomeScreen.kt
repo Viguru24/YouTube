@@ -70,6 +70,9 @@ fun HomeScreen(
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
+    // Sort state hoisted here so top bar can access it
+    var selectedSort by remember { mutableStateOf("Default") }
+    val sortCycle = listOf("Default", "Newest", "Oldest")
 
     LaunchedEffect(isSearchExpanded) {
         if (isSearchExpanded) {
@@ -148,6 +151,43 @@ fun HomeScreen(
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
                         }
 
+                        // Sort Order Dropdown Menu (Default, Newest / Date, Oldest)
+                        var showSortMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Sort,
+                                    contentDescription = "Sort",
+                                    tint = if (selectedSort != "Default") YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                sortCycle.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = when (option) {
+                                                    "Newest" -> "Newest First 🕒"
+                                                    "Oldest" -> "Oldest First ⌛"
+                                                    else -> "Default (Recommended) ⭐"
+                                                },
+                                                fontWeight = if (selectedSort == option) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (selectedSort == option) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.sp
+                                            )
+                                        },
+                                        onClick = {
+                                            selectedSort = option
+                                            showSortMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
                         // Add Video Quick Button
                         IconButton(onClick = onOpenAddVideoDialog) {
                             Icon(imageVector = Icons.Filled.AddCircle, contentDescription = "Add Video", tint = YouTubeRed)
@@ -177,16 +217,6 @@ fun HomeScreen(
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = onOpenAddVideoDialog,
-                containerColor = YouTubeRed,
-                contentColor = Color.White,
-                modifier = Modifier.testTag("add_video_fab")
-            ) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Video")
-            }
         }
     ) { paddingValues ->
         Column(
@@ -256,9 +286,7 @@ fun HomeScreen(
                 }
             }
 
-            // Sort Order State: "Default", "Newest / Date", "Oldest"
-            var selectedSort by remember { mutableStateOf("Default") }
-            val sortOptions = listOf("Default", "Newest", "Oldest")
+            // Sort order is now controlled from the top app bar (see selectedSort above Scaffold)
 
             // Category Filter Chips & Sort Order Chips Row
             val defaultCategories = listOf("All", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
@@ -286,34 +314,6 @@ fun HomeScreen(
                     )
                 }
 
-                // Separator
-                item {
-                    Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), fontWeight = FontWeight.Bold)
-                }
-
-                // Sort Chips
-                items(sortOptions) { sort ->
-                    val isSelected = sort == selectedSort
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { selectedSort = sort },
-                        leadingIcon = {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Filled.Sort,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        },
-                        label = { Text(if (sort == "Default") "Sort" else "Date: $sort", fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    )
-                }
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Category Infinite Scroll
