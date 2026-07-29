@@ -18,10 +18,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.YouTubeRed
 
+import com.example.data.repository.AlgorithmSettings
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
     areAdvertsEnabled: Boolean,
     onAdvertsToggle: (Boolean) -> Unit,
+    algorithmSettings: AlgorithmSettings = AlgorithmSettings(),
+    onAlgorithmSettingsChanged: (AlgorithmSettings) -> Unit = {},
+    mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
+    onUnmuteChannel: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -35,12 +42,12 @@ fun SettingsDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text("App Settings", fontWeight = FontWeight.Bold)
+                Text("App Settings & Algorithm", fontWeight = FontWeight.Bold)
             }
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Adverts Toggle Card
@@ -54,7 +61,7 @@ fun SettingsDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -66,21 +73,17 @@ fun SettingsDialog(
                                 imageVector = if (areAdvertsEnabled) Icons.Outlined.TvOff else Icons.Filled.Shield,
                                 contentDescription = null,
                                 tint = if (areAdvertsEnabled) Color(0xFFFF9800) else Color(0xFF1E88E5),
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(22.dp)
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    text = if (areAdvertsEnabled) "Adverts Enabled (Allow Ads)" else "AdBlock Active (Suppress Ads)",
+                                    text = if (areAdvertsEnabled) "Adverts Allowed" else "AdBlock Active",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (areAdvertsEnabled) 
-                                        "Standard YouTube ads are allowed to play." 
-                                    else 
-                                        "Ads are automatically suppressed during playback.",
+                                    text = if (areAdvertsEnabled) "Standard YouTube ads play." else "Ads suppressed during video playback.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -99,6 +102,120 @@ fun SettingsDialog(
                     }
                 }
 
+                // Algorithm Controls Card
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        Text(
+                            text = "🤖 Algorithm Controls",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = YouTubeRed
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Creator Loyalty Weight Slider
+                        Text(
+                            text = "Creator Loyalty Boost: ${(algorithmSettings.creatorWeight * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = algorithmSettings.creatorWeight,
+                            onValueChange = { onAlgorithmSettingsChanged(algorithmSettings.copy(creatorWeight = it)) },
+                            colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Shorts Feed Display Toggle
+                        Text(
+                            text = "Shorts Feed Display:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = algorithmSettings.shortsMode == "Carousel",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(shortsMode = "Carousel")) },
+                                label = { Text("Show Reel") }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.shortsMode == "Hidden",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(shortsMode = "Hidden")) },
+                                label = { Text("Hide Shorts") }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Minimum Video Duration Filter
+                        Text(
+                            text = "Minimum Preferred Duration:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = algorithmSettings.minDurationMinutes == 0,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(minDurationMinutes = 0)) },
+                                label = { Text("Any Length") }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.minDurationMinutes == 3,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(minDurationMinutes = 3)) },
+                                label = { Text("3+ mins") }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.minDurationMinutes == 10,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(minDurationMinutes = 10)) },
+                                label = { Text("10+ mins") }
+                            )
+                        }
+                    }
+                }
+
+                // Muted Channels Card
+                if (mutedChannels.isNotEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "🚫 Muted Channels (${mutedChannels.size})",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = YouTubeRed
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                mutedChannels.take(5).forEach { item ->
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = { onUnmuteChannel(item.channelName) },
+                                        label = { Text("${item.channelName} ✕", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // App Version Info
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -106,14 +223,14 @@ fun SettingsDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Info,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
@@ -123,7 +240,7 @@ fun SettingsDialog(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "Jetpack Compose • Room DB • Material 3",
+                                text = "Custom Recommendation Engine Active",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -138,7 +255,7 @@ fun SettingsDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
                 modifier = Modifier.testTag("settings_close_btn")
             ) {
-                Text("Close Settings")
+                Text("Save & Close")
             }
         }
     )

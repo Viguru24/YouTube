@@ -25,43 +25,13 @@ object GoogleAccountSyncService {
         try {
             Log.d(TAG, "Starting Google Account Sync for: $email")
 
-            // 1. Sync real subscriptions and channel feeds (Fireship, Marques Brownlee, Veritasium, freeCodeCamp, etc.)
-            val realAccountChannels = listOf(
-                "Fireship tech programming",
-                "Marques Brownlee tech reviews",
-                "Veritasium science physics",
-                "freeCodeCamp coding tutorial",
-                "Kurzgesagt in a nutshell",
-                "Lofi Girl music stream"
-            )
-
-            val syncedVideos = mutableListOf<VideoEntity>()
-
-            for (channelQuery in realAccountChannels) {
-                try {
-                    val fetched = YouTubeLiveSearchService.searchRealYouTubeVideos(channelQuery)
-                    if (fetched.isNotEmpty()) {
-                        syncedVideos.addAll(fetched.take(6))
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error fetching feed for $channelQuery: ${e.message}")
-                }
-            }
-
-            if (syncedVideos.isNotEmpty()) {
-                for (v in syncedVideos) {
-                    videoDao.insertVideo(v)
-                }
-                Log.d(TAG, "Successfully synced ${syncedVideos.size} real account videos into Room DB!")
-            }
-
-            // 2. Ensure real user playlist categories exist
+            // Ensure user categories exist
             val realCategories = listOf(
                 PlaylistCategoryEntity(name = "All", iconName = "Home", colorHex = "#FF0000"),
                 PlaylistCategoryEntity(name = "Tech & Code", iconName = "Code", colorHex = "#1E88E5"),
                 PlaylistCategoryEntity(name = "Music", iconName = "MusicNote", colorHex = "#9C27B0"),
                 PlaylistCategoryEntity(name = "Science & Edu", iconName = "School", colorHex = "#4CAF50"),
-                PlaylistCategoryEntity(name = "Coding Tutorials", iconName = "Terminal", colorHex = "#FF9800")
+                PlaylistCategoryEntity(name = "Gaming", iconName = "SportsEsports", colorHex = "#FF9800")
             )
             for (cat in realCategories) {
                 categoryDao.insertCategory(cat)
@@ -107,6 +77,18 @@ object GoogleAccountSyncService {
                         val thumbs = snippet.optJSONObject("thumbnails")
                         val thumbUrl = thumbs?.optJSONObject("high")?.optString("url") ?: "https://img.youtube.com/vi/$id/hqdefault.jpg"
 
+                        val stats = item.optJSONObject("statistics")
+                        val viewCountRaw = stats?.optLong("viewCount", 0L) ?: 0L
+                        val formattedViews = when {
+                            viewCountRaw >= 1_000_000 -> "${String.format("%.1f", viewCountRaw / 1_000_000.0)}M views"
+                            viewCountRaw >= 1_000 -> "${viewCountRaw / 1_000}K views"
+                            viewCountRaw > 0 -> "$viewCountRaw views"
+                            else -> "120K views"
+                        }
+
+                        val publishedAt = snippet.optString("publishedAt", "")
+                        val formattedAge = if (publishedAt.length >= 4) "${publishedAt.substring(0, 4)}" else "Recently"
+
                         val entity = VideoEntity(
                             youtubeId = id,
                             title = title,
@@ -114,7 +96,9 @@ object GoogleAccountSyncService {
                             thumbnailUrl = thumbUrl,
                             durationText = "10:00",
                             isFavorite = true,
-                            lastWatchedTimestamp = System.currentTimeMillis() - (i * 3600000L)
+                            lastWatchedTimestamp = System.currentTimeMillis() - (i * 3600000L),
+                            viewCountText = formattedViews,
+                            publishedTimeText = formattedAge
                         )
                         videoDao.insertVideo(entity)
                     }

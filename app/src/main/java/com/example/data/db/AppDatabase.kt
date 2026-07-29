@@ -16,14 +16,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [VideoEntity::class, VideoNoteEntity::class, PlaylistCategoryEntity::class],
-    version = 1,
+    entities = [VideoEntity::class, VideoNoteEntity::class, PlaylistCategoryEntity::class, com.example.data.model.MutedChannelEntity::class],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun videoDao(): VideoDao
     abstract fun videoNoteDao(): VideoNoteDao
     abstract fun playlistCategoryDao(): PlaylistCategoryDao
+    abstract fun mutedChannelDao(): com.example.data.db.MutedChannelDao
 
     companion object {
         @Volatile
@@ -36,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "youtube_player_db"
                 )
+                .fallbackToDestructiveMigration()
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -55,8 +57,6 @@ abstract class AppDatabase : RoomDatabase() {
 
         private suspend fun populateInitialData(db: AppDatabase) {
             val categoryDao = db.playlistCategoryDao()
-            val videoDao = db.videoDao()
-            val noteDao = db.videoNoteDao()
 
             // Default Categories
             val defaultCategories = listOf(
@@ -67,95 +67,6 @@ abstract class AppDatabase : RoomDatabase() {
                 PlaylistCategoryEntity(name = "Favorites", iconName = "Star", colorHex = "#FFC107")
             )
             defaultCategories.forEach { categoryDao.insertCategory(it) }
-
-            // Default Curated Videos
-            val defaultVideos = listOf(
-                VideoEntity(
-                    youtubeId = "jfKfPfyJRdk",
-                    title = "Lofi Hip Hop Radio - Beats to Relax / Study to",
-                    channelName = "Lofi Girl",
-                    thumbnailUrl = "https://img.youtube.com/vi/jfKfPfyJRdk/hqdefault.jpg",
-                    durationText = "LIVE",
-                    category = "Focus & Ambient",
-                    isFavorite = true,
-                    isWatchLater = true,
-                    notesCount = 1
-                ),
-                VideoEntity(
-                    youtubeId = "jfKfPfyJRdk",
-                    title = "Lofi Hip Hop Radio - Beats to Relax / Study to",
-                    channelName = "Lofi Girl",
-                    thumbnailUrl = "https://img.youtube.com/vi/jfKfPfyJRdk/hqdefault.jpg",
-                    durationText = "LIVE",
-                    category = "Focus & Ambient",
-                    isFavorite = true,
-                    isWatchLater = true,
-                    notesCount = 1
-                ),
-                VideoEntity(
-                    youtubeId = "dQw4w9WgXcQ",
-                    title = "Rick Astley - Never Gonna Give You Up (Official Music Video)",
-                    channelName = "Rick Astley",
-                    thumbnailUrl = "https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg",
-                    durationText = "3:33",
-                    category = "Music",
-                    isFavorite = false,
-                    isWatchLater = true,
-                    notesCount = 1
-                ),
-                VideoEntity(
-                    youtubeId = "g18I7m1A7Bw",
-                    title = "Kotlin Coroutines & Flow Deep Dive Tutorial",
-                    channelName = "Philipp Lackner",
-                    thumbnailUrl = "https://img.youtube.com/vi/g18I7m1A7Bw/hqdefault.jpg",
-                    durationText = "28:15",
-                    category = "Tutorials",
-                    isFavorite = true,
-                    isWatchLater = false,
-                    notesCount = 1
-                ),
-                VideoEntity(
-                    youtubeId = "lF3V84I3fGk",
-                    title = "10 Hour Relaxing Rain & Thunderstorm Sounds for Focus & Sleep",
-                    channelName = "Calm Soundscapes",
-                    thumbnailUrl = "https://img.youtube.com/vi/lF3V84I3fGk/hqdefault.jpg",
-                    durationText = "10:00:00",
-                    category = "Focus & Ambient",
-                    isFavorite = false,
-                    isWatchLater = false,
-                    notesCount = 0
-                )
-            )
-            defaultVideos.forEach { videoDao.insertVideo(it) }
-
-            // Default Sample Timestamped Notes
-            val defaultNotes = listOf(
-                VideoNoteEntity(
-                    youtubeId = "M576WGiDBdQ",
-                    timestampSeconds = 120,
-                    timestampFormatted = "02:00",
-                    noteText = "Introduction to Composable functions & state overview"
-                ),
-                VideoNoteEntity(
-                    youtubeId = "M576WGiDBdQ",
-                    timestampSeconds = 480,
-                    timestampFormatted = "08:00",
-                    noteText = "Scaffold and Material3 design tokens implementation"
-                ),
-                VideoNoteEntity(
-                    youtubeId = "g18I7m1A7Bw",
-                    timestampSeconds = 300,
-                    timestampFormatted = "05:00",
-                    noteText = "StateFlow vs SharedFlow comparison matrix"
-                ),
-                VideoNoteEntity(
-                    youtubeId = "dQw4w9WgXcQ",
-                    timestampSeconds = 18,
-                    timestampFormatted = "00:18",
-                    noteText = "Iconic chorus intro drop!"
-                )
-            )
-            defaultNotes.forEach { noteDao.insertNote(it) }
         }
     }
 }

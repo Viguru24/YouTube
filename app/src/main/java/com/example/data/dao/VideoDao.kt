@@ -48,6 +48,12 @@ interface VideoDao {
     @Delete
     suspend fun deleteVideo(video: VideoEntity)
 
+    @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND lastPositionSeconds = 0")
+    suspend fun deleteStaleUnsavedVideos(cutoffTimestamp: Long)
+
+    @Query("DELETE FROM videos WHERE isFavorite = 0 AND isWatchLater = 0 AND lastPositionSeconds = 0")
+    suspend fun clearUnsavedVideos()
+
     @Query("DELETE FROM videos WHERE lastWatchedTimestamp > 0")
     suspend fun clearWatchHistory()
 }

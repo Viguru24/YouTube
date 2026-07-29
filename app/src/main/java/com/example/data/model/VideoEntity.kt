@@ -16,5 +16,7 @@ data class VideoEntity(
     val lastPositionSeconds: Int = 0,
     val isFavorite: Boolean = false,
     val isWatchLater: Boolean = false,
-    val notesCount: Int = 0
+    val notesCount: Int = 0,
+    val viewCountText: String = "",
+    val publishedTimeText: String = ""
 )

@@ -1,5 +1,6 @@
 package com.example.util
 
+import com.example.data.model.VideoEntity
 import java.util.regex.Pattern
 
 object YouTubeUtils {
@@ -21,6 +22,16 @@ object YouTubeUtils {
         return if (matcher.find()) {
             matcher.group(1)
         } else null
+    }
+
+    /**
+     * Determines whether a video is a YouTube Short.
+     */
+    fun isShortVideo(video: VideoEntity): Boolean {
+        if (video.category.equals("Shorts", ignoreCase = true)) return true
+        if (video.title.lowercase().contains("#shorts")) return true
+        if (video.title.lowercase().contains("shorts")) return true
+        return false
     }
 
     /**
@@ -62,10 +73,108 @@ object YouTubeUtils {
             0
         }
     }
+    fun formatViewCount(views: Long): String {
+        return when {
+            views >= 1_000_000 -> String.format("%.1fM views", views / 1_000_000.0)
+            views >= 1_000 -> String.format("%dK views", views / 1_000)
+            views > 0 -> "$views views"
+            else -> ""
+        }
+    }
+
+    /**
+     * Converts epoch milliseconds to a human-readable relative time string.
+     * e.g. "2 hours ago", "3 days ago", "5 months ago", "1 year ago"
+     */
+    fun formatRelativeTime(epochMs: Long): String {
+        if (epochMs <= 0) return ""
+        val now = System.currentTimeMillis()
+        val diffMs = now - epochMs
+        if (diffMs < 0) return ""
+
+        val seconds = diffMs / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        val days = hours / 24
+        val months = days / 30
+        val years = days / 365
+
+        return when {
+            years >= 1 -> if (years == 1L) "1 year ago" else "$years years ago"
+            months >= 1 -> if (months == 1L) "1 month ago" else "$months months ago"
+            days >= 7 -> "${days / 7} week${if (days / 7 > 1) "s" else ""} ago"
+            days >= 1 -> if (days == 1L) "1 day ago" else "$days days ago"
+            hours >= 1 -> if (hours == 1L) "1 hour ago" else "$hours hours ago"
+            minutes >= 1 -> if (minutes == 1L) "1 minute ago" else "$minutes minutes ago"
+            else -> "Just now"
+        }
+    }
+
     /**
      * Fallback video search helper (returns empty list so real live InnerTube search results take full priority).
      */
     fun searchYouTubeVideos(query: String): List<com.example.data.model.VideoEntity> {
         return emptyList()
+    }
+
+    /**
+     * Converts a relative time string like "3 months ago" into a compact badge label.
+     * e.g. "3 months ago" → "3M", "2 days ago" → "2D", "1 year ago" → "1Y",
+     * "5 hours ago" → "5H", "30 seconds ago" → "30S", "1 week ago" → "1W"
+     */
+    fun formatCompactTime(relativeTime: String): String {
+        if (relativeTime.isBlank()) return ""
+        val lower = relativeTime.lowercase().trim()
+
+        val match = Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""").find(lower)
+        if (match != null) {
+            val num = match.groupValues[1]
+            val unit = match.groupValues[2]
+            val suffix = when (unit) {
+                "second" -> "S"
+                "minute" -> "MIN"
+                "hour" -> "H"
+                "day" -> "D"
+                "week" -> "W"
+                "month" -> "M"
+                "year" -> "Y"
+                else -> ""
+            }
+            return "$num$suffix"
+        }
+
+        if (lower.contains("just now") || lower.contains("moments ago")) return "NOW"
+
+        return ""
+    }
+
+    /**
+     * Parses a relative publication string (e.g., "2 hours ago", "5 days ago", "1 year ago")
+     * into estimated elapsed seconds, enabling precise time-based sorting (Newest vs Oldest).
+     */
+    fun parsePublishedTimeToSeconds(publishedText: String): Long {
+        if (publishedText.isBlank()) return Long.MAX_VALUE / 2 // Neutral middle value if date missing
+        val lower = publishedText.lowercase().trim()
+
+        if (lower.contains("just now") || lower.contains("moments ago") || lower.contains("second")) {
+            return 0L
+        }
+
+        val match = Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""").find(lower)
+        if (match != null) {
+            val num = match.groupValues[1].toLongOrNull() ?: 1L
+            val unit = match.groupValues[2]
+            return when (unit) {
+                "second" -> num
+                "minute" -> num * 60
+                "hour" -> num * 3600
+                "day" -> num * 86400
+                "week" -> num * 604800
+                "month" -> num * 2592000
+                "year" -> num * 31536000
+                else -> Long.MAX_VALUE / 2
+            }
+        }
+        return Long.MAX_VALUE / 2
     }
 }

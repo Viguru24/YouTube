@@ -11,13 +11,32 @@ import kotlinx.coroutines.flow.Flow
 class YouTubeRepository(
     private val videoDao: VideoDao,
     private val videoNoteDao: VideoNoteDao,
-    private val categoryDao: PlaylistCategoryDao
+    private val categoryDao: PlaylistCategoryDao,
+    private val mutedChannelDao: com.example.data.db.MutedChannelDao
 ) {
     val allVideos: Flow<List<VideoEntity>> = videoDao.getAllVideos()
     val favoriteVideos: Flow<List<VideoEntity>> = videoDao.getFavoriteVideos()
     val watchLaterVideos: Flow<List<VideoEntity>> = videoDao.getWatchLaterVideos()
     val watchHistory: Flow<List<VideoEntity>> = videoDao.getWatchHistory()
     val categories: Flow<List<PlaylistCategoryEntity>> = categoryDao.getAllCategories()
+    val mutedChannels: Flow<List<com.example.data.model.MutedChannelEntity>> = mutedChannelDao.getAllMutedChannels()
+
+    suspend fun muteChannel(channelName: String) {
+        mutedChannelDao.muteChannel(com.example.data.model.MutedChannelEntity(channelName))
+    }
+
+    suspend fun unmuteChannel(channelName: String) {
+        mutedChannelDao.deleteByName(channelName)
+    }
+
+    suspend fun cleanupStaleRecommendations() {
+        val sevenDaysAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
+        videoDao.deleteStaleUnsavedVideos(sevenDaysAgo)
+    }
+
+    suspend fun clearUnsavedRecommendations() {
+        videoDao.clearUnsavedVideos()
+    }
 
     fun getVideosByCategory(category: String): Flow<List<VideoEntity>> {
         return videoDao.getVideosByCategory(category)
@@ -32,7 +51,22 @@ class YouTubeRepository(
     }
 
     suspend fun saveVideo(video: VideoEntity) {
-        videoDao.insertVideo(video)
+        val existing = videoDao.getVideoById(video.youtubeId)
+        if (existing != null) {
+            val updated = video.copy(
+                lastPositionSeconds = if (video.lastPositionSeconds > 0) video.lastPositionSeconds else existing.lastPositionSeconds,
+                lastWatchedTimestamp = System.currentTimeMillis()
+            )
+            videoDao.insertVideo(updated)
+        } else {
+            videoDao.insertVideo(video.copy(lastWatchedTimestamp = System.currentTimeMillis()))
+        }
+    }
+
+    suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
+        if (positionSeconds > 0) {
+            videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), positionSeconds)
+        }
     }
 
     suspend fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {

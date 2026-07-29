@@ -24,6 +24,9 @@ import com.example.data.model.VideoEntity
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
 
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+
 @Composable
 fun VideoCard(
     video: VideoEntity,
@@ -31,27 +34,45 @@ fun VideoCard(
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
     onDeleteClick: (VideoEntity) -> Unit,
+    recommendationReason: String = "",
+    onMuteChannel: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable { onVideoClick(video) }
+            .pointerInput(video.youtubeId) {
+                detectTapGestures(
+                    onTap = { onVideoClick(video) },
+                    onLongPress = {
+                        val link = "https://youtu.be/${video.youtubeId}"
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
+                        android.widget.Toast.makeText(context, "Link Copied: $link 📋", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
             .testTag("video_card_${video.youtubeId}"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
+        val isShort = com.example.util.YouTubeUtils.isShortVideo(video)
+        val hasValidTime = video.publishedTimeText.isNotBlank() &&
+                !video.publishedTimeText.equals("Recent", ignoreCase = true) &&
+                !video.publishedTimeText.equals("Recently", ignoreCase = true)
+
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Thumbnail container with Duration Overlay & Play Badge
+            // Thumbnail container with Duration Overlay
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    .aspectRatio(if (isShort) 9f / 16f else 16f / 9f)
                     .background(Color.Black)
             ) {
                 AsyncImage(
@@ -61,200 +82,131 @@ fun VideoCard(
                     contentScale = ContentScale.Crop
                 )
 
-                // Play Button Center Overlay
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .align(Alignment.Center)
-                        .clip(RoundedCornerShape(50))
-                        .background(YouTubeRed.copy(alpha = 0.85f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-
-                // Category Tag Top Left
-                Box(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .align(Alignment.TopStart)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = video.category,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold
-                    )
+                // Published Time Badge Top Left (compact: 3D, 2M, 1Y)
+                if (hasValidTime) {
+                    val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
+                    if (compactTime.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .align(Alignment.TopStart)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color.Black.copy(alpha = 0.7f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = compactTime,
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 8.sp
+                            )
+                        }
+                    }
                 }
 
                 // Duration Badge Bottom Right
-                Box(
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .align(Alignment.BottomEnd)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.8f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = video.durationText,
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold
+                if (video.durationText.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .align(Alignment.BottomEnd)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = video.durationText,
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+
+                // Recommendation indicator dot — Top Right
+                if (recommendationReason.isNotBlank()) {
+                    val dotColor = when {
+                        recommendationReason.contains("Subscribed") -> Color(0xFFFF6D00) // Orange
+                        recommendationReason.contains("Fresh") || recommendationReason.contains("Exploration") -> Color(0xFF4CAF50) // Green
+                        recommendationReason.contains("Continue") -> Color(0xFF2196F3) // Blue
+                        recommendationReason.contains("Favorite") -> Color(0xFFFFD600) // Gold
+                        recommendationReason.contains("Enjoy") -> Color(0xFFFF5252) // Red
+                        else -> Color(0xFFBDBDBD) // Grey
+                    }
+                    Box(
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .align(Alignment.TopEnd)
+                            .size(8.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(dotColor)
                     )
                 }
             }
 
-            // Video Details Row
+            // Video Details Header & Mute Options Button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                // Channel Avatar Badge
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.SmartDisplay,
-                        contentDescription = null,
-                        tint = YouTubeRed,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                // Title & Channel Subtitle
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = video.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 16.sp),
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = video.channelName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
+                    val subText = listOfNotNull(
+                        video.channelName.takeIf { it.isNotBlank() },
+                        video.viewCountText.takeIf { it.isNotBlank() }
+                    ).joinToString(" • ")
 
-                        if (video.notesCount > 0) {
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.height(20.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.StickyNote2,
-                                        contentDescription = null,
-                                        tint = YouTubeRed,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text(
-                                        text = "${video.notesCount}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontSize = 10.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        text = subText,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+
                 }
 
-                // Quick Favorite & Options Menu Button
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Box {
                     IconButton(
-                        onClick = { onFavoriteToggle(video) },
-                        modifier = Modifier.size(36.dp).testTag("fav_btn_${video.youtubeId}")
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                            contentDescription = "Favorite",
-                            tint = if (video.isFavorite) GoldStar else MaterialTheme.colorScheme.onSurfaceVariant
+                            imageVector = Icons.Filled.MoreVert,
+                            contentDescription = "Options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = "More Options",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(if (video.isWatchLater) "Remove Watch Later" else "Add to Watch Later")
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                                        contentDescription = null
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onWatchLaterToggle(video)
-                                }
-                            )
-
-                            DropdownMenuItem(
-                                text = { Text("Delete Video", color = MaterialTheme.colorScheme.error) },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    onDeleteClick(video)
-                                }
-                            )
-                        }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("🚫 Mute '${video.channelName}'") },
+                            onClick = {
+                                showMenu = false
+                                onMuteChannel(video.channelName)
+                                android.widget.Toast.makeText(context, "Muted ${video.channelName} 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
                 }
             }

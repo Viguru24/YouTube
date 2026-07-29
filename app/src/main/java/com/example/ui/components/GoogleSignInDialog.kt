@@ -249,7 +249,7 @@ fun GoogleSignInDialog(
                                     .appendQueryParameter("client_id", "465362446681-0sfu3enhj0ab66j3k1j676obimach39j.apps.googleusercontent.com")
                                     .appendQueryParameter("redirect_uri", "com.googleusercontent.apps.465362446681-0sfu3enhj0ab66j3k1j676obimach39j:/oauth2redirect")
                                     .appendQueryParameter("response_type", "code")
-                                    .appendQueryParameter("scope", "https://www.googleapis.com/auth/youtube.readonly")
+                                    .appendQueryParameter("scope", "https://www.googleapis.com/auth/youtube.readonly email profile")
                                     .appendQueryParameter("code_challenge", challenge)
                                     .appendQueryParameter("code_challenge_method", "S256")
                                     .appendQueryParameter("access_type", "offline")
@@ -260,6 +260,7 @@ fun GoogleSignInDialog(
 
                                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, oauthUri)
                                 context.startActivity(intent)
+                                onDismiss()
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Could not open Google consent page: ${e.message}", Toast.LENGTH_SHORT).show()
                             }

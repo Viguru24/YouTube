@@ -3,6 +3,8 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -60,6 +62,9 @@ fun HomeScreen(
     onRefreshFeed: () -> Unit = {},
     liveSearchResults: List<VideoEntity> = emptyList(),
     categoryVideos: List<VideoEntity> = emptyList(),
+    algorithmSettings: com.example.data.repository.AlgorithmSettings = com.example.data.repository.AlgorithmSettings(),
+    mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
+    onMuteChannel: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -114,7 +119,14 @@ fun HomeScreen(
                                 .testTag("search_text_field")
                         )
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable {
+                                onCategorySelected("All")
+                                onSearchQueryChanged("")
+                                onRefreshFeed()
+                            }
+                        ) {
                             Icon(
                                 imageVector = Icons.Filled.PlayCircle,
                                 contentDescription = "YouTube",
@@ -127,19 +139,6 @@ fun HomeScreen(
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant
-                            ) {
-                                Text(
-                                    text = "AD-FREE",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = YouTubeRed,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
-                            }
                         }
                     }
                 },
@@ -210,7 +209,7 @@ fun HomeScreen(
                                         title = "YouTube Video ($id)",
                                         channelName = "YouTube",
                                         thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(id),
-                                        durationText = "03:45",
+                                        durationText = "",
                                         category = selectedCategory.ifEmpty { "General" }
                                     )
                                 )
@@ -257,15 +256,21 @@ fun HomeScreen(
                 }
             }
 
-            // Category Filter Chips Row
+            // Sort Order State: "Default", "Newest / Date", "Oldest"
+            var selectedSort by remember { mutableStateOf("Default") }
+            val sortOptions = listOf("Default", "Newest", "Oldest")
+
+            // Category Filter Chips & Sort Order Chips Row
             val defaultCategories = listOf("All", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
             val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
 
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Category Chips
                 items(allCategoryNames) { category ->
                     val isSelected = category.equals(selectedCategory, ignoreCase = true)
                     FilterChip(
@@ -280,49 +285,39 @@ fun HomeScreen(
                         modifier = Modifier.testTag("category_chip_$category")
                     )
                 }
-            }
 
-            // Continue Watching Horizontal Rail (if history exists)
-            val continueWatchingList = historyVideos.take(5)
-            AnimatedVisibility(visible = continueWatchingList.isNotEmpty() && searchQuery.isEmpty() && selectedCategory == "All") {
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.History,
-                            contentDescription = null,
-                            tint = YouTubeRed,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Continue Watching",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                // Separator
+                item {
+                    Text("|", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), fontWeight = FontWeight.Bold)
+                }
 
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(continueWatchingList, key = { "cw_${it.youtubeId}" }) { video ->
-                            ContinueWatchingCard(video = video, onClick = { onVideoClick(video) })
-                        }
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                // Sort Chips
+                items(sortOptions) { sort ->
+                    val isSelected = sort == selectedSort
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedSort = sort },
+                        leadingIcon = {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Sort,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        },
+                        label = { Text(if (sort == "Default") "Sort" else "Date: $sort", fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
                     )
                 }
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Category Infinite Scroll
-            val displayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
+            val rawDisplayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
                 if (liveSearchResults.isNotEmpty()) {
                     liveSearchResults
                 } else {
@@ -331,7 +326,27 @@ fun HomeScreen(
             } else if (selectedCategory != "All") {
                 (categoryVideos + videos.filter { it.category.equals(selectedCategory, ignoreCase = true) }).distinctBy { it.youtubeId }
             } else {
-                (videos + categoryVideos).distinctBy { it.youtubeId }
+                (categoryVideos + videos).distinctBy { it.youtubeId }
+            }
+
+            val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
+                videos = rawDisplayList,
+                favorites = videos.filter { it.isFavorite },
+                watchHistory = historyVideos,
+                mutedChannels = mutedChannels,
+                settings = algorithmSettings
+            )
+
+            val displayList = when (selectedSort) {
+                "Newest" -> rankedDisplayList.sortedWith(
+                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenByDescending { it.addedTimestamp }
+                )
+                "Oldest" -> rankedDisplayList.sortedWith(
+                    compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenBy { it.addedTimestamp }
+                )
+                else -> rankedDisplayList
             }
 
             if (displayList.isEmpty()) {
@@ -377,6 +392,9 @@ fun HomeScreen(
                     }
                 }
             } else {
+                val shortsList = if (algorithmSettings.shortsMode == "Hidden") emptyList() else displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                val mainVideosList = displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
+
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
@@ -404,20 +422,67 @@ fun HomeScreen(
                         }
                     }
 
-                    itemsIndexed(displayList, key = { _, video -> video.youtubeId }) { index, video ->
+                    // 1. Horizontal Shorts Reel Section (If Shorts exist)
+                    if (shortsList.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.FlashOn,
+                                        contentDescription = null,
+                                        tint = YouTubeRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Shorts",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(shortsList, key = { it.youtubeId }) { shortVideo ->
+                                        ShortsReelCard(
+                                            video = shortVideo,
+                                            onClick = { onVideoClick(shortVideo) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Main Videos Section (2-Column Grid)
+                    itemsIndexed(mainVideosList, key = { _, video -> video.youtubeId }) { index, video ->
                         // Infinite scroll trigger: when reaching near end of grid, fetch next batch automatically!
-                        if (index >= displayList.size - 4) {
+                        if (index >= mainVideosList.size - 4) {
                             LaunchedEffect(index) {
                                 onLoadMore()
                             }
                         }
+
+                        val reason = com.example.data.repository.RecommendationEngine.getRecommendationReason(
+                            video = video,
+                            favorites = videos.filter { it.isFavorite },
+                            watchHistory = historyVideos
+                        )
 
                         VideoCard(
                             video = video,
                             onVideoClick = onVideoClick,
                             onFavoriteToggle = onFavoriteToggle,
                             onWatchLaterToggle = onWatchLaterToggle,
-                            onDeleteClick = onDeleteVideo
+                            onDeleteClick = onDeleteVideo,
+                            recommendationReason = reason,
+                            onMuteChannel = onMuteChannel
                         )
                     }
                 }
@@ -473,6 +538,101 @@ private fun ContinueWatchingCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(6.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShortsReelCard(
+    video: VideoEntity,
+    onClick: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    Column(
+        modifier = Modifier
+            .width(155.dp)
+            .pointerInput(video.youtubeId) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = {
+                        val link = "https://youtu.be/${video.youtubeId}"
+                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
+                        android.widget.Toast.makeText(context, "Short Link Copied: $link 📋", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+    ) {
+        // Vertical Short Poster Card (Clean & Tap Anywhere to Play, 0 Play Buttons)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(235.dp)
+                .clip(RoundedCornerShape(14.dp)),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                // Gentle Gradient at Bottom
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))
+                            )
+                        )
+                )
+                // Red Shorts Lightning Badge Top-Left
+                Box(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                        .padding(4.dp)
+                        .align(Alignment.TopStart)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.FlashOn,
+                        contentDescription = null,
+                        tint = YouTubeRed,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Title below poster
+        Text(
+            text = video.title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            lineHeight = 15.sp,
+            modifier = Modifier.padding(horizontal = 2.dp)
+        )
+
+        // Views or Channel sub-text
+        if (video.viewCountText.isNotEmpty() || video.channelName.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (video.viewCountText.isNotEmpty()) video.viewCountText else video.channelName,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 2.dp)
             )
         }
     }

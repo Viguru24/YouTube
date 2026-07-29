@@ -43,7 +43,7 @@ fun VideoControlDeck(
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(false) }
     var isLooping by remember { mutableStateOf(false) }
-    var captionsEnabled by remember { mutableStateOf(true) }
+    var captionsEnabled by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
     var selectedQuality by remember { mutableStateOf("1080p") }
 
@@ -120,7 +120,7 @@ fun VideoControlDeck(
             type = "text/plain"
             putExtra(
                 Intent.EXTRA_TEXT,
-                "Watching '$videoTitle' on Ad-Free YouTube Deck!\nWatch link: https://youtu.be/$videoId"
+                "Watching '$videoTitle'!\nWatch link: https://youtu.be/$videoId"
             )
         }
         context.startActivity(Intent.createChooser(shareIntent, "Share Video"))
@@ -408,7 +408,21 @@ fun VideoControlDeck(
                                 onClick = {
                                     selectedQuality = quality
                                     showQualityMenu = false
-                                    Toast.makeText(context, "Video Resolution: $quality", Toast.LENGTH_SHORT).show()
+                                    // Apply quality to ExoPlayer
+                                    val (maxWidth, maxHeight) = when (quality) {
+                                        "1080p" -> Pair(1920, 1080)
+                                        "720p"  -> Pair(1280, 720)
+                                        "480p"  -> Pair(854, 480)
+                                        "360p"  -> Pair(640, 360)
+                                        else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE) // "Auto"
+                                    }
+                                    exoPlayer?.trackSelectionParameters = exoPlayer
+                                        ?.trackSelectionParameters
+                                        ?.buildUpon()
+                                        ?.setMaxVideoSize(maxWidth, maxHeight)
+                                        ?.build()
+                                        ?: exoPlayer?.trackSelectionParameters!!
+                                    Toast.makeText(context, "Quality: $quality", Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }

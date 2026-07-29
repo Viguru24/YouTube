@@ -17,9 +17,24 @@ import kotlinx.coroutines.launch
 class YouTubeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getInstance(application)
-    private val repository = YouTubeRepository(db.videoDao(), db.videoNoteDao(), db.playlistCategoryDao())
+    private val repository = YouTubeRepository(db.videoDao(), db.videoNoteDao(), db.playlistCategoryDao(), db.mutedChannelDao())
 
     private val prefs = application.getSharedPreferences("google_accounts_prefs", android.content.Context.MODE_PRIVATE)
+
+    val mutedChannels: StateFlow<List<com.example.data.model.MutedChannelEntity>> = repository.mutedChannels
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun muteChannel(channelName: String) {
+        viewModelScope.launch {
+            repository.muteChannel(channelName)
+        }
+    }
+
+    fun unmuteChannel(channelName: String) {
+        viewModelScope.launch {
+            repository.unmuteChannel(channelName)
+        }
+    }
 
     // Google Auth Account state & Saved Multi-Account List
     private val _googleAccount = MutableStateFlow(GoogleAccount(isSignedIn = false))
@@ -30,6 +45,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         loadSavedAccounts()
+        viewModelScope.launch {
+            repository.cleanupStaleRecommendations()
+        }
     }
 
     private fun loadSavedAccounts() {
@@ -143,6 +161,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val _categoryVideos = MutableStateFlow<List<VideoEntity>>(emptyList())
     val categoryVideos: StateFlow<List<VideoEntity>> = _categoryVideos.asStateFlow()
 
+    private val _algorithmSettings = MutableStateFlow(com.example.data.repository.AlgorithmSettings())
+    val algorithmSettings: StateFlow<com.example.data.repository.AlgorithmSettings> = _algorithmSettings.asStateFlow()
+
+    fun updateAlgorithmSettings(newSettings: com.example.data.repository.AlgorithmSettings) {
+        _algorithmSettings.value = newSettings
+    }
+
     init {
         viewModelScope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -153,6 +178,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         _liveSearchResults.value = emptyList() // Instantly clear stale results!
                         val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed)
                         _liveSearchResults.value = realVideos
+                        realVideos.forEach { v -> repository.saveVideo(v) }
                     } else {
                         _liveSearchResults.value = emptyList()
                     }
@@ -161,19 +187,47 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             selectedCategory.collectLatest { category ->
-                if (category != "All") {
-                    val searchTopic = when (category) {
-                        "Tech & Code" -> "Android coding tutorial programming tech"
-                        "Music" -> "Trending music videos official 2026"
-                        "Tutorials" -> "Full tutorial how to guide"
-                        "Gaming" -> "Gaming walkthrough 4K 60fps"
-                        else -> "$category trending videos"
+                _categoryVideos.value = emptyList() // Clear immediately on category switch
+                try {
+                    val fetched = if (category == "All") {
+                        val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
+                        val home = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
+                        val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                        (profileFeed + home + shorts).distinctBy { it.youtubeId }
+                    } else {
+                        val searchTopic = when (category) {
+                            "Tech & Code" -> "Tech technology news coding"
+                            "Music" -> "Trending music videos official"
+                            "Tutorials" -> "Full tutorial how to guide"
+                            "Gaming" -> "Gaming walkthrough 4K"
+                            "Focus & Ambient" -> "Focus ambient study music"
+                            else -> "$category trending videos"
+                        }
+                        // Tag results with the selected category so display filter matches
+                        com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(searchTopic)
+                            .map { it.copy(category = category) }
                     }
-                    val fetched = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(searchTopic)
                     _categoryVideos.value = fetched
-                } else {
-                    _categoryVideos.value = emptyList()
+                    fetched.forEach { v -> repository.saveVideo(v) }
+                } catch (e: Exception) {
+                    android.util.Log.e("YouTubeViewModel", "Category fetch error: ${e.message}")
                 }
+            }
+        }
+    }
+
+    fun refreshTrendingFeed() {
+        viewModelScope.launch {
+            repository.clearUnsavedRecommendations()
+            selectedCategory.value = "All"
+            searchQuery.value = ""
+            val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
+            val home = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
+            val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+            val fetched = (profileFeed + home + shorts).distinctBy { it.youtubeId }
+            if (fetched.isNotEmpty()) {
+                _categoryVideos.value = fetched
+                fetched.forEach { v -> repository.saveVideo(v) }
             }
         }
     }
@@ -183,12 +237,20 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         val currentQuery = searchQuery.value
         viewModelScope.launch {
             val searchTerm = if (currentQuery.isNotBlank()) currentQuery else if (currentCategory != "All") currentCategory else "Trending YouTube videos"
-            val additionalQueries = listOf("best $searchTerm 2026", "$searchTerm full playlist", "new $searchTerm review", "$searchTerm 4K", "popular $searchTerm")
+            val additionalQueries = listOf(
+                "best $searchTerm 2026",
+                "$searchTerm full playlist",
+                "new $searchTerm review",
+                "$searchTerm 4K",
+                "popular $searchTerm",
+                "$searchTerm #shorts"
+            )
             val nextQuery = additionalQueries.random()
             val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(nextQuery)
             if (newBatch.isNotEmpty()) {
                 val updated = (_categoryVideos.value + newBatch).distinctBy { it.youtubeId }
                 _categoryVideos.value = updated
+                newBatch.forEach { v -> repository.saveVideo(v) }
             }
         }
     }
@@ -247,16 +309,23 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun playVideo(video: VideoEntity) {
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.saveVideo(video)
-            repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
             _activeVideoId.value = video.youtubeId
+        }
+    }
+
+    fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
+        if (positionSeconds > 0) {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                repository.updatePlaybackPosition(youtubeId, positionSeconds)
+            }
         }
     }
 
     fun setActiveVideo(youtubeId: String, startSeconds: Int = 0) {
         _activeVideoId.value = youtubeId
-        viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.updateWatchHistory(youtubeId, startSeconds)
         }
     }
@@ -272,12 +341,40 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val prefs = getApplication<android.app.Application>().getSharedPreferences("yt_prefs", android.content.Context.MODE_PRIVATE)
                 prefs.edit().putString("oauth_access_token", accessToken).apply()
 
-                // Trigger real YouTube Cloud history + playlists sync
-                com.example.data.remote.GoogleAccountSyncService.syncOAuthCloudHistoryAndPlaylists(
-                    accessToken = accessToken,
-                    videoDao = db.videoDao(),
-                    categoryDao = db.playlistCategoryDao()
-                )
+                // Fetch Google profile user email/name from token
+                val client = okhttp3.OkHttpClient()
+                val req = okhttp3.Request.Builder()
+                    .url("https://www.googleapis.com/oauth2/v3/userinfo")
+                    .addHeader("Authorization", "Bearer $accessToken")
+                    .build()
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val response = client.newCall(req).execute()
+                        if (response.isSuccessful) {
+                            val body = response.body?.string() ?: ""
+                            val json = org.json.JSONObject(body)
+                            val email = json.optString("email")
+                            val name = json.optString("name").ifEmpty { email.substringBefore("@") }
+                            if (email.isNotBlank()) {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                    signInGoogle(name, email)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {}
+                }
+
+                // Trigger real YouTube Cloud history + playlists sync asynchronously in background
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        com.example.data.remote.GoogleAccountSyncService.syncOAuthCloudHistoryAndPlaylists(
+                            accessToken = accessToken,
+                            videoDao = db.videoDao(),
+                            categoryDao = db.playlistCategoryDao()
+                        )
+                    } catch (e: Exception) {}
+                }
             } catch (e: Exception) {
                 // Log but don't crash
             }
