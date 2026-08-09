@@ -114,6 +114,13 @@ class YouTubeRepository(
     }
 
     // Categories
+    suspend fun updateVideoCategory(youtubeId: String, newCategory: String) {
+        val existing = videoDao.getVideoById(youtubeId)
+        if (existing != null) {
+            videoDao.insertVideo(existing.copy(category = newCategory))
+        }
+    }
+
     suspend fun addCategory(category: PlaylistCategoryEntity) {
         categoryDao.insertCategory(category)
     }

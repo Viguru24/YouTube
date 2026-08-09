@@ -1,9 +1,11 @@
 package com.example.data.model
 
+import androidx.compose.runtime.mutableStateListOf
+
 object WillRyanProfileData {
     val profileName = "Will Ryan"
     
-    val subscribedChannels = listOf(
+    val subscribedChannels = mutableStateListOf(
         "The Robotics State",
         "Benny Johnson",
         "Tousi TV",
@@ -104,4 +106,11 @@ object WillRyanProfileData {
         "Tinalei",
         "Parried"
     )
+
+    fun addSubscribedChannel(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isNotBlank() && !subscribedChannels.any { it.equals(trimmed, ignoreCase = true) }) {
+            subscribedChannels.add(0, trimmed)
+        }
+    }
 }

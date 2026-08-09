@@ -66,13 +66,25 @@ fun HomeScreen(
     mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
     onMuteChannel: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
+    selectedTimeFilter: String = "Any Time",
+    onTimeFilterSelected: (String) -> Unit = {},
+    selectedSubscribedChannel: String = "",
+    onSubscribedChannelSelected: (String) -> Unit = {},
+    onOpenHistory: () -> Unit = {},
+    onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var isSearchExpanded by remember { mutableStateOf(false) }
+    var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
+    var showAddChannelDialog by remember { mutableStateOf(false) }
+    var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
     var selectedSort by remember { mutableStateOf("Default") }
     val sortCycle = listOf("Default", "Newest", "Oldest")
+    val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
+
+    val subscribedChannelsList = com.example.data.model.WillRyanProfileData.subscribedChannels
 
     LaunchedEffect(isSearchExpanded) {
         if (isSearchExpanded) {
@@ -127,6 +139,7 @@ fun HomeScreen(
                             modifier = Modifier.clickable {
                                 onCategorySelected("All")
                                 onSearchQueryChanged("")
+                                onSubscribedChannelSelected("")
                                 onRefreshFeed()
                             }
                         ) {
@@ -134,36 +147,169 @@ fun HomeScreen(
                                 imageVector = Icons.Filled.PlayCircle,
                                 contentDescription = "YouTube",
                                 tint = YouTubeRed,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(26.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "YouTube",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold
+                                text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else "YouTube",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = YouTubeRed,
+                                modifier = Modifier.testTag("app_version_badge")
+                            ) {
+                                Text(
+                                    text = "v${com.example.BuildConfig.VERSION_NAME}",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 },
                 actions = {
                     if (!isSearchExpanded) {
+                        // 1. Search 🔍
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
                         }
 
-                        // Sort Order Dropdown Menu (Default, Newest / Date, Oldest)
-                        var showSortMenu by remember { mutableStateOf(false) }
+                        // 2. Subscribed Channels Pull-Down Menu 🔔
                         Box {
-                            IconButton(onClick = { showSortMenu = true }) {
+                            IconButton(onClick = { showSubscribedChannelsMenu = true }) {
                                 Icon(
-                                    imageVector = Icons.Filled.Sort,
-                                    contentDescription = "Sort",
-                                    tint = if (selectedSort != "Default") YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                    imageVector = Icons.Filled.Subscriptions,
+                                    contentDescription = "Subscribed Channels",
+                                    tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                             DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false }
+                                expanded = showSubscribedChannelsMenu,
+                                onDismissRequest = { showSubscribedChannelsMenu = false },
+                                modifier = Modifier.heightIn(max = 350.dp)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("⭐ All Feed Videos", fontWeight = FontWeight.Bold, color = YouTubeRed) },
+                                    onClick = {
+                                        showSubscribedChannelsMenu = false
+                                        onSubscribedChannelSelected("")
+                                        onCategorySelected("All")
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("➕ Add Subscribed Channel", fontWeight = FontWeight.Bold) },
+                                    onClick = {
+                                        showSubscribedChannelsMenu = false
+                                        showAddChannelDialog = true
+                                    }
+                                )
+                                HorizontalDivider()
+                                subscribedChannelsList.forEach { channel ->
+                                    val isCurrent = channel.equals(selectedSubscribedChannel, ignoreCase = true)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = channel,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.sp
+                                            )
+                                        },
+                                        onClick = {
+                                            showSubscribedChannelsMenu = false
+                                            onSubscribedChannelSelected(channel)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // LS Profile Gear Button ⚙️ (Louis de Souza Settings & Debug Console)
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.testTag("top_ls_gear_btn")
+                        ) {
+                            Box(contentAlignment = Alignment.BottomEnd) {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = YouTubeRed,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "LS",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .background(Color.Black, shape = androidx.compose.foundation.shape.CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = "Settings",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 4. Watch History Button 🕒
+                        IconButton(onClick = onOpenHistory) {
+                            Icon(imageVector = Icons.Filled.History, contentDescription = "Watch History")
+                        }
+
+                        // 5. More Actions (Sort, Add Video, Account)
+                        var showMoreActionsMenu by remember { mutableStateOf(false) }
+                        var showSortSubMenu by remember { mutableStateOf(false) }
+
+                        Box {
+                            IconButton(onClick = { showMoreActionsMenu = true }) {
+                                Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "More Actions")
+                            }
+                            DropdownMenu(
+                                expanded = showMoreActionsMenu,
+                                onDismissRequest = { showMoreActionsMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("➕ Add Video URL / ID") },
+                                    onClick = {
+                                        showMoreActionsMenu = false
+                                        onOpenAddVideoDialog()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🔀 Sort Feed (${selectedSort})") },
+                                    onClick = {
+                                        showMoreActionsMenu = false
+                                        showSortSubMenu = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In") },
+                                    onClick = {
+                                        showMoreActionsMenu = false
+                                        onOpenGoogleAuth()
+                                    }
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showSortSubMenu,
+                                onDismissRequest = { showSortSubMenu = false }
                             ) {
                                 sortCycle.forEach { option ->
                                     DropdownMenuItem(
@@ -181,37 +327,10 @@ fun HomeScreen(
                                         },
                                         onClick = {
                                             selectedSort = option
-                                            showSortMenu = false
+                                            showSortSubMenu = false
                                         }
                                     )
                                 }
-                            }
-                        }
-
-                        // Add Video Quick Button
-                        IconButton(onClick = onOpenAddVideoDialog) {
-                            Icon(imageVector = Icons.Filled.AddCircle, contentDescription = "Add Video", tint = YouTubeRed)
-                        }
-
-                        // Account Avatar
-                        IconButton(onClick = onOpenGoogleAuth) {
-                            if (googleAccount.isSignedIn) {
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = YouTubeRed,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = googleAccount.avatarInitials,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
-                                        )
-                                    }
-                                }
-                            } else {
-                                Icon(imageVector = Icons.Filled.AccountCircle, contentDescription = "Account")
                             }
                         }
                     }
@@ -286,34 +405,64 @@ fun HomeScreen(
                 }
             }
 
-            // Sort order is now controlled from the top app bar (see selectedSort above Scaffold)
-
-            // Category Filter Chips & Sort Order Chips Row
+            // Category Filter Chips & Search Time Selector Row
             val defaultCategories = listOf("All", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
             val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
 
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Category Chips
-                items(allCategoryNames) { category ->
-                    val isSelected = category.equals(selectedCategory, ignoreCase = true)
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onCategorySelected(category) },
-                        label = { Text(category, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = YouTubeRed,
-                            selectedLabelColor = Color.White,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                        modifier = Modifier.testTag("category_chip_$category")
+            if (searchQuery.isNotEmpty()) {
+                // Upload Date / Time Selector Bar for Search Results
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Text(
+                        text = "Filter Upload Date:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
                     )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(timeFilterOptions) { filter ->
+                            val isSelected = filter.equals(selectedTimeFilter, ignoreCase = true)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { onTimeFilterSelected(filter) },
+                                label = { Text(filter, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = YouTubeRed,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                modifier = Modifier.testTag("time_filter_chip_$filter")
+                            )
+                        }
+                    }
                 }
-
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Category Chips
+                    items(allCategoryNames) { category ->
+                        val isSelected = category.equals(selectedCategory, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { onCategorySelected(category) },
+                            label = { Text(category, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = YouTubeRed,
+                                selectedLabelColor = Color.White,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            modifier = Modifier.testTag("category_chip_$category")
+                        )
+                    }
+                }
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Category Infinite Scroll
@@ -329,8 +478,26 @@ fun HomeScreen(
                 (categoryVideos + videos).distinctBy { it.youtubeId }
             }
 
+            // Apply Upload Date Time Selector Filter to Search Results
+            val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
+                val maxSeconds = when (selectedTimeFilter) {
+                    "Last Hour" -> 3600L
+                    "Today" -> 86400L
+                    "This Week" -> 604800L
+                    "This Month" -> 2592000L
+                    "This Year" -> 31536000L
+                    else -> Long.MAX_VALUE
+                }
+                rawDisplayList.filter { video ->
+                    val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
+                    sec <= maxSeconds
+                }
+            } else {
+                rawDisplayList
+            }
+
             val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
-                videos = rawDisplayList,
+                videos = timeFilteredList,
                 favorites = videos.filter { it.isFavorite },
                 watchHistory = historyVideos,
                 mutedChannels = mutedChannels,
@@ -482,11 +649,63 @@ fun HomeScreen(
                             onWatchLaterToggle = onWatchLaterToggle,
                             onDeleteClick = onDeleteVideo,
                             recommendationReason = reason,
-                            onMuteChannel = onMuteChannel
+                            onMuteChannel = onMuteChannel,
+                            onSaveToSubject = { v -> videoToSaveToSubject = v },
+                            onNotInterested = onDeleteVideo
                         )
                     }
                 }
             }
+        }
+
+        if (videoToSaveToSubject != null) {
+            com.example.ui.components.SaveToSubjectDialog(
+                video = videoToSaveToSubject!!,
+                categories = categories,
+                onDismiss = { videoToSaveToSubject = null },
+                onSaveToSubject = { subject ->
+                    onSaveToSubject(videoToSaveToSubject!!, subject)
+                    videoToSaveToSubject = null
+                }
+            )
+        }
+
+        if (showAddChannelDialog) {
+            var newChannelInput by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { showAddChannelDialog = false },
+                title = { Text("Subscribe to New Channel", fontWeight = FontWeight.Bold) },
+                text = {
+                    OutlinedTextField(
+                        value = newChannelInput,
+                        onValueChange = { newChannelInput = it },
+                        label = { Text("Channel Name") },
+                        placeholder = { Text("e.g. Marques Brownlee, Lex Fridman") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val trimmed = newChannelInput.trim()
+                            if (trimmed.isNotBlank()) {
+                                com.example.data.model.WillRyanProfileData.addSubscribedChannel(trimmed)
+                                onSubscribedChannelSelected(trimmed)
+                                showAddChannelDialog = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                    ) {
+                        Text("Subscribe")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddChannelDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

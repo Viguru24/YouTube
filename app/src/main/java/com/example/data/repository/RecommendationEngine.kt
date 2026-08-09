@@ -111,12 +111,34 @@ object RecommendationEngine {
                 score += (keywordHits * 4.0f).coerceAtMost(30.0f)
             }
 
-            // D. Boredom Detection Engine: Inject Fresh Unvisited Topics
+            // D. Discovery & Serendipity Boost (Wild Discovery Mode)
+            if (channelHits == 0 && !isSubscribedProfileChannel) {
+                score += settings.discoveryRatio * 75.0f
+            }
+
+            // E. Boredom Detection Engine: Inject Fresh Unvisited Topics
             if (isBoredomModeActive && channelHits == 0 && !isSubscribedProfileChannel) {
                 score += 65.0f // Boost fresh unknown topics to break recommendation fatigue
             }
 
-            // E. Duration Preference Filter
+            // F. Freshness & Recency Decay Engine
+            val timeText = video.publishedTimeText.lowercase()
+            val recencyBonus = when (settings.freshnessDecay) {
+                "Fast" -> when {
+                    timeText.contains("hour") || timeText.contains("min") || timeText.contains("today") -> 45.0f
+                    timeText.contains("day") -> 25.0f
+                    else -> 0.0f
+                }
+                "Slow" -> 10.0f
+                else -> when { // Medium (Default)
+                    timeText.contains("hour") || timeText.contains("min") || timeText.contains("today") -> 25.0f
+                    timeText.contains("day") -> 15.0f
+                    else -> 5.0f
+                }
+            }
+            score += recencyBonus
+
+            // G. Duration Preference Filter
             if (settings.minDurationMinutes > 0 && !YouTubeUtils.isShortVideo(video)) {
                 val durSec = parseDurationSeconds(video.durationText)
                 if (durSec > 0 && durSec < settings.minDurationMinutes * 60) {
@@ -124,7 +146,7 @@ object RecommendationEngine {
                 }
             }
 
-            // F. Watched Progress / Recency Adjustment
+            // H. Watched Progress / Recency Adjustment
             if (video.lastPositionSeconds > 0) {
                 score += 15.0f // Resume watching boost
             }
@@ -133,7 +155,22 @@ object RecommendationEngine {
         }
 
         // 3. Sort descending by score
-        return scoredList.sortedByDescending { it.second }.map { it.first }
+        val sortedList = scoredList.sortedByDescending { it.second }.map { it.first }
+
+        // 4. Channel Diversity Cap: Enforce max 2 videos per channel in top 10
+        val finalDiverseList = mutableListOf<VideoEntity>()
+        val channelCounts = mutableMapOf<String, Int>()
+
+        for (v in sortedList) {
+            val count = channelCounts.getOrDefault(v.channelName, 0)
+            if (finalDiverseList.size < 10 && count >= 2) {
+                continue // Skip to enforce channel diversity in top 10
+            }
+            channelCounts[v.channelName] = count + 1
+            finalDiverseList.add(v)
+        }
+
+        return finalDiverseList
     }
 
     private fun parseDurationSeconds(dur: String): Int {

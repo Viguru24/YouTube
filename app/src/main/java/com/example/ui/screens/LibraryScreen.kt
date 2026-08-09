@@ -42,28 +42,41 @@ fun LibraryScreen(
     onOpenAddCategoryDialog: () -> Unit,
     onOpenAddVideoDialog: () -> Unit,
     onOpenGoogleAuth: () -> Unit,
+    historyVideos: List<VideoEntity> = emptyList(),
+    onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Playlists/Categories, 1: Favorites, 2: Watch Later
+    var selectedTab by remember { mutableStateOf(0) } // 0: Subjects/Categories, 1: Favorites, 2: Watch Later, 3: History
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Library & Playlists",
+                        text = "Library & Subjects",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 actions = {
                     IconButton(
+                        onClick = onOpenHistory,
+                        modifier = Modifier.testTag("library_history_top_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.History,
+                            contentDescription = "Watch History",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    IconButton(
                         onClick = onOpenAddCategoryDialog,
                         modifier = Modifier.testTag("add_category_top_btn")
                     ) {
                         Icon(
                             imageVector = Icons.Filled.CreateNewFolder,
-                            contentDescription = "New Category",
+                            contentDescription = "New Subject",
                             tint = YouTubeRed
                         )
                     }
@@ -102,15 +115,16 @@ fun LibraryScreen(
                 .padding(innerPadding)
         ) {
             // Tabs Bar
-            TabRow(
+            ScrollableTabRow(
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.background,
-                contentColor = YouTubeRed
+                contentColor = YouTubeRed,
+                edgePadding = 12.dp
             ) {
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Categories (${categories.size})") },
+                    text = { Text("Subjects (${categories.size})") },
                     icon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                     modifier = Modifier.testTag("tab_categories")
                 )
@@ -133,6 +147,13 @@ fun LibraryScreen(
                     text = { Text("Watch Later (${watchLaterVideos.size})") },
                     icon = { Icon(Icons.Outlined.WatchLater, contentDescription = null) },
                     modifier = Modifier.testTag("tab_watch_later")
+                )
+                Tab(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
+                    text = { Text("History (${historyVideos.size})") },
+                    icon = { Icon(Icons.Filled.History, contentDescription = null) },
+                    modifier = Modifier.testTag("tab_history")
                 )
             }
 
@@ -161,6 +182,15 @@ fun LibraryScreen(
                     title = "Watch Later List",
                     emptyText = "Your Watch Later queue is empty. Add videos from the home feed to save them for later!",
                     videos = watchLaterVideos,
+                    onVideoClick = onVideoClick,
+                    onFavoriteToggle = onFavoriteToggle,
+                    onWatchLaterToggle = onWatchLaterToggle,
+                    onDeleteVideo = onDeleteVideo
+                )
+                3 -> VideoListTabContent(
+                    title = "Watch History",
+                    emptyText = "No watch history recorded yet. Videos you watch will automatically appear here!",
+                    videos = historyVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
                     onWatchLaterToggle = onWatchLaterToggle,

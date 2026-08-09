@@ -147,7 +147,9 @@ fun ShortsPlayerView(
         addLog("Extracting stream for videoId=$videoId")
 
         try {
-            val url = YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+            val url = kotlinx.coroutines.withTimeoutOrNull(8000L) {
+                YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+            }
             if (!url.isNullOrEmpty()) {
                 streamUrl = url
                 val mediaItem = MediaItem.fromUri(url)
@@ -156,7 +158,7 @@ fun ShortsPlayerView(
                 exoPlayer.play()
                 isLoading = false
             } else {
-                addLog("⚠️ Native extraction FAILED → falling back to WebView embed")
+                addLog("⚠️ Stream extraction timed out (8.0s) → activating direct Shorts web player fallback")
                 isLoading = false
             }
         } catch (e: Exception) {
@@ -173,83 +175,113 @@ fun ShortsPlayerView(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable(
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null
-            ) {
-                // Tap anywhere to toggle play/pause silently (0 pop-up buttons!)
-                isPlayingState = !isPlayingState
-            }
-            .pointerInput(videoId) {
-                detectVerticalDragGestures(
-                    onDragStart = {
-                        totalDragAmount = 0f
-                        hasTriggered = false
-                    },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDragAmount += dragAmount
-                        if (!hasTriggered) {
-                            if (totalDragAmount < -25f) {
-                                hasTriggered = true
-                                onNextShort()
-                            } else if (totalDragAmount > 25f) {
-                                hasTriggered = true
-                                onPreviousShort()
+    ) {
+        // 1. Full-Screen Vertical Player Surface (ExoPlayer Native or Direct YouTube Shorts Web Player Fallback)
+        if (streamUrl != null) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        keepScreenOn = true
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        post { onResume() }
+                    }
+                },
+                update = { view ->
+                    if (view.player != exoPlayer) {
+                        view.player = exoPlayer
+                    }
+                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    view.onResume()
+                    if (isPlayingState) exoPlayer.playWhenReady = true
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (!isLoading) {
+            // Automatic Fallback: Embedded YouTube Player WebView for Shorts HTML5 Video Playback
+            AndroidView(
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+                        webChromeClient = android.webkit.WebChromeClient()
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                super.onPageFinished(view, url)
                             }
                         }
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                <style>
+                                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                                    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+                                    .iframe-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+                                    iframe { width: 100%; height: 100%; border: none; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="iframe-container">
+                                    <iframe id="player" 
+                                        src="https://www.youtube.com/embed/$videoId?autoplay=1&loop=1&playlist=$videoId&playsinline=1&controls=0&enablejsapi=1&rel=0&modestbranding=1" 
+                                        allow="autoplay; encrypted-media; picture-in-picture" 
+                                        allowfullscreen>
+                                    </iframe>
+                                </div>
+                            </body>
+                            </html>
+                        """.trimIndent()
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
                     }
-                )
-            }
-    ) {
-        // 1. Full-Screen Vertical Player Surface (ExoPlayer Native or WebView Fallback)
-        if (streamUrl != null || !isLoading) {
-            if (streamUrl != null) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            keepScreenOn = true
-                            setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            // FIX: post onResume() so surface is created BEFORE video renders.
-                            // Without this, ExoPlayer starts rendering before SurfaceView calls
-                            // surfaceCreated(), causing audio-only black screen until a tap
-                            // triggers recomposition. post{} schedules after the layout pass.
-                            post { onResume() }
-                        }
-                    },
-                    update = { view ->
-                        if (view.player != exoPlayer) {
-                            view.player = exoPlayer
-                        }
-                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        view.onResume()
-                        if (isPlayingState) exoPlayer.playWhenReady = true
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+                },
+                update = { view ->
+                    // Keep loaded
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         }
 
-        // If stream extraction failed, show a plain error — no WebView iframe fallback.
-        // WebView iframes trigger YouTube Error 150 (embedding disabled). The same
-        // native extractor used for regular videos must be used here too.
-        if (!isLoading && streamUrl == null) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(40.dp))
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Stream unavailable", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Swipe to next Short", color = Color.White.copy(alpha = 0.4f), fontSize = 11.sp)
+        // Gesture Drag Layer: Intercepts vertical drag swipes for Next/Previous Short
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(videoId) {
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            totalDragAmount = 0f
+                            hasTriggered = false
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            totalDragAmount += dragAmount
+                            if (!hasTriggered) {
+                                if (totalDragAmount < -35f) {
+                                    hasTriggered = true
+                                    onNextShort()
+                                } else if (totalDragAmount > 35f) {
+                                    hasTriggered = true
+                                    onPreviousShort()
+                                }
+                            }
+                        }
+                    )
                 }
-            }
-        }
+        )
 
         // 2. Loading Overlay (Fades out cleanly when stream is ready)
         AnimatedVisibility(
@@ -396,7 +428,7 @@ fun ShortsPlayerView(
                 .padding(horizontal = 0.dp)
         )
 
-        // 5. Right-Side Action Controls: Resolution Selector & Watch Later
+        // 5. Right-Side Action Controls: Like, Dislike, Resolution Selector & Watch Later
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -405,7 +437,50 @@ fun ShortsPlayerView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Quality / Resolution Selector Button (Replaces Star Button!)
+            // 1. Thumbs Up 👍
+            var isLikedShort by remember { mutableStateOf(false) }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(
+                    onClick = {
+                        isLikedShort = !isLikedShort
+                        android.widget.Toast.makeText(context, if (isLikedShort) "Liked Short 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ThumbUp,
+                        contentDescription = "Like",
+                        tint = if (isLikedShort) YouTubeRed else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text("Like", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+            }
+
+            // 2. Thumbs Down 👎 (Not Interested -> Next Short)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(
+                    onClick = {
+                        android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
+                        onNextShort()
+                    },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ThumbDown,
+                        contentDescription = "Not Interested",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Text("Dislike", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+            }
+
+            // Quality / Resolution Selector Button
             Surface(
                 onClick = { showQualityDialog = true },
                 shape = CircleShape,

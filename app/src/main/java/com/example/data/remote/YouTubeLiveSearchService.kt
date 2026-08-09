@@ -22,11 +22,12 @@ object YouTubeLiveSearchService {
         .build()
 
     private val SEARCH_ENDPOINTS = listOf(
-        "https://pipedapi.adminforge.de/search?q=%s&filter=all",
-        "https://pipedapi.astral.cool/search?q=%s&filter=all",
-        "https://pipedapi.drgns.space/search?q=%s&filter=all",
-        "https://api.piped.yt/search?q=%s&filter=all",
-        "https://invidious.flokinet.to/api/v1/search?q=%s"
+        "https://invidious.flokinet.to/api/v1/search?q=%s",
+        "https://inv.nadeko.net/api/v1/search?q=%s",
+        "https://invidious.nerdvpn.de/api/v1/search?q=%s",
+        "https://invidious.protokolla.fi/api/v1/search?q=%s",
+        "https://yewtu.be/api/v1/search?q=%s",
+        "https://pipedapi.kavin.rocks/search?q=%s&filter=all"
     )
 
     private fun logD(tag: String, msg: String) {
@@ -86,6 +87,46 @@ object YouTubeLiveSearchService {
 
         // Final Fallback: Direct YouTube Web HTML scraping
         return@withContext searchWebHtml(trimmed)
+    }
+
+    /**
+     * Fetches latest videos for a specific subscribed profile channel sorted by newness.
+     */
+    suspend fun fetchChannelLatestVideos(channelName: String): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val trimmed = channelName.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+        val query1 = searchRealYouTubeVideos("$trimmed latest")
+        val query2 = searchRealYouTubeVideos("$trimmed channel uploads")
+        val combined = (query1 + query2)
+            .distinctBy { it.youtubeId }
+            .map { it.copy(channelName = if (it.channelName.contains("Channel", ignoreCase = true) || it.channelName.isBlank()) trimmed else it.channelName) }
+        return@withContext combined.sortedWith(
+            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+        )
+    }
+
+    /**
+     * Continuous search batch fetcher for endless infinite scroll on search results.
+     */
+    suspend fun searchRealYouTubeVideosBatch(query: String, batchIndex: Int = 0): List<VideoEntity> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val targetQuery = if (batchIndex <= 0) {
+            trimmed
+        } else {
+            val variations = listOf(
+                "$trimmed full video",
+                "$trimmed 2026",
+                "best $trimmed",
+                "$trimmed HD",
+                "$trimmed official",
+                "latest $trimmed",
+                "$trimmed channel",
+                "$trimmed review"
+            )
+            variations[(batchIndex - 1) % variations.size]
+        }
+        return searchRealYouTubeVideos(targetQuery)
     }
 
     private fun parseJsonResponse(json: String, query: String): List<VideoEntity> {
@@ -160,7 +201,7 @@ object YouTubeLiveSearchService {
                         )
                     }
                 }
-                if (results.size >= 20) break
+                if (results.size >= 50) break
             }
         } catch (e: Exception) {
             logD("YouTubeLiveSearchService", "parseJsonResponse error: ${e.message}")
@@ -264,11 +305,45 @@ object YouTubeLiveSearchService {
     }
 
     /**
-     * Fetches live trending YouTube Shorts feed.
+     * Fetches live trending YouTube Shorts feed filtered for adult topics (News, Politics, Tech, Science).
+     * Exhaustively purges kids cartoons, ABCs, nursery rhymes, phonics, and clickbait.
      */
     suspend fun fetchShortsFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val shorts = searchRealYouTubeVideos("#shorts viral trending")
+        val topics = listOf(
+            "politics news analysis",
+            "technology AI updates",
+            "current events news",
+            "science discovery break",
+            "world events documentary"
+        )
+        val selectedTopic = topics.random()
+        val shorts = searchRealYouTubeVideos("#shorts $selectedTopic")
+            .filter { v ->
+                val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
+                val isShortDuration = durationSec == 0 || durationSec <= 90
+                val lower = (v.title + " " + v.channelName).lowercase()
+                isShortDuration &&
+                !lower.contains("abc") &&
+                !lower.contains("alphabet") &&
+                !lower.contains("phonics") &&
+                !lower.contains("cartoon") &&
+                !lower.contains("kids") &&
+                !lower.contains("cocomelon") &&
+                !lower.contains("nursery") &&
+                !lower.contains("rhyme") &&
+                !lower.contains("toy") &&
+                !lower.contains("baby") &&
+                !lower.contains("toddler") &&
+                !lower.contains("preschool") &&
+                !lower.contains("children") &&
+                !lower.contains("sing along") &&
+                !lower.contains("super simple") &&
+                !lower.contains("short viral") &&
+                !lower.contains("spreading gyan") &&
+                !lower.contains("animation for kids")
+            }
             .map { it.copy(category = "Shorts", title = if (it.title.contains("#shorts", ignoreCase = true)) it.title else "${it.title} #shorts") }
+        
         if (shorts.isNotEmpty()) return@withContext shorts
         
         return@withContext emptyList()

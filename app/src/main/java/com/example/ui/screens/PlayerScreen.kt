@@ -47,10 +47,13 @@ fun PlayerScreen(
     onSelectOtherVideo: (VideoEntity) -> Unit,
     onOpenGoogleAuth: () -> Unit,
     areAdvertsEnabled: Boolean = false,
+    onNotInterested: (VideoEntity) -> Unit = {},
+    onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
     var showDebugConsole by remember { mutableStateOf(false) }
+    var showSaveToSubjectDialog by remember { mutableStateOf(false) }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -78,60 +81,6 @@ fun PlayerScreen(
                             Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
-                    actions = {
-                        // Favorite toggle
-                        IconButton(onClick = { onFavoriteToggle(video) }) {
-                            Icon(
-                                imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                contentDescription = "Favorite",
-                                tint = if (video.isFavorite) GoldStar else LocalContentColor.current
-                            )
-                        }
-                        // Watch Later toggle
-                        IconButton(onClick = { onWatchLaterToggle(video) }) {
-                            Icon(
-                                imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                                contentDescription = "Watch Later"
-                            )
-                        }
-                        // Debug console toggle — small, dim, tucked in top bar
-                        IconButton(
-                            onClick = { showDebugConsole = !showDebugConsole },
-                            modifier = Modifier.testTag("debug_console_toggle_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.BugReport,
-                                contentDescription = "Debug Logs",
-                                tint = if (showDebugConsole)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        // Google Account Avatar
-                        IconButton(
-                            onClick = onOpenGoogleAuth,
-                            modifier = Modifier.testTag("player_google_auth_btn")
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                    .background(
-                                        if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = googleAccount.avatarInitials,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     )
@@ -154,46 +103,28 @@ fun PlayerScreen(
                 onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
                 onPlayerReady = { wv -> webViewInstance = wv },
                 modifier = if (isFullscreen) {
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures { _, dragAmount ->
-                                if (dragAmount > 40f) {
-                                    isMaximized = false
-                                    val activity = context as? android.app.Activity
-                                    activity?.requestedOrientation =
-                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                    onBackClick()
-                                }
-                            }
-                        }
+                    Modifier.fillMaxSize()
                 } else {
                     Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures { _, dragAmount ->
-                                if (dragAmount < -40f) {
-                                    isMaximized = true
-                                    val activity = context as? android.app.Activity
-                                    activity?.requestedOrientation =
-                                        android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                } else if (dragAmount > 40f) {
-                                    onBackClick()
-                                }
-                            }
-                        }
                 }
             )
 
             // Below-video content (portrait only)
             if (!isFullscreen) {
-                val otherVideos = playlistVideos.filter { it.youtubeId != video.youtubeId }
+                // Strictly sort Up Next videos by published timestamp descending (Newest First!)
+                val otherVideos = playlistVideos
+                    .filter { it.youtubeId != video.youtubeId }
+                    .sortedWith(compareBy<VideoEntity> {
+                        com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                    })
+
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
-                    // Title + Channel
+                    // Title + Channel + Below-Video Action Buttons
                     item {
                         Column(
                             modifier = Modifier
@@ -208,11 +139,96 @@ fun PlayerScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            val subDetails = listOfNotNull(
+                                video.channelName.takeIf { it.isNotBlank() },
+                                video.publishedTimeText.takeIf { it.isNotBlank() },
+                                video.viewCountText.takeIf { it.isNotBlank() }
+                            ).joinToString(" • ")
+
                             Text(
-                                text = video.channelName,
+                                text = subDetails,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Sleek Compact Below-Video Action Bar (Icon Buttons Only - Zero Text Clutter)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // 1. Like 👍
+                                var isLiked by remember { mutableStateOf(false) }
+                                IconButton(
+                                    onClick = {
+                                        isLiked = !isLiked
+                                        android.widget.Toast.makeText(context, if (isLiked) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ThumbUp,
+                                        contentDescription = "Like",
+                                        tint = if (isLiked) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                // 2. Not Interested 👎
+                                IconButton(
+                                    onClick = {
+                                        onNotInterested(video)
+                                        android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
+                                        onBackClick()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ThumbDown,
+                                        contentDescription = "Not Interested",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                // 3. Star ⭐ (Favorite)
+                                IconButton(
+                                    onClick = { onFavoriteToggle(video) }
+                                ) {
+                                    Icon(
+                                        imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        contentDescription = "Favorite",
+                                        tint = if (video.isFavorite) GoldStar else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                // 4. Save As 📁 (Subject / Playlist)
+                                IconButton(
+                                    onClick = { showSaveToSubjectDialog = true }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Folder,
+                                        contentDescription = "Save As",
+                                        tint = com.example.ui.theme.YouTubeRed,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                // 5. Watch Later 🕒
+                                IconButton(
+                                    onClick = { onWatchLaterToggle(video) }
+                                ) {
+                                    Icon(
+                                        imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                                        contentDescription = "Watch Later",
+                                        tint = if (video.isWatchLater) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
                         }
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
@@ -239,6 +255,17 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    if (showSaveToSubjectDialog) {
+        com.example.ui.components.SaveToSubjectDialog(
+            video = video,
+            onDismiss = { showSaveToSubjectDialog = false },
+            onSaveToSubject = { selectedSubject ->
+                showSaveToSubjectDialog = false
+                onSaveToSubject(video, selectedSubject)
+            }
+        )
     }
 }
 
@@ -270,6 +297,30 @@ private fun PlaylistQueueItem(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+
+                // Top Left Overlay Badge: Published Age
+                if (video.publishedTimeText.isNotBlank()) {
+                    val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
+                    if (compactTime.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(Color.Black.copy(alpha = 0.8f))
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = compactTime,
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Bottom Right Overlay Badge: Video Duration
                 if (video.durationText.isNotBlank()) {
                     Box(
                         modifier = Modifier
@@ -303,10 +354,18 @@ private fun PlaylistQueueItem(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                val queueSubText = listOfNotNull(
+                    video.channelName.takeIf { it.isNotBlank() },
+                    video.publishedTimeText.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+
                 Text(
-                    text = video.channelName,
+                    text = queueSubText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

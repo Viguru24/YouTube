@@ -40,6 +40,31 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Keep device screen on continuously (prevents sleep, dimming & screensaver)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Request Battery Optimization Exemption for uninterrupted background playback
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        } catch (e: Exception) {
+            // Ignore if OS blocks intent
+        }
+
+        // Initialize NewPipe Extractor for native YouTube stream extraction
+        try {
+            org.schabi.newpipe.extractor.NewPipe.init(
+                com.example.data.remote.NPDownloader.getInstance()
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "NewPipe Extractor init failed: ${e.message}")
+        }
+
         setContent {
             YouTubePlayerTheme {
                 MainAppContent(viewModel = viewModel)
@@ -50,6 +75,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainAppContent(viewModel: YouTubeViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var selectedNavIndex by remember { mutableIntStateOf(0) } // 0: Home, 1: Library, 2: History
 
     var showAddVideoDialog by remember { mutableStateOf(false) }
@@ -67,12 +93,36 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
 
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val selectedTimeFilter by viewModel.selectedTimeFilter.collectAsStateWithLifecycle()
+    val selectedSubscribedChannel by viewModel.selectedSubscribedChannel.collectAsStateWithLifecycle()
     val liveSearchResults by viewModel.liveSearchResults.collectAsStateWithLifecycle()
     val categoryVideos by viewModel.categoryVideos.collectAsStateWithLifecycle()
 
     val activeVideoId by viewModel.activeVideoId.collectAsStateWithLifecycle()
     val activeVideo by viewModel.activeVideo.collectAsStateWithLifecycle()
     val activeNotes by viewModel.activeNotes.collectAsStateWithLifecycle()
+
+    // Start Foreground Media Playback Service with WakeLock when a video is played
+    LaunchedEffect(activeVideo) {
+        activeVideo?.let { v ->
+            try {
+                val intent = android.content.Intent(context, com.example.service.MediaPlaybackService::class.java).apply {
+                    putExtra(com.example.service.MediaPlaybackService.EXTRA_TITLE, v.title)
+                    putExtra(com.example.service.MediaPlaybackService.EXTRA_CHANNEL, v.channelName)
+                }
+                androidx.core.content.ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) { }
+        }
+    }
+
+    // Intercept Android system edge swipe-back gesture: navigate within YouTube app instead of exiting to launcher
+    androidx.activity.compose.BackHandler(enabled = activeVideo != null || selectedNavIndex != 0) {
+        if (activeVideo != null) {
+            viewModel.clearActiveVideo()
+        } else if (selectedNavIndex != 0) {
+            selectedNavIndex = 0
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (activeVideo != null) {
@@ -120,7 +170,9 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
                     onSelectOtherVideo = { v -> viewModel.playVideo(v) },
                     onOpenGoogleAuth = { showGoogleAuthDialog = true },
-                    areAdvertsEnabled = areAdvertsEnabled
+                    areAdvertsEnabled = areAdvertsEnabled,
+                    onNotInterested = { v -> viewModel.deleteVideo(v) },
+                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) }
                 )
             }
         } else {
@@ -219,7 +271,13 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             onRefreshFeed = { viewModel.refreshFeed() },
                             liveSearchResults = liveSearchResults,
                             categoryVideos = categoryVideos,
-                            onLoadMore = { viewModel.loadMoreCategoryVideos() }
+                            onLoadMore = { viewModel.loadMoreCategoryVideos() },
+                            selectedTimeFilter = selectedTimeFilter,
+                            onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },
+                            selectedSubscribedChannel = selectedSubscribedChannel,
+                            onSubscribedChannelSelected = { channel -> viewModel.selectSubscribedChannel(channel) },
+                            onOpenHistory = { selectedNavIndex = 2 },
+                            onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) }
                         )
                         1 -> LibraryScreen(
                             categories = categories,
@@ -233,7 +291,9 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
                             onOpenAddCategoryDialog = { showAddCategoryDialog = true },
                             onOpenAddVideoDialog = { showAddVideoDialog = true },
-                            onOpenGoogleAuth = { showGoogleAuthDialog = true }
+                            onOpenGoogleAuth = { showGoogleAuthDialog = true },
+                            historyVideos = watchHistory,
+                            onOpenHistory = { selectedNavIndex = 2 }
                         )
                         2 -> HistoryScreen(
                             historyVideos = watchHistory,

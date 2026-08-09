@@ -137,6 +137,46 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
+                        // Wild Discovery / Serendipity Slider
+                        Text(
+                            text = "Wild Discovery (Break the Bubble): ${(algorithmSettings.discoveryRatio * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Slider(
+                            value = algorithmSettings.discoveryRatio,
+                            onValueChange = { onAlgorithmSettingsChanged(algorithmSettings.copy(discoveryRatio = it)) },
+                            colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Freshness Decay Filter
+                        Text(
+                            text = "Freshness Priority (Recency):",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = algorithmSettings.freshnessDecay == "Slow",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Slow")) },
+                                label = { Text("Slow") }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.freshnessDecay == "Medium",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Medium")) },
+                                label = { Text("Balanced") }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.freshnessDecay == "Fast",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Fast")) },
+                                label = { Text("Fast (24h)") }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         // Shorts Feed Display Toggle
                         Text(
                             text = "Shorts Feed Display:",

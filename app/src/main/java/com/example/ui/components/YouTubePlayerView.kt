@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,7 +23,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -40,6 +43,9 @@ import com.example.ui.theme.YouTubeRed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+
 @Composable
 fun YouTubePlayerView(
     videoId: String,
@@ -53,6 +59,7 @@ fun YouTubePlayerView(
     val context = LocalContext.current
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
+    var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
     var statusLog by remember(videoId) { mutableStateOf("Initializing Native ExoPlayer Engine...") }
     val debugLogs = remember(videoId) { mutableStateListOf<String>() }
 
@@ -81,9 +88,24 @@ fun YouTubePlayerView(
         }
     }
 
-    DisposableEffect(videoId) {
+    DisposableEffect(exoPlayer) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onRenderedFirstFrame() {
+                isFirstFrameRendered = true
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_READY) {
+                    isFirstFrameRendered = true
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                isPlayingState = isPlaying
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
             try {
+                exoPlayer.removeListener(listener)
                 val pos = exoPlayer.currentPosition
                 if (pos > 0) {
                     savedPositionMs = pos
@@ -134,15 +156,17 @@ fun YouTubePlayerView(
     LaunchedEffect(videoId) {
         isLoading = true
         addLog("Extracting direct MP4 stream URL via InnerTube API for videoId: $videoId")
-        val url = YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+        val url = kotlinx.coroutines.withTimeoutOrNull(8000L) {
+            YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+        }
         if (url != null) {
             streamUrl = url
             isLoading = false
             addLog("Stream Extracted Successfully! MP4 URL: ${url.take(80)}...")
         } else {
             isLoading = false
-            statusLog = "Stream extraction pending or video restricted."
-            addLog("Failed to extract direct MP4 stream URL across all profiles")
+            statusLog = "Direct stream timed out or restricted. Activating Web Player."
+            addLog("Direct stream timeout (8.0s) -> Activating Web Player Fallback")
         }
     }
 
@@ -183,25 +207,38 @@ fun YouTubePlayerView(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable {
-                if (streamUrl != null && !isLoading) {
-                    // Force-start playback on first touch (Android audio focus requires user gesture)
-                    if (!exoPlayer.isPlaying && !exoPlayer.isLoading) {
-                        exoPlayer.play()
-                        isPlayingState = true
+            .pointerInput(videoId) {
+                detectTapGestures(
+                    onTap = {
+                        if (streamUrl != null && !isLoading) {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                                isPlayingState = false
+                            } else {
+                                exoPlayer.play()
+                                isPlayingState = true
+                            }
+                            showControlsOverlay = true
+                        }
+                    },
+                    onDoubleTap = { offset: Offset ->
+                        if (streamUrl != null && !isLoading) {
+                            val w = size.width
+                            if (offset.x < w / 2f) {
+                                val target = (exoPlayer.currentPosition - 10000L).coerceAtLeast(0L)
+                                exoPlayer.seekTo(target)
+                            } else {
+                                val dur = if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE
+                                val target = (exoPlayer.currentPosition + 10000L).coerceAtMost(dur)
+                                exoPlayer.seekTo(target)
+                            }
+                        }
                     }
-                    showControlsOverlay = !showControlsOverlay
-                }
+                )
             },
         contentAlignment = Alignment.Center
     ) {
-        if (isLoading) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Extracting Direct Native Stream (0 WebViews)...", color = Color.White, fontSize = 12.sp)
-            }
-        } else if (streamUrl != null) {
+        if (streamUrl != null) {
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -216,34 +253,108 @@ fun YouTubePlayerView(
                     .fillMaxSize()
                     .testTag("native_exoplayer_view")
             )
-        } else {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(16.dp)
-            ) {
-                Text(
-                    text = "Playback Unavailable",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = statusLog,
-                    color = Color.LightGray,
-                    fontSize = 12.sp
-                )
-            }
         }
 
-        // Touch On-Screen Controls Overlay (Play/Pause, Rewind -10s, Forward +10s, Time Scrubber)
+        // Preview thumbnail poster while buffering / preparing (prevents initial black screen)
+        if (isLoading || !isFirstFrameRendered) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = com.example.util.YouTubeUtils.getThumbnailUrl(videoId),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.45f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator(color = YouTubeRed)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (isLoading) "Extracting Video Stream..." else "Loading Video...",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        } else if (streamUrl == null && !isLoading) {
+            // Immediately dismiss loading poster overlay in WebView fallback mode
+            LaunchedEffect(Unit) {
+                isFirstFrameRendered = true
+            }
+            // Automatic Fallback: Embedded YouTube Player WebView with WebChromeClient for HTML5 Video Playback
+            AndroidView(
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.allowFileAccess = true
+                        settings.allowContentAccess = true
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+
+                        webChromeClient = android.webkit.WebChromeClient()
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                isFirstFrameRendered = true
+                            }
+                        }
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                <style>
+                                    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                                    .iframe-container { position: relative; width: 100%; height: 100%; }
+                                    iframe { width: 100%; height: 100%; border: none; }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="iframe-container">
+                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                                </div>
+                            </body>
+                            </html>
+                        """.trimIndent()
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        onPlayerReady(this)
+                    }
+                },
+                update = { webView ->
+                    // Keep loaded
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("fallback_webview_player")
+            )
+        }
+
+        // Touch On-Screen Scrubber & Options Bar Overlay (No center buttons/texts - completely invisible gestures)
         AnimatedVisibility(
             visible = showControlsOverlay && streamUrl != null && !isLoading,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.55f))
+                .background(Color.Black.copy(alpha = 0.35f))
         ) {
             // Hoist Speed / Quality / CC state so bottom bar can access them
             var showSpeedMenu by remember { mutableStateOf(false) }
@@ -253,37 +364,6 @@ fun YouTubePlayerView(
             var ccEnabled by remember { mutableStateOf(true) }
 
             Box(modifier = Modifier.fillMaxSize()) {
-
-                // Center Controls: Quick Rewind -10s & Fast Forward +10s
-                Row(
-                    modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = {
-                            val target = (exoPlayer.currentPosition - 10000).coerceAtLeast(0)
-                            exoPlayer.seekTo(target)
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                    ) {
-                        Icon(Icons.Filled.Replay10, contentDescription = "-10s", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
-                    }
-
-                    IconButton(
-                        onClick = {
-                            val target = (exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration)
-                            exoPlayer.seekTo(target)
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                    ) {
-                        Icon(Icons.Filled.Forward10, contentDescription = "+10s", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(24.dp))
-                    }
-                }
 
                 // Bottom Control Bar: Time Scrubber + Timestamp + Mute
                 Column(

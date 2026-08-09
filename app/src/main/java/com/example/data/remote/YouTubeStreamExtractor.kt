@@ -68,15 +68,144 @@ object YouTubeStreamExtractor {
     }
 
     suspend fun getDirectStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        // =========================================================================
+        // STRATEGY 1: NewPipe Extractor (PRIMARY — actively maintained, handles
+        //             cipher/signature decryption, PO tokens, and YouTube changes)
+        // =========================================================================
+        try {
+            logD("YouTubeStreamExtractor", "[NewPipe] Attempting extraction for videoId: $videoId")
+            val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+            val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+            extractor.fetchPage()
+
+            // Try video streams (combined audio+video) first
+            val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
+            if (videoStreams.isNotEmpty()) {
+                // Prefer medium quality (720p/480p) for mobile bandwidth efficiency
+                val preferred = videoStreams
+                    .filter { !it.isVideoOnly }
+                    .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
+                    .firstOrNull { stream ->
+                        val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
+                        res in 360..1080
+                    }
+                    ?: videoStreams.firstOrNull { !it.isVideoOnly }
+                    ?: videoStreams.firstOrNull()
+
+                if (preferred != null && preferred.content.isNotBlank()) {
+                    logD("YouTubeStreamExtractor", "[NewPipe] Found stream: ${preferred.resolution} ${preferred.format?.name} — ${preferred.content.take(80)}...")
+                    return@withContext preferred.content
+                }
+            }
+
+            // Try video-only streams (higher quality, may need separate audio)
+            val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
+            if (videoOnlyStreams.isNotEmpty()) {
+                val best = videoOnlyStreams
+                    .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
+                    .firstOrNull { stream ->
+                        val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
+                        res in 360..1080
+                    }
+                    ?: videoOnlyStreams.firstOrNull()
+
+                if (best != null && best.content.isNotBlank()) {
+                    logD("YouTubeStreamExtractor", "[NewPipe] Found video-only stream: ${best.resolution} — ${best.content.take(80)}...")
+                    return@withContext best.content
+                }
+            }
+
+            // Try HLS URL
+            val hlsUrl = try { extractor.hlsUrl } catch (e: Exception) { null }
+            if (!hlsUrl.isNullOrBlank()) {
+                logD("YouTubeStreamExtractor", "[NewPipe] Found HLS stream: ${hlsUrl.take(80)}...")
+                return@withContext hlsUrl
+            }
+
+            logD("YouTubeStreamExtractor", "[NewPipe] No streams found for $videoId")
+        } catch (e: Exception) {
+            logD("YouTubeStreamExtractor", "[NewPipe] Extraction failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        // =========================================================================
+        // STRATEGY 2: HTML Scraping (ytInitialPlayerResponse from YouTube web page)
+        // =========================================================================
+        val htmlPageUrls = listOf(
+            "https://www.youtube.com/watch?v=$videoId",
+            "https://www.youtube.com/shorts/$videoId"
+        )
+        for (pageUrl in htmlPageUrls) {
+            try {
+                val watchRequest = Request.Builder()
+                    .url(pageUrl)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                    .addHeader("Accept-Language", "en-US,en;q=0.9")
+                    .build()
+
+                client.newCall(watchRequest).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val html = response.body?.string() ?: ""
+                        
+                        // Match hlsManifestUrl
+                        val hlsPattern = Pattern.compile(""""hlsManifestUrl"\s*:\s*"([^"]+)"""")
+                        val hlsMatcher = hlsPattern.matcher(html)
+                        if (hlsMatcher.find()) {
+                            val hlsUrl = hlsMatcher.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
+                            if (hlsUrl.isNotBlank()) {
+                                logD("YouTubeStreamExtractor", "[HTML Scraper] Found HLS stream URL: $hlsUrl")
+                                return@withContext hlsUrl
+                            }
+                        }
+
+                        // Extract streamingData from ytInitialPlayerResponse JSON
+                        val playerResponsePattern = Pattern.compile("""ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;""")
+                        val prMatcher = playerResponsePattern.matcher(html)
+                        if (prMatcher.find()) {
+                            val prJson = prMatcher.group(1) ?: ""
+                            // Find direct googlevideo URLs in streamingData
+                            val urlPattern = Pattern.compile(""""url"\s*:\s*"(https?://[^"]*googlevideo\.com/videoplayback[^"]+)"""")
+                            val urlMatcher = urlPattern.matcher(prJson)
+                            while (urlMatcher.find()) {
+                                val rawUrl = urlMatcher.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
+                                if (rawUrl.contains("mime=video") || rawUrl.contains("mime%3Dvideo")) {
+                                    logD("YouTubeStreamExtractor", "[HTML Scraper] Found direct stream URL: ${rawUrl.take(80)}...")
+                                    return@withContext rawUrl
+                                }
+                            }
+                        }
+
+                        // Fallback: match any googlevideo videoplayback URL
+                        val urlPattern = Pattern.compile(""""url"\s*:\s*"([^"]+)"""")
+                        val urlMatcher = urlPattern.matcher(html)
+                        while (urlMatcher.find()) {
+                            val rawUrl = urlMatcher.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
+                            if (rawUrl.contains("googlevideo.com/videoplayback") && (rawUrl.contains("mime=video") || rawUrl.contains("mime=audio"))) {
+                                logD("YouTubeStreamExtractor", "[HTML Scraper] Found googlevideo URL: ${rawUrl.take(80)}...")
+                                return@withContext rawUrl
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logD("YouTubeStreamExtractor", "HTML Scraper error for $pageUrl: ${e.message}")
+            }
+        }
+
+        // =========================================================================
+        // STRATEGY 3: Multi-Profile InnerTube Client Queries (may resume working)
+        // =========================================================================
         val visitorData = fetchVisitorData()
         val visitorJson = if (!visitorData.isNullOrEmpty()) {
             """, "visitorData": "$visitorData""""
         } else ""
 
         val clientProfiles = listOf(
+            Triple("ANDROID_TESTSUITE", "1.9", false),
+            Triple("MWEB", "2.20240101.00.00", true),
+            Triple("ANDROID", "19.11.38", false),
             Triple("ANDROID_VR", "1.59.19", false),
+            Triple("WEB_EMBEDDED_PLAYER", "5.20240101.00.00", true),
             Triple("TVHTML5_SIMPLY_EMBEDDED_PLAYER", "2.0", true),
-            Triple("ANDROID", "19.09.37", false),
             Triple("IOS", "19.09.3", false)
         )
 
@@ -106,7 +235,7 @@ object YouTubeStreamExtractor {
                 val request = Request.Builder()
                     .url("https://www.youtube.com/youtubei/v1/player")
                     .post(jsonPayload.toRequestBody(mediaType))
-                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                    .addHeader("User-Agent", "com.google.android.youtube/19.11.38 (Linux; U; Android 14; US) gzip")
                     .addHeader("Referer", "https://www.youtube.com")
                     .build()
 
@@ -141,6 +270,69 @@ object YouTubeStreamExtractor {
                 logD("YouTubeStreamExtractor", "Error extracting stream for $videoId: ${e.message}")
             }
         }
+
+        // =========================================================================
+        // STRATEGY 4: Fallback Public Instance APIs (Invidious with proxy)
+        // =========================================================================
+        val fallbackApis = listOf(
+            "https://invidious.flokinet.to/api/v1/videos/$videoId?local=true",
+            "https://inv.nadeko.net/api/v1/videos/$videoId?local=true",
+            "https://invidious.nerdvpn.de/api/v1/videos/$videoId?local=true",
+            "https://yewtu.be/api/v1/videos/$videoId?local=true"
+        )
+
+        for (apiUrl in fallbackApis) {
+            try {
+                val req = Request.Builder().url(apiUrl).get().build()
+                client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val b = resp.body?.string() ?: ""
+
+                        // Try to parse as JSON and extract formatStreams
+                        try {
+                            val json = org.json.JSONObject(b)
+                            val formatStreams = json.optJSONArray("formatStreams")
+                            if (formatStreams != null && formatStreams.length() > 0) {
+                                for (i in 0 until formatStreams.length()) {
+                                    val stream = formatStreams.getJSONObject(i)
+                                    val streamUrl = stream.optString("url", "")
+                                    if (streamUrl.isNotBlank()) {
+                                        logD("YouTubeStreamExtractor", "[Invidious API] Found stream URL: ${streamUrl.take(80)}...")
+                                        return@withContext streamUrl
+                                    }
+                                }
+                            }
+                            val adaptiveFormats = json.optJSONArray("adaptiveFormats")
+                            if (adaptiveFormats != null && adaptiveFormats.length() > 0) {
+                                for (i in 0 until adaptiveFormats.length()) {
+                                    val stream = adaptiveFormats.getJSONObject(i)
+                                    val streamUrl = stream.optString("url", "")
+                                    val mimeType = stream.optString("type", "")
+                                    if (streamUrl.isNotBlank() && mimeType.contains("video")) {
+                                        logD("YouTubeStreamExtractor", "[Invidious API] Found adaptive stream URL: ${streamUrl.take(80)}...")
+                                        return@withContext streamUrl
+                                    }
+                                }
+                            }
+                        } catch (jsonErr: Exception) {
+                            // Fall back to regex
+                            val urlPat = Pattern.compile(""""url"\s*:\s*"([^"]+)"""")
+                            val m = urlPat.matcher(b)
+                            while (m.find()) {
+                                val stream = m.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
+                                if (stream.contains("googlevideo.com") || stream.contains("piped") || stream.contains("googlevideo")) {
+                                    logD("YouTubeStreamExtractor", "[Fallback API] Found stream URL: $stream")
+                                    return@withContext stream
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                logD("YouTubeStreamExtractor", "Fallback error for $apiUrl: ${e.message}")
+            }
+        }
+
         return@withContext null
     }
 

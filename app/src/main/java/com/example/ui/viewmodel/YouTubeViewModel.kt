@@ -145,6 +145,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     // Search query & Category filter state
     val searchQuery = MutableStateFlow("")
     val selectedCategory = MutableStateFlow("All")
+    val selectedTimeFilter = MutableStateFlow("Any Time")
+
+    private var currentSearchBatchIndex = 0
 
     // Adverts (Ads ON / OFF) Settings state
     private val _areAdvertsEnabled = MutableStateFlow(false) // Default AdBlock Active (Adverts OFF)
@@ -175,11 +178,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 .collectLatest { query ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
+                        currentSearchBatchIndex = 0
                         _liveSearchResults.value = emptyList() // Instantly clear stale results!
-                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed)
+                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(trimmed, 0)
                         _liveSearchResults.value = realVideos
                         realVideos.forEach { v -> repository.saveVideo(v) }
                     } else {
+                        currentSearchBatchIndex = 0
                         _liveSearchResults.value = emptyList()
                     }
                 }
@@ -219,24 +224,39 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     fun refreshTrendingFeed() {
         viewModelScope.launch {
             repository.clearUnsavedRecommendations()
-            selectedCategory.value = "All"
-            searchQuery.value = ""
+            _categoryVideos.value = emptyList() // Instantly clear stale video list
+            
             val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
             val home = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
             val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-            val fetched = (profileFeed + home + shorts).distinctBy { it.youtubeId }
+            
+            // Combine and shuffle to guarantee fresh variety on refresh!
+            val fetched = (profileFeed + home + shorts.shuffled()).distinctBy { it.youtubeId }
             if (fetched.isNotEmpty()) {
                 _categoryVideos.value = fetched
                 fetched.forEach { v -> repository.saveVideo(v) }
             }
+
+            // Re-trigger selectedCategory flow to refresh UI list
+            if (selectedCategory.value == "All") {
+                selectedCategory.value = ""
+                selectedCategory.value = "All"
+            } else {
+                selectedCategory.value = "All"
+            }
+            searchQuery.value = ""
         }
     }
 
     fun loadMoreCategoryVideos() {
         val currentCategory = selectedCategory.value
         val currentQuery = searchQuery.value
+        if (currentQuery.isNotBlank()) {
+            loadMoreSearchResults()
+            return
+        }
         viewModelScope.launch {
-            val searchTerm = if (currentQuery.isNotBlank()) currentQuery else if (currentCategory != "All") currentCategory else "Trending YouTube videos"
+            val searchTerm = if (currentCategory != "All") currentCategory else "Trending YouTube videos"
             val additionalQueries = listOf(
                 "best $searchTerm 2026",
                 "$searchTerm full playlist",
@@ -250,6 +270,40 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             if (newBatch.isNotEmpty()) {
                 val updated = (_categoryVideos.value + newBatch).distinctBy { it.youtubeId }
                 _categoryVideos.value = updated
+                newBatch.forEach { v -> repository.saveVideo(v) }
+            }
+        }
+    }
+
+    val selectedSubscribedChannel = MutableStateFlow("")
+
+    fun selectSubscribedChannel(channelName: String) {
+        selectedSubscribedChannel.value = channelName
+        if (channelName.isNotBlank()) {
+            viewModelScope.launch {
+                _categoryVideos.value = emptyList()
+                val latestVideos = com.example.data.remote.YouTubeLiveSearchService.fetchChannelLatestVideos(channelName)
+                _categoryVideos.value = latestVideos
+                latestVideos.forEach { v -> repository.saveVideo(v) }
+            }
+        }
+    }
+
+    fun updateVideoCategory(videoId: String, newCategory: String) {
+        viewModelScope.launch {
+            repository.updateVideoCategory(videoId, newCategory)
+        }
+    }
+
+    fun loadMoreSearchResults() {
+        val currentQuery = searchQuery.value.trim()
+        if (currentQuery.isBlank()) return
+        viewModelScope.launch {
+            currentSearchBatchIndex++
+            val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(currentQuery, currentSearchBatchIndex)
+            if (newBatch.isNotEmpty()) {
+                val updated = (_liveSearchResults.value + newBatch).distinctBy { it.youtubeId }
+                _liveSearchResults.value = updated
                 newBatch.forEach { v -> repository.saveVideo(v) }
             }
         }
@@ -310,7 +364,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun playVideo(video: VideoEntity) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            repository.saveVideo(video)
+            val now = System.currentTimeMillis()
+            val updated = video.copy(lastWatchedTimestamp = now)
+            repository.saveVideo(updated)
+            repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
             _activeVideoId.value = video.youtubeId
         }
     }

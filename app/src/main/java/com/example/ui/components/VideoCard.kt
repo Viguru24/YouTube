@@ -36,6 +36,8 @@ fun VideoCard(
     onDeleteClick: (VideoEntity) -> Unit,
     recommendationReason: String = "",
     onMuteChannel: (String) -> Unit = {},
+    onSaveToSubject: (VideoEntity) -> Unit = {},
+    onNotInterested: (VideoEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -178,8 +180,6 @@ fun VideoCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-
-
                 }
 
                 Box {
@@ -199,6 +199,36 @@ fun VideoCard(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("📁 Save to Subject / Playlist") },
+                            onClick = {
+                                showMenu = false
+                                onSaveToSubject(video)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (video.isWatchLater) "✔ In Watch Later" else "🕒 Save to Watch Later") },
+                            onClick = {
+                                showMenu = false
+                                onWatchLaterToggle(video)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (video.isFavorite) "⭐ Favorited" else "⭐ Add to Favorites") },
+                            onClick = {
+                                showMenu = false
+                                onFavoriteToggle(video)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("👎 Not Interested") },
+                            onClick = {
+                                showMenu = false
+                                onNotInterested(video)
+                                android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("🚫 Mute '${video.channelName}'") },
                             onClick = {

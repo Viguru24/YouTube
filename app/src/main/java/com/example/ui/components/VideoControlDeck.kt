@@ -135,13 +135,22 @@ fun VideoControlDeck(
     fun execVideo(jsCmd: String) {
         if (exoPlayer != null) {
             when {
-                jsCmd.contains("play()") || jsCmd.contains("v.play()") -> {
-                    exoPlayer.play()
-                    isPlaying = true
+                jsCmd.contains("v.paused") || (jsCmd.contains("play()") && jsCmd.contains("pause()")) -> {
+                    if (exoPlayer.isPlaying) {
+                        exoPlayer.pause()
+                        isPlaying = false
+                    } else {
+                        exoPlayer.play()
+                        isPlaying = true
+                    }
                 }
                 jsCmd.contains("pause()") || jsCmd.contains("v.pause()") -> {
                     exoPlayer.pause()
                     isPlaying = false
+                }
+                jsCmd.contains("play()") || jsCmd.contains("v.play()") -> {
+                    exoPlayer.play()
+                    isPlaying = true
                 }
                 jsCmd.contains("currentTime -") || jsCmd.contains("-=") -> {
                     val target = (exoPlayer.currentPosition - (skipStepSeconds * 1000L)).coerceAtLeast(0L)
@@ -233,8 +242,18 @@ fun VideoControlDeck(
                 // Play / Pause — small outlined button, no filled red
                 OutlinedIconButton(
                     onClick = {
-                        isPlaying = !isPlaying
-                        execVideo("if (v.paused) { v.play(); } else { v.pause(); }")
+                        if (exoPlayer != null) {
+                            if (exoPlayer.isPlaying) {
+                                exoPlayer.pause()
+                                isPlaying = false
+                            } else {
+                                exoPlayer.play()
+                                isPlaying = true
+                            }
+                        } else {
+                            isPlaying = !isPlaying
+                            execVideo("if (v.paused) { v.play(); } else { v.pause(); }")
+                        }
                     },
                     modifier = Modifier
                         .size(36.dp)
