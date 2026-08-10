@@ -440,11 +440,12 @@ fun ShortsPlayerView(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 1. Thumbs Up 👍
-            var isLikedShort by remember { mutableStateOf(false) }
+            var isLikedShort by remember(videoId, isFavorite) { mutableStateOf(isFavorite) }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 IconButton(
                     onClick = {
                         isLikedShort = !isLikedShort
+                        onFavoriteToggle()
                         android.widget.Toast.makeText(context, if (isLikedShort) "Liked Short 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier

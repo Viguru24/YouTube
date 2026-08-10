@@ -572,7 +572,15 @@ fun HomeScreen(
                     }
                 }
             } else {
-                val shortsList = if (algorithmSettings.shortsMode == "Hidden") emptyList() else displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                val shortsList = remember(displayList) {
+                    if (algorithmSettings.shortsMode == "Hidden") {
+                        emptyList()
+                    } else {
+                        displayList
+                            .filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                            .shuffled()
+                    }
+                }
                 val mainVideosList = displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
 
                 LazyVerticalGrid(

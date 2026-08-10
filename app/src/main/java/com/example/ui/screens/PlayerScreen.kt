@@ -161,21 +161,20 @@ fun PlayerScreen(
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // 1. Like 👍
-                                var isLiked by remember { mutableStateOf(false) }
-                                IconButton(
-                                    onClick = {
-                                        isLiked = !isLiked
-                                        android.widget.Toast.makeText(context, if (isLiked) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.ThumbUp,
-                                        contentDescription = "Like",
-                                        tint = if (isLiked) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                                 // 1. Like 👍
+                                 IconButton(
+                                     onClick = {
+                                         onFavoriteToggle(video)
+                                         android.widget.Toast.makeText(context, if (!video.isFavorite) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
+                                     }
+                                 ) {
+                                     Icon(
+                                         imageVector = Icons.Filled.ThumbUp,
+                                         contentDescription = "Like",
+                                         tint = if (video.isFavorite) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                         modifier = Modifier.size(22.dp)
+                                     )
+                                 }
 
                                 // 2. Not Interested 👎
                                 IconButton(
