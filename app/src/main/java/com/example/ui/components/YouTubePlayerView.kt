@@ -42,6 +42,7 @@ import com.example.data.remote.YouTubeStreamExtractor
 import com.example.ui.theme.YouTubeRed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -329,7 +330,7 @@ fun YouTubePlayerView(
                             </head>
                             <body>
                                 <div class="iframe-container">
-                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&cc_load_policy=0&iv_load_policy=3" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
                                 </div>
                             </body>
                             </html>
@@ -356,12 +357,12 @@ fun YouTubePlayerView(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.35f))
         ) {
-            // Hoist Speed / Quality / CC state so bottom bar can access them
+            // Hoist Speed / Quality state so bottom bar can access them
             var showSpeedMenu by remember { mutableStateOf(false) }
             var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
             var showQualityMenu by remember { mutableStateOf(false) }
             var selectedQuality by remember { mutableStateOf("Auto") }
-            var ccEnabled by remember { mutableStateOf(true) }
+            val coroutineScope = rememberCoroutineScope()
 
             Box(modifier = Modifier.fillMaxSize()) {
 
@@ -372,7 +373,7 @@ fun YouTubePlayerView(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    // Bottom row: timestamp | 1x | Quality | CC | 🔊
+                    // Bottom row: timestamp | 1x | Quality | 🔊
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -442,32 +443,25 @@ fun YouTubePlayerView(
                                                 }
                                                 exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                                                     .buildUpon().setMaxVideoSize(maxW, maxH).build()
+
+                                                // Seamlessly re-extract target resolution stream
+                                                coroutineScope.launch {
+                                                    val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
+                                                    if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
+                                                        val currentPos = exoPlayer.currentPosition
+                                                        streamUrl = newUrl
+                                                        val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
+                                                        exoPlayer.setMediaItem(mediaItem)
+                                                        exoPlayer.prepare()
+                                                        exoPlayer.seekTo(currentPos)
+                                                        exoPlayer.play()
+                                                    }
+                                                }
                                             }
                                         )
                                     }
                                 }
                             }
-
-                            // CC toggle button
-                            Text(
-                                text = "CC",
-                                color = if (ccEnabled) Color.White else Color.White.copy(alpha = 0.35f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier
-                                    .background(
-                                        if (ccEnabled) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.4f),
-                                        RoundedCornerShape(4.dp)
-                                    )
-                                    .clickable {
-                                        ccEnabled = !ccEnabled
-                                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                            .buildUpon()
-                                            .setIgnoredTextSelectionFlags(if (ccEnabled) 0 else androidx.media3.common.C.SELECTION_FLAG_DEFAULT)
-                                            .build()
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
-                            )
 
                             // Mute/Volume button
                             IconButton(

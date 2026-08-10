@@ -67,50 +67,65 @@ object YouTubeStreamExtractor {
         return null
     }
 
-    suspend fun getDirectStreamUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    suspend fun getDirectStreamUrl(videoId: String, targetQuality: String = "Auto"): String? = withContext(Dispatchers.IO) {
         // =========================================================================
         // STRATEGY 1: NewPipe Extractor (PRIMARY — actively maintained, handles
         //             cipher/signature decryption, PO tokens, and YouTube changes)
         // =========================================================================
         try {
-            logD("YouTubeStreamExtractor", "[NewPipe] Attempting extraction for videoId: $videoId")
+            logD("YouTubeStreamExtractor", "[NewPipe] Attempting extraction for videoId: $videoId, quality: $targetQuality")
             val service = org.schabi.newpipe.extractor.ServiceList.YouTube
             val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
 
+            val targetRes = targetQuality.replace("p", "").toIntOrNull() ?: 0
+
             // Try video streams (combined audio+video) first
             val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
             if (videoStreams.isNotEmpty()) {
-                // Prefer medium quality (720p/480p) for mobile bandwidth efficiency
-                val preferred = videoStreams
-                    .filter { !it.isVideoOnly }
-                    .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
-                    .firstOrNull { stream ->
-                        val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
-                        res in 360..1080
-                    }
-                    ?: videoStreams.firstOrNull { !it.isVideoOnly }
-                    ?: videoStreams.firstOrNull()
+                val preferred = if (targetRes > 0) {
+                    videoStreams
+                        .filter { !it.isVideoOnly }
+                        .minByOrNull { stream ->
+                            val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
+                            kotlin.math.abs(res - targetRes)
+                        }
+                } else {
+                    videoStreams
+                        .filter { !it.isVideoOnly }
+                        .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
+                        .firstOrNull { stream ->
+                            val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
+                            res in 360..1080
+                        }
+                        ?: videoStreams.firstOrNull { !it.isVideoOnly }
+                } ?: videoStreams.firstOrNull()
 
                 if (preferred != null && preferred.content.isNotBlank()) {
-                    logD("YouTubeStreamExtractor", "[NewPipe] Found stream: ${preferred.resolution} ${preferred.format?.name} — ${preferred.content.take(80)}...")
+                    logD("YouTubeStreamExtractor", "[NewPipe] Found stream for $targetQuality: ${preferred.resolution} ${preferred.format?.name} — ${preferred.content.take(80)}...")
                     return@withContext preferred.content
                 }
             }
 
-            // Try video-only streams (higher quality, may need separate audio)
+            // Try video-only streams (higher resolution options)
             val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
             if (videoOnlyStreams.isNotEmpty()) {
-                val best = videoOnlyStreams
-                    .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
-                    .firstOrNull { stream ->
+                val best = if (targetRes > 0) {
+                    videoOnlyStreams.minByOrNull { stream ->
                         val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
-                        res in 360..1080
+                        kotlin.math.abs(res - targetRes)
                     }
-                    ?: videoOnlyStreams.firstOrNull()
+                } else {
+                    videoOnlyStreams
+                        .sortedByDescending { it.resolution?.replace("p", "")?.toIntOrNull() ?: 0 }
+                        .firstOrNull { stream ->
+                            val res = stream.resolution?.replace("p", "")?.toIntOrNull() ?: 0
+                            res in 360..1080
+                        }
+                } ?: videoOnlyStreams.firstOrNull()
 
                 if (best != null && best.content.isNotBlank()) {
-                    logD("YouTubeStreamExtractor", "[NewPipe] Found video-only stream: ${best.resolution} — ${best.content.take(80)}...")
+                    logD("YouTubeStreamExtractor", "[NewPipe] Found video-only stream for $targetQuality: ${best.resolution} — ${best.content.take(80)}...")
                     return@withContext best.content
                 }
             }

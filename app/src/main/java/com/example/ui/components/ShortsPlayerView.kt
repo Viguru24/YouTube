@@ -44,6 +44,7 @@ import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 fun ShortsPlayerView(
@@ -61,6 +62,7 @@ fun ShortsPlayerView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var streamUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isPlayingState by remember { mutableStateOf(true) }
@@ -238,7 +240,7 @@ fun ShortsPlayerView(
                             <body>
                                 <div class="iframe-container">
                                     <iframe id="player" 
-                                        src="https://www.youtube.com/embed/$videoId?autoplay=1&loop=1&playlist=$videoId&playsinline=1&controls=0&enablejsapi=1&rel=0&modestbranding=1" 
+                                        src="https://www.youtube.com/embed/$videoId?autoplay=1&loop=1&playlist=$videoId&playsinline=1&controls=0&enablejsapi=1&rel=0&modestbranding=1&cc_load_policy=0&iv_load_policy=3" 
                                         allow="autoplay; encrypted-media; picture-in-picture" 
                                         allowfullscreen>
                                     </iframe>
@@ -549,6 +551,19 @@ fun ShortsPlayerView(
                                         .buildUpon()
                                         .setMaxVideoSize(Int.MAX_VALUE, maxH)
                                         .build()
+
+                                    coroutineScope.launch {
+                                        val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, quality)
+                                        if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
+                                            val currentPos = exoPlayer.currentPosition
+                                            streamUrl = newUrl
+                                            val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
+                                            exoPlayer.setMediaItem(mediaItem)
+                                            exoPlayer.prepare()
+                                            exoPlayer.seekTo(currentPos)
+                                            exoPlayer.play()
+                                        }
+                                    }
 
                                     Toast.makeText(context, "Quality set to $quality", Toast.LENGTH_SHORT).show()
                                 }

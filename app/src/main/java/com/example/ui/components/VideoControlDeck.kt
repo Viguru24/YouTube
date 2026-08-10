@@ -399,7 +399,7 @@ fun VideoControlDeck(
                                 onClick = {
                                     selectedQuality = quality
                                     showQualityMenu = false
-                                    // Apply quality to ExoPlayer
+                                    // Apply quality to ExoPlayer & WebView
                                     val (maxWidth, maxHeight) = when (quality) {
                                         "1080p" -> Pair(1920, 1080)
                                         "720p"  -> Pair(1280, 720)
@@ -413,29 +413,24 @@ fun VideoControlDeck(
                                         ?.setMaxVideoSize(maxWidth, maxHeight)
                                         ?.build()
                                         ?: exoPlayer?.trackSelectionParameters!!
+
+                                    val jsQuality = when (quality) {
+                                        "1080p" -> "hd1080"
+                                        "720p"  -> "hd720"
+                                        "480p"  -> "large"
+                                        "360p"  -> "medium"
+                                        else    -> "auto"
+                                    }
+                                    realWebView?.evaluateJavascript(
+                                        "if (typeof player !== 'undefined' && player.setPlaybackQuality) { player.setPlaybackQuality('$jsQuality'); }",
+                                        null
+                                    )
                                     Toast.makeText(context, "Quality: $quality", Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }
                     }
                 }
-
-                // Subtitles / Captions (CC) Toggle Chip
-                AssistChip(
-                    onClick = {
-                        captionsEnabled = !captionsEnabled
-                        Toast.makeText(context, if (captionsEnabled) "Captions/Subtitles (CC) Enabled 💬" else "Captions Disabled", Toast.LENGTH_SHORT).show()
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.ClosedCaption,
-                            contentDescription = "Subtitles / Captions (CC)",
-                            tint = if (captionsEnabled) YouTubeRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text(if (captionsEnabled) "CC On" else "CC Off", fontSize = 12.sp) }
-                )
                 // Feature 1: Skip Step Config (e.g. 5s, 10s, 15s)
                 AssistChip(
                     onClick = { showSkipStepDialog = true },
@@ -612,24 +607,6 @@ fun VideoControlDeck(
                     },
                     label = { Text(if (isScreenDimmed) "Screen Dimmed" else "Dim Screen", fontSize = 12.sp) }
                 )
-
-                // Feature 6: Closed Captions
-                AssistChip(
-                    onClick = {
-                        captionsEnabled = !captionsEnabled
-                        realWebView?.loadUrl("javascript:toggleCaptions($captionsEnabled)")
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.ClosedCaption,
-                            contentDescription = "Subtitles",
-                            tint = if (captionsEnabled) YouTubeRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    },
-                    label = { Text(if (captionsEnabled) "CC On" else "CC Off", fontSize = 12.sp) }
-                )
-
 
                 // Feature 8: Sleep Timer
                 var showSleepMenu by remember { mutableStateOf(false) }
