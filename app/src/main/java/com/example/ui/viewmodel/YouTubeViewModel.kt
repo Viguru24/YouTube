@@ -248,7 +248,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private var channelBatchIndex = 0
+
     fun loadMoreCategoryVideos() {
+        val channel = selectedSubscribedChannel.value.trim()
+        if (channel.isNotBlank()) {
+            loadMoreSubscribedChannelVideos()
+            return
+        }
         val currentCategory = selectedCategory.value
         val currentQuery = searchQuery.value
         if (currentQuery.isNotBlank()) {
@@ -275,10 +282,29 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun loadMoreSubscribedChannelVideos() {
+        val channel = selectedSubscribedChannel.value.trim()
+        if (channel.isBlank()) return
+        viewModelScope.launch {
+            channelBatchIndex++
+            val newBatch = com.example.data.remote.YouTubeLiveSearchService.fetchChannelVideosBatch(channel, channelBatchIndex)
+            if (newBatch.isNotEmpty()) {
+                val updated = (_categoryVideos.value + newBatch)
+                    .distinctBy { it.youtubeId }
+                    .sortedWith(
+                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    )
+                _categoryVideos.value = updated
+                newBatch.forEach { v -> repository.saveVideo(v) }
+            }
+        }
+    }
+
     val selectedSubscribedChannel = MutableStateFlow("")
 
     fun selectSubscribedChannel(channelName: String) {
         selectedSubscribedChannel.value = channelName
+        channelBatchIndex = 0
         if (channelName.isNotBlank()) {
             viewModelScope.launch {
                 _categoryVideos.value = emptyList()

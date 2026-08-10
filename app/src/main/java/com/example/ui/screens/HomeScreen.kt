@@ -465,8 +465,15 @@ fun HomeScreen(
                 }
             }
 
-            // Main Feed Video 2-Column Grid & Real Live Search Results & Category Infinite Scroll
-            val rawDisplayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
+            // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
+            val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
+                val targetCh = selectedSubscribedChannel.lowercase().trim()
+                (categoryVideos + videos).filter { video ->
+                    val vCh = video.channelName.lowercase().trim()
+                    vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
+                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))
+                }.distinctBy { it.youtubeId }
+            } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
                 if (liveSearchResults.isNotEmpty()) {
                     liveSearchResults
                 } else {
@@ -504,7 +511,13 @@ fun HomeScreen(
                 settings = algorithmSettings
             )
 
-            val displayList = when (selectedSort) {
+            // Strictly sort Latest Ones First (Newest) when Subscribed Channel is selected
+            val displayList = if (selectedSubscribedChannel.isNotBlank()) {
+                rawDisplayList.sortedWith(
+                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenByDescending { it.addedTimestamp }
+                )
+            } else when (selectedSort) {
                 "Newest" -> rankedDisplayList.sortedWith(
                     compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         .thenByDescending { it.addedTimestamp }
@@ -535,7 +548,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "Searching YouTube for '$searchQuery'..." else "Loading $selectedCategory videos...",
+                            text = if (selectedSubscribedChannel.isNotBlank()) "Fetching latest videos for '$selectedSubscribedChannel'..." else if (searchQuery.isNotEmpty()) "Searching YouTube for '$searchQuery'..." else "Loading $selectedCategory videos...",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -569,7 +582,32 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    if (searchQuery.isNotEmpty()) {
+                    if (selectedSubscribedChannel.isNotBlank()) {
+                        item(span = { GridItemSpan(2) }) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Latest Uploads: $selectedSubscribedChannel",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = YouTubeRed
+                                )
+                                TextButton(
+                                    onClick = {
+                                        onSubscribedChannelSelected("")
+                                        onCategorySelected("All")
+                                    }
+                                ) {
+                                    Text("Clear ✖", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else if (searchQuery.isNotEmpty()) {
                         item(span = { GridItemSpan(2) }) {
                             Text(
                                 text = "Search Results for '$searchQuery'",

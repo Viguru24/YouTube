@@ -89,18 +89,83 @@ object YouTubeLiveSearchService {
         return@withContext searchWebHtml(trimmed)
     }
 
+    private fun isMatchingChannel(video: VideoEntity, channelName: String): Boolean {
+        val target = channelName.lowercase().trim()
+        val author = video.channelName.lowercase().trim()
+        val title = video.title.lowercase().trim()
+
+        if (author.isBlank()) return false
+
+        // Direct containment or exact match
+        if (author.contains(target) || target.contains(author)) return true
+        if (author.replace(" ", "") == target.replace(" ", "")) return true
+
+        // Keyword checking (e.g. "Benny Johnson" -> ["benny", "johnson"])
+        val keywords = target.split("\\s+".toRegex()).filter { it.length > 2 }
+        if (keywords.isNotEmpty() && keywords.all { author.contains(it) }) return true
+
+        // If author is generic ("YouTube", "Channel"), check if title contains all channel keywords
+        if (author.contains("youtube") || author.contains("channel")) {
+            if (keywords.isNotEmpty() && keywords.all { title.contains(it) }) return true
+        }
+
+        return false
+    }
+
     /**
-     * Fetches latest videos for a specific subscribed profile channel sorted by newness.
+     * Fetches latest videos for a specific subscribed profile channel sorted strictly by newness.
      */
     suspend fun fetchChannelLatestVideos(channelName: String): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = channelName.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
-        val query1 = searchRealYouTubeVideos("$trimmed latest")
-        val query2 = searchRealYouTubeVideos("$trimmed channel uploads")
-        val combined = (query1 + query2)
+
+        val queries = listOf(
+            "$trimmed latest uploads",
+            "$trimmed channel videos",
+            "$trimmed recent uploads",
+            "$trimmed official channel",
+            "\"$trimmed\""
+        )
+
+        val accumulated = mutableListOf<VideoEntity>()
+        for (q in queries) {
+            val fetched = searchRealYouTubeVideos(q)
+            val matched = fetched.filter { isMatchingChannel(it, trimmed) }
+                .map { it.copy(channelName = trimmed) }
+            accumulated.addAll(matched)
+            if (accumulated.distinctBy { it.youtubeId }.size >= 20) break
+        }
+
+        return@withContext accumulated
             .distinctBy { it.youtubeId }
-            .map { it.copy(channelName = if (it.channelName.contains("Channel", ignoreCase = true) || it.channelName.isBlank()) trimmed else it.channelName) }
-        return@withContext combined.sortedWith(
+            .sortedWith(
+                compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+            )
+    }
+
+    /**
+     * Continuous search batch fetcher for endless infinite scroll on channel uploads.
+     */
+    suspend fun fetchChannelVideosBatch(channelName: String, batchIndex: Int = 0): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val trimmed = channelName.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+
+        val variations = listOf(
+            "$trimmed latest uploads",
+            "$trimmed channel videos",
+            "$trimmed full episode",
+            "$trimmed new video",
+            "$trimmed recent uploads",
+            "$trimmed official channel",
+            "$trimmed podcast",
+            "$trimmed news"
+        )
+        val targetQuery = variations[batchIndex % variations.size]
+        val fetched = searchRealYouTubeVideos(targetQuery)
+        val matched = fetched.filter { isMatchingChannel(it, trimmed) }
+            .map { it.copy(channelName = trimmed) }
+
+        return@withContext matched.sortedWith(
             compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
         )
     }
