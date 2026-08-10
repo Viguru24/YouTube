@@ -225,13 +225,20 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.clearUnsavedRecommendations()
             _categoryVideos.value = emptyList() // Instantly clear stale video list
+            selectedSubscribedChannel.value = "" // Reset subscribed channel filter
+            searchQuery.value = ""
             
             val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
-            val home = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
-            val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+            val homeFeed = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
+            val shortsFeed = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
             
-            // Combine and shuffle to guarantee fresh variety on refresh!
-            val fetched = (profileFeed + home + shorts.shuffled()).distinctBy { it.youtubeId }
+            // Combine and sort NEWEST FIRST so latest videos and shorts appear right at top!
+            val fetched = (profileFeed + homeFeed + shortsFeed)
+                .distinctBy { it.youtubeId }
+                .sortedWith(
+                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                )
+
             if (fetched.isNotEmpty()) {
                 _categoryVideos.value = fetched
                 fetched.forEach { v -> repository.saveVideo(v) }
@@ -244,7 +251,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 selectedCategory.value = "All"
             }
-            searchQuery.value = ""
         }
     }
 

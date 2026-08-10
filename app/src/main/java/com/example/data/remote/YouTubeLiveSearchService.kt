@@ -375,15 +375,17 @@ object YouTubeLiveSearchService {
      */
     suspend fun fetchShortsFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
         val topics = listOf(
-            "politics news analysis",
-            "technology AI updates",
-            "current events news",
-            "science discovery break",
-            "world events documentary"
+            "#shorts latest trending news",
+            "#shorts technology AI updates",
+            "#shorts current events world",
+            "#shorts viral science discovery",
+            "#shorts breaking commentary"
         )
-        val selectedTopic = topics.random()
-        val shorts = searchRealYouTubeVideos("#shorts $selectedTopic")
-            .filter { v ->
+        val selectedTopics = topics.shuffled().take(3)
+        val accumulated = mutableListOf<VideoEntity>()
+        for (topic in selectedTopics) {
+            val fetched = searchRealYouTubeVideos(topic)
+            val filtered = fetched.filter { v ->
                 val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
                 val isShortDuration = durationSec == 0 || durationSec <= 90
                 val lower = (v.title + " " + v.channelName).lowercase()
@@ -400,18 +402,11 @@ object YouTubeLiveSearchService {
                 !lower.contains("baby") &&
                 !lower.contains("toddler") &&
                 !lower.contains("preschool") &&
-                !lower.contains("children") &&
-                !lower.contains("sing along") &&
-                !lower.contains("super simple") &&
-                !lower.contains("short viral") &&
-                !lower.contains("spreading gyan") &&
-                !lower.contains("animation for kids")
-            }
-            .map { it.copy(category = "Shorts", title = if (it.title.contains("#shorts", ignoreCase = true)) it.title else "${it.title} #shorts") }
-        
-        if (shorts.isNotEmpty()) return@withContext shorts
-        
-        return@withContext emptyList()
+                !lower.contains("children")
+            }.map { it.copy(category = "Shorts", title = if (it.title.contains("#shorts", ignoreCase = true)) it.title else "${it.title} #shorts") }
+            accumulated.addAll(filtered)
+        }
+        return@withContext accumulated.distinctBy { it.youtubeId }
     }
 
     private fun formatSeconds(sec: Long): String {
