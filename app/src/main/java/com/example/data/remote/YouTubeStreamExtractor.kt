@@ -280,6 +280,17 @@ object YouTubeStreamExtractor {
                             return@withContext cipherUrl
                         }
                     }
+
+                    // 3. Live Stream HLS Manifest URL
+                    val hlsPattern = Pattern.compile(""""hlsManifestUrl"\s*:\s*"([^"]+)"""")
+                    val hlsMatcher = hlsPattern.matcher(bodyString)
+                    if (hlsMatcher.find()) {
+                        val hlsUrl = hlsMatcher.group(1)?.replace("\\u0026", "&")?.replace("\\/", "/") ?: ""
+                        if (hlsUrl.isNotBlank()) {
+                            logD("YouTubeStreamExtractor", "[$clientName] Found HLS stream URL for Live Feed: $hlsUrl")
+                            return@withContext hlsUrl
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 logD("YouTubeStreamExtractor", "Error extracting stream for $videoId: ${e.message}")

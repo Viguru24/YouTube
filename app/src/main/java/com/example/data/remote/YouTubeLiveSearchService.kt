@@ -51,42 +51,81 @@ object YouTubeLiveSearchService {
         return@withContext results.distinctBy { it.youtubeId }
     }
     /**
-     * Searches YouTube for any query using multi-host redundant open-source search API endpoints.
+     * Searches YouTube for any query using NewPipe Extractor, direct YouTube web search, and fallback API.
      */
     suspend fun searchRealYouTubeVideos(query: String): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        val encoded = try { URLEncoder.encode(trimmed, "UTF-8") } catch (e: Exception) { trimmed }
+        // 1. PRIMARY: NewPipe SearchExtractor (Direct YouTube parsing with real view counts, dates, titles)
+        try {
+            val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+            val extractor = service.getSearchExtractor(trimmed)
+            extractor.fetchPage()
+            val page = extractor.initialPage
+            val results = mutableListOf<VideoEntity>()
+            for (item in page.items) {
+                if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                    val vidId = com.example.util.YouTubeUtils.extractVideoId(item.url) ?: item.url.substringAfter("v=").take(11)
+                    if (vidId.isNotBlank() && vidId.length == 11) {
+                        val durSec = item.duration
+                        val durFormatted = if (durSec > 0) {
+                            val m = durSec / 60
+                            val s = durSec % 60
+                            String.format("%d:%02d", m, s)
+                        } else "0:00"
 
-        // Iterate through fast open-source YouTube search API mirrors
-        for (endpointTemplate in SEARCH_ENDPOINTS) {
-            try {
-                val url = String.format(endpointTemplate, encoded)
-                logD("YouTubeLiveSearchService", "Trying search endpoint: $url")
-
-                val request = Request.Builder()
-                    .url(url)
-                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-                    .build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val bodyString = response.body?.string() ?: ""
-                        val results = parseJsonResponse(bodyString, trimmed)
-                        if (results.isNotEmpty()) {
-                            logD("YouTubeLiveSearchService", "Extracted ${results.size} real video results from endpoint: $url")
-                            return@withContext results
-                        }
+                        results.add(
+                            VideoEntity(
+                                youtubeId = vidId,
+                                title = item.name ?: "YouTube Video",
+                                channelName = item.uploaderName ?: "YouTube",
+                                thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
+                                durationText = durFormatted,
+                                category = "YouTube",
+                                publishedTimeText = item.textualUploadDate ?: "",
+                                viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                            )
+                        )
                     }
                 }
-            } catch (e: Exception) {
-                logD("YouTubeLiveSearchService", "Endpoint fail: ${e.message}")
             }
+            if (results.isNotEmpty()) {
+                logD("YouTubeLiveSearchService", "[NewPipe Search] Found ${results.size} real results for '$trimmed'")
+                return@withContext results
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "[NewPipe Search] Failed: ${e.message}")
         }
 
-        // Final Fallback: Direct YouTube Web HTML scraping
-        return@withContext searchWebHtml(trimmed)
+        // 2. SECONDARY: Direct YouTube Web HTML scraping
+        val webResults = searchWebHtml(trimmed)
+        if (webResults.isNotEmpty()) {
+            logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
+            return@withContext webResults
+        }
+
+        // 3. FALLBACK: Fast Invidious Endpoint
+        try {
+            val encoded = try { URLEncoder.encode(trimmed, "UTF-8") } catch (e: Exception) { trimmed }
+            val url = "https://invidious.flokinet.to/api/v1/search?q=$encoded&type=video"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyString = response.body?.string() ?: ""
+                    val parsed = parseJsonResponse(bodyString, trimmed)
+                    if (parsed.isNotEmpty()) return@withContext parsed
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Fallback fail: ${e.message}")
+        }
+
+        return@withContext emptyList()
     }
 
     private fun isMatchingChannel(video: VideoEntity, channelName: String): Boolean {

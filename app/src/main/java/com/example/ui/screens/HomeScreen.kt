@@ -466,9 +466,11 @@ fun HomeScreen(
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
+            val watchedIds = historyVideos.map { it.youtubeId }.toSet()
+
             val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
                 val targetCh = selectedSubscribedChannel.lowercase().trim()
-                (categoryVideos + videos).filter { video ->
+                categoryVideos.filter { video ->
                     val vCh = video.channelName.lowercase().trim()
                     vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
                     (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))
@@ -480,9 +482,13 @@ fun HomeScreen(
                     com.example.util.YouTubeUtils.searchYouTubeVideos(searchQuery)
                 }
             } else if (selectedCategory != "All") {
-                (categoryVideos + videos.filter { it.category.equals(selectedCategory, ignoreCase = true) }).distinctBy { it.youtubeId }
+                categoryVideos.filter { it.category.equals(selectedCategory, ignoreCase = true) }.distinctBy { it.youtubeId }
             } else {
-                (categoryVideos + videos).distinctBy { it.youtubeId }
+                // Main Home Feed: Prioritize fresh categoryVideos and filter out watched videos so feed is always fresh!
+                categoryVideos
+                    .filter { it.youtubeId !in watchedIds && it.lastPositionSeconds == 0 }
+                    .distinctBy { it.youtubeId }
+                    .ifEmpty { categoryVideos.distinctBy { it.youtubeId } }
             }
 
             // Apply Upload Date Time Selector Filter to Search Results

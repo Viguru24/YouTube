@@ -530,11 +530,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshFeed() {
-        val currentQuery = searchQuery.value
-        if (currentQuery.isNotEmpty()) {
-            searchQuery.value = ""
-            searchQuery.value = currentQuery
-        }
+        refreshTrendingFeed()
     }
 
     fun addNoteToActiveVideo(timestampSeconds: Int, timestampFormatted: String, noteText: String) {

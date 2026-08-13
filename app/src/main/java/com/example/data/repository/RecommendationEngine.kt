@@ -146,9 +146,9 @@ object RecommendationEngine {
                 }
             }
 
-            // H. Watched Progress / Recency Adjustment
+            // H. Watched Progress / Deprioritize Already Watched Videos on Feed
             if (video.lastPositionSeconds > 0) {
-                score += 15.0f // Resume watching boost
+                score -= 30.0f // Deprioritize already watched videos to keep discovery feed fresh
             }
 
             Pair(video, score)

@@ -379,12 +379,35 @@ fun YouTubePlayerView(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        val isLiveStream = totalDurationMs <= 0 || (streamUrl?.contains(".m3u8") == true)
+                        if (isLiveStream) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .background(YouTubeRed, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(Color.White, CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "LIVE",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
 
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -481,33 +504,36 @@ fun YouTubePlayerView(
                         }
                     }
 
-                    val activeSliderValue = if (isDraggingScrubber) {
-                        dragFraction
-                    } else if (totalDurationMs > 0) {
-                        (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
-                    } else 0f
+                    val isLive = totalDurationMs <= 0 || (streamUrl?.contains(".m3u8") == true)
+                    if (!isLive) {
+                        val activeSliderValue = if (isDraggingScrubber) {
+                            dragFraction
+                        } else if (totalDurationMs > 0) {
+                            (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+                        } else 0f
 
-                    Slider(
-                        value = activeSliderValue,
-                        onValueChange = { fraction ->
-                            isDraggingScrubber = true
-                            dragFraction = fraction
-                            currentPosMs = (fraction * totalDurationMs).toLong()
-                        },
-                        onValueChangeFinished = {
-                            val targetMs = (dragFraction * totalDurationMs).toLong()
-                            exoPlayer.seekTo(targetMs)
-                            isDraggingScrubber = false
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = YouTubeRed.copy(alpha = 0.85f),
-                            activeTrackColor = YouTubeRed.copy(alpha = 0.7f),
-                            inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(16.dp)
-                    )
+                        Slider(
+                            value = activeSliderValue,
+                            onValueChange = { fraction ->
+                                isDraggingScrubber = true
+                                dragFraction = fraction
+                                currentPosMs = (fraction * totalDurationMs).toLong()
+                            },
+                            onValueChangeFinished = {
+                                val targetMs = (dragFraction * totalDurationMs).toLong()
+                                exoPlayer.seekTo(targetMs)
+                                isDraggingScrubber = false
+                            },
+                            colors = SliderDefaults.colors(
+                                thumbColor = YouTubeRed.copy(alpha = 0.85f),
+                                activeTrackColor = YouTubeRed.copy(alpha = 0.7f),
+                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(16.dp)
+                        )
+                    }
                 }
             }
         }

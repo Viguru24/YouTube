@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -108,7 +109,33 @@ fun VideoCard(
                 }
 
                 // Duration Badge Bottom Right
-                if (video.durationText.isNotBlank()) {
+                val isLive = video.durationText == "0:00" || video.durationText == "00:00" || video.durationText.isBlank() || video.publishedTimeText.contains("live", ignoreCase = true)
+                if (isLive) {
+                    Box(
+                        modifier = Modifier
+                            .padding(6.dp)
+                            .align(Alignment.BottomEnd)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(YouTubeRed)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .background(Color.White, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "LIVE",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                } else if (video.durationText.isNotBlank()) {
                     Box(
                         modifier = Modifier
                             .padding(6.dp)
