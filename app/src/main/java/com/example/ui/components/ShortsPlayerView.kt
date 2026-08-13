@@ -8,8 +8,11 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -258,10 +261,27 @@ fun ShortsPlayerView(
             )
         }
 
-        // Gesture Drag Layer: Intercepts vertical drag swipes for Next/Previous Short
+        var showPlayPauseIndicator by remember { mutableStateOf(false) }
+
+        LaunchedEffect(showPlayPauseIndicator) {
+            if (showPlayPauseIndicator) {
+                delay(800)
+                showPlayPauseIndicator = false
+            }
+        }
+
+        // Gesture Layer: Intercepts Tap (Play/Pause) and Vertical Drag Swipes (Next/Previous Short)
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .pointerInput(videoId) {
+                    detectTapGestures(
+                        onTap = {
+                            isPlayingState = !isPlayingState
+                            showPlayPauseIndicator = true
+                        }
+                    )
+                }
                 .pointerInput(videoId) {
                     detectVerticalDragGestures(
                         onDragStart = {
@@ -284,6 +304,29 @@ fun ShortsPlayerView(
                     )
                 }
         )
+
+        // Center Animated Play/Pause Feedback Indicator
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showPlayPauseIndicator,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.65f),
+                modifier = Modifier.size(76.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPlayingState) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                        contentDescription = if (isPlayingState) "Play" else "Pause",
+                        tint = Color.White,
+                        modifier = Modifier.size(44.dp)
+                    )
+                }
+            }
+        }
 
         // 2. Loading Overlay (Fades out cleanly when stream is ready)
         AnimatedVisibility(
