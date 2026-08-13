@@ -357,155 +357,33 @@ fun YouTubePlayerView(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.35f))
         ) {
-            // Hoist Speed / Quality state so bottom bar can access them
-            var showSpeedMenu by remember { mutableStateOf(false) }
+            // Hoist Speed / Quality / Settings state for authentic YouTube Control Deck
+            var showSettingsMenu by remember { mutableStateOf(false) }
+            var showSpeedSubMenu by remember { mutableStateOf(false) }
+            var showQualitySubMenu by remember { mutableStateOf(false) }
             var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-            var showQualityMenu by remember { mutableStateOf(false) }
-            var selectedQuality by remember { mutableStateOf("Auto") }
+            var selectedQuality by remember { mutableStateOf("1080p") }
+            var captionsEnabled by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
 
             Box(modifier = Modifier.fillMaxSize()) {
 
-                // Bottom Control Bar: Time Scrubber + Timestamp + Mute
+                // Bottom Control Bar: Authentic YouTube Desktop / Mobile Bottom Bar
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    // Bottom row: timestamp | 1x | Quality | 🔊
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val isLiveStream = totalDurationMs <= 0 || (streamUrl?.contains(".m3u8") == true)
-                        if (isLiveStream) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(YouTubeRed, RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "LIVE",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        } else {
-                            Text(
-                                text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
                             )
-                        }
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    val isLiveStream = totalDurationMs <= 0 || (streamUrl?.contains(".m3u8") == true)
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Speed button
-                            Box {
-                                Text(
-                                    text = "${selectedSpeed}x",
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                                        .clickable { showSpeedMenu = true }
-                                        .padding(horizontal = 6.dp, vertical = 4.dp)
-                                )
-                                DropdownMenu(expanded = showSpeedMenu, onDismissRequest = { showSpeedMenu = false }) {
-                                    listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
-                                        DropdownMenuItem(
-                                            text = { Text("${s}x", fontSize = 12.sp) },
-                                            onClick = {
-                                                selectedSpeed = s
-                                                showSpeedMenu = false
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Quality button
-                            Box {
-                                Text(
-                                    text = selectedQuality,
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
-                                        .clickable { showQualityMenu = true }
-                                        .padding(horizontal = 6.dp, vertical = 4.dp)
-                                )
-                                DropdownMenu(expanded = showQualityMenu, onDismissRequest = { showQualityMenu = false }) {
-                                    listOf("1080p", "720p", "480p", "Auto").forEach { q ->
-                                        DropdownMenuItem(
-                                            text = { Text(q, fontSize = 12.sp) },
-                                            onClick = {
-                                                selectedQuality = q
-                                                showQualityMenu = false
-                                                val (maxW, maxH) = when (q) {
-                                                    "1080p" -> Pair(1920, 1080)
-                                                    "720p"  -> Pair(1280, 720)
-                                                    "480p"  -> Pair(854, 480)
-                                                    else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
-                                                }
-                                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                                    .buildUpon().setMaxVideoSize(maxW, maxH).build()
-
-                                                // Seamlessly re-extract target resolution stream
-                                                coroutineScope.launch {
-                                                    val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
-                                                    if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
-                                                        val currentPos = exoPlayer.currentPosition
-                                                        streamUrl = newUrl
-                                                        val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
-                                                        exoPlayer.setMediaItem(mediaItem)
-                                                        exoPlayer.prepare()
-                                                        exoPlayer.seekTo(currentPos)
-                                                        exoPlayer.play()
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Mute/Volume button
-                            IconButton(
-                                onClick = {
-                                    isMutedState = !isMutedState
-                                    exoPlayer.volume = if (isMutedState) 0f else 1f
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Icon(
-                                    imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                                    contentDescription = "Mute",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    val isLive = totalDurationMs <= 0 || (streamUrl?.contains(".m3u8") == true)
-                    if (!isLive) {
+                    // 1. YouTube Red Scrubber Progress Slider (Across the Top of the Bar)
+                    if (!isLiveStream) {
                         val activeSliderValue = if (isDraggingScrubber) {
                             dragFraction
                         } else if (totalDurationMs > 0) {
@@ -525,14 +403,320 @@ fun YouTubePlayerView(
                                 isDraggingScrubber = false
                             },
                             colors = SliderDefaults.colors(
-                                thumbColor = YouTubeRed.copy(alpha = 0.85f),
-                                activeTrackColor = YouTubeRed.copy(alpha = 0.7f),
-                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
+                                thumbColor = YouTubeRed,
+                                activeTrackColor = YouTubeRed,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(16.dp)
+                                .height(18.dp)
                         )
+                    }
+
+                    // 2. YouTube Action Button Row (Play, Prev, Next, Volume, Time ... CC, Settings HD, Miniplayer, Fullscreen)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // LEFT SIDE CONTROLS
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            // Play / Pause Button (|| / ▶)
+                            IconButton(
+                                onClick = {
+                                    if (exoPlayer.isPlaying) {
+                                        exoPlayer.pause()
+                                        isPlayingState = false
+                                    } else {
+                                        exoPlayer.play()
+                                        isPlayingState = true
+                                    }
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = if (isPlayingState) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            // Previous Button (|◀)
+                            IconButton(
+                                onClick = {
+                                    val target = (exoPlayer.currentPosition - 10000L).coerceAtLeast(0L)
+                                    exoPlayer.seekTo(target)
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipPrevious,
+                                    contentDescription = "Previous",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Next Button (▶|)
+                            IconButton(
+                                onClick = {
+                                    val target = (exoPlayer.currentPosition + 10000L).coerceAtMost(totalDurationMs)
+                                    exoPlayer.seekTo(target)
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.SkipNext,
+                                    contentDescription = "Next",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Volume / Mute Button (🔊)
+                            IconButton(
+                                onClick = {
+                                    isMutedState = !isMutedState
+                                    exoPlayer.volume = if (isMutedState) 0f else 1f
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                    contentDescription = "Volume",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Timestamp (3:12 / 43:15) or LIVE Badge
+                            if (isLiveStream) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .background(YouTubeRed, RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(Color.White, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "LIVE",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        // RIGHT SIDE CONTROLS
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            // 1. Subtitles / Captions Button [=]
+                            IconButton(
+                                onClick = {
+                                    captionsEnabled = !captionsEnabled
+                                    Toast.makeText(context, if (captionsEnabled) "Subtitles (CC) Turned On" else "Subtitles (CC) Turned Off", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ClosedCaption,
+                                        contentDescription = "Subtitles",
+                                        tint = if (captionsEnabled) YouTubeRed else Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    if (captionsEnabled) {
+                                        Box(
+                                            modifier = Modifier
+                                                .width(14.dp)
+                                                .height(2.dp)
+                                                .background(YouTubeRed)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 2. Settings Gear with Red HD Badge ⚙️ HD
+                            Box(contentAlignment = Alignment.TopEnd) {
+                                IconButton(
+                                    onClick = { showSettingsMenu = true },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = "Settings",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                                Surface(
+                                    color = YouTubeRed,
+                                    shape = RoundedCornerShape(2.dp),
+                                    modifier = Modifier
+                                        .offset(x = (-2).dp, y = 3.dp)
+                                ) {
+                                    Text(
+                                        text = "HD",
+                                        color = Color.White,
+                                        fontSize = 7.sp,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                    )
+                                }
+
+                                // YouTube Settings Dropdown Menu
+                                DropdownMenu(
+                                    expanded = showSettingsMenu,
+                                    onDismissRequest = {
+                                        showSettingsMenu = false
+                                        showSpeedSubMenu = false
+                                        showQualitySubMenu = false
+                                    }
+                                ) {
+                                    if (!showSpeedSubMenu && !showQualitySubMenu) {
+                                        DropdownMenuItem(
+                                            text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
+                                            onClick = { showQualitySubMenu = true }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Playback Speed: ${selectedSpeed}x", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null, tint = YouTubeRed) },
+                                            onClick = { showSpeedSubMenu = true }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Stats & Debug Console", fontSize = 13.sp) },
+                                            leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
+                                            onClick = {
+                                                showSettingsMenu = false
+                                                onToggleDebugConsole()
+                                            }
+                                        )
+                                    } else if (showQualitySubMenu) {
+                                        DropdownMenuItem(
+                                            text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
+                                            onClick = { showQualitySubMenu = false }
+                                        )
+                                        listOf("1080p", "720p", "480p", "Auto").forEach { q ->
+                                            val isCurrent = q == selectedQuality
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = if (isCurrent) "✓ $q (High Definition)" else q,
+                                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                        fontSize = 13.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    selectedQuality = q
+                                                    showQualitySubMenu = false
+                                                    showSettingsMenu = false
+                                                    val (maxW, maxH) = when (q) {
+                                                        "1080p" -> Pair(1920, 1080)
+                                                        "720p"  -> Pair(1280, 720)
+                                                        "480p"  -> Pair(854, 480)
+                                                        else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
+                                                    }
+                                                    exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                                        .buildUpon().setMaxVideoSize(maxW, maxH).build()
+
+                                                    coroutineScope.launch {
+                                                        val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
+                                                        if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
+                                                            val currentPos = exoPlayer.currentPosition
+                                                            streamUrl = newUrl
+                                                            val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
+                                                            exoPlayer.setMediaItem(mediaItem)
+                                                            exoPlayer.prepare()
+                                                            exoPlayer.seekTo(currentPos)
+                                                            exoPlayer.play()
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    } else if (showSpeedSubMenu) {
+                                        DropdownMenuItem(
+                                            text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
+                                            onClick = { showSpeedSubMenu = false }
+                                        )
+                                        listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
+                                            val isCurrent = s == selectedSpeed
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = if (isCurrent) "✓ ${s}x (Normal)" else "${s}x",
+                                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                        fontSize = 13.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    selectedSpeed = s
+                                                    showSpeedSubMenu = false
+                                                    showSettingsMenu = false
+                                                    exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. Miniplayer / Theater [<>]
+                            IconButton(
+                                onClick = {
+                                    Toast.makeText(context, "Miniplayer View", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.PictureInPictureAlt,
+                                    contentDescription = "Miniplayer",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
+                            // 4. Fullscreen Expand ⤢
+                            IconButton(
+                                onClick = {
+                                    onToggleDebugConsole()
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Fullscreen,
+                                    contentDescription = "Fullscreen",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
