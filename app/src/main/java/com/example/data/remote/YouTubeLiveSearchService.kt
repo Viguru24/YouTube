@@ -419,40 +419,35 @@ object YouTubeLiveSearchService {
     }
 
     /**
-     * Fetches live trending YouTube Shorts feed filtered for adult topics (News, Politics, Tech, Science).
-     * Purges foreign scripts, Indian media, and kids cartoons.
+     * Fetches real, high-quality English YouTube Shorts from reputable channels and verified topics.
+     * Enforces strict 3..90s duration and zero foreign language content.
      */
     suspend fun fetchShortsFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
         val topics = listOf(
-            "#shorts latest trending news",
-            "#shorts technology AI updates",
-            "#shorts viral science discovery",
-            "#shorts breaking commentary"
+            "BBC News #shorts",
+            "Sky News #shorts",
+            "Reuters #shorts",
+            "MKBHD #shorts",
+            "Veritasium #shorts",
+            "Daily Dose of Internet #shorts",
+            "Kurzgesagt #shorts",
+            "Wired #shorts",
+            "National Geographic #shorts",
+            "Gordon Ramsay #shorts"
         )
-        val selectedTopics = topics.shuffled().take(3)
+        val selectedTopics = topics.shuffled().take(4)
         val accumulated = mutableListOf<VideoEntity>()
         for (topic in selectedTopics) {
             val fetched = searchRealYouTubeVideos(topic)
             val filtered = fetched.filter { v ->
                 val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
-                val isShortDuration = durationSec == 0 || durationSec <= 90
-                val lower = (v.title + " " + v.channelName).lowercase()
-                isShortDuration &&
+                durationSec in 3..90 &&
                 !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) &&
-                !lower.contains("abc") &&
-                !lower.contains("alphabet") &&
-                !lower.contains("phonics") &&
-                !lower.contains("cartoon") &&
-                !lower.contains("kids") &&
-                !lower.contains("cocomelon") &&
-                !lower.contains("nursery") &&
-                !lower.contains("rhyme") &&
-                !lower.contains("toy") &&
-                !lower.contains("baby") &&
-                !lower.contains("toddler") &&
-                !lower.contains("preschool") &&
-                !lower.contains("children")
-            }.map { it.copy(category = "Shorts", title = if (it.title.contains("#shorts", ignoreCase = true)) it.title else "${it.title} #shorts") }
+                !v.title.lowercase().contains("kids") &&
+                !v.title.lowercase().contains("cartoon") &&
+                !v.title.lowercase().contains("nursery") &&
+                !v.title.lowercase().contains("cocomelon")
+            }.map { it.copy(category = "Shorts") }
             accumulated.addAll(filtered)
         }
         return@withContext accumulated.distinctBy { it.youtubeId }

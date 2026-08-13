@@ -26,38 +26,38 @@ object YouTubeUtils {
 
     /**
      * Accurately determines whether a video entity is a YouTube Short.
-     * Enforces strict duration limits (<= 90s) and requires explicit Shorts categorization or #shorts tag.
+     * Enforces proven short duration (3..90s) AND explicit Shorts categorization or #shorts tag.
+     * Regular long videos (or unknown duration videos) are NEVER classified as Shorts.
      */
     fun isShortVideo(video: VideoEntity): Boolean {
         val durationSec = parseFormattedTimeToSeconds(video.durationText)
 
-        // Any video longer than 90 seconds (1m 30s) CANNOT be a Short
-        if (durationSec > 90) return false
+        // 1. Any video longer than 90 seconds (1m 30s) or with unknown/zero duration CANNOT be a Short
+        if (durationSec !in 3..90) return false
 
-        // Explicitly tagged category "Shorts"
-        if (video.category.equals("Shorts", ignoreCase = true)) return true
+        // 2. Must be tagged with category "Shorts" or contain #shorts / #short in title
+        val isTaggedShort = video.category.equals("Shorts", ignoreCase = true) ||
+                            video.title.contains("#shorts", ignoreCase = true) ||
+                            video.title.contains("#short", ignoreCase = true)
 
-        // Explicit hashtag #shorts or #short in title
-        if (video.title.contains("#shorts", ignoreCase = true) || video.title.contains("#short", ignoreCase = true)) return true
-
-        return false
+        return isTaggedShort
     }
 
     /**
-     * Detects non-English scripts (Devanagari, Tamil, Telugu, Arabic, Cyrillic, etc.)
-     * and high-frequency non-English regional media keywords to purge unwanted foreign content.
+     * Zero-tolerance detection for foreign scripts (Devanagari, Urdu/Arabic, Tamil, Telugu, etc.)
+     * and Pakistani/Indian regional channels and political/media keywords.
      */
     fun isForeignLanguageContent(title: String, channelName: String): Boolean {
         val fullText = "$title $channelName".lowercase()
 
-        var nonLatinLetters = 0
-        var totalLetters = 0
+        // 1. If ANY character belongs to a non-Latin/Indic/Arabic/Asian script, reject immediately
         for (ch in "$title $channelName") {
             if (ch.isLetter()) {
-                totalLetters++
                 val code = ch.code
-                if (code in 0x0600..0x06FF || // Arabic
-                    code in 0x0900..0x097F || // Devanagari (Hindi, Marathi, Sanskrit)
+                if (code in 0x0600..0x06FF || // Arabic / Urdu
+                    code in 0x0750..0x077F || // Arabic Supplement
+                    code in 0x08A0..0x08FF || // Arabic Extended
+                    code in 0x0900..0x097F || // Devanagari (Hindi, Marathi)
                     code in 0x0980..0x09FF || // Bengali
                     code in 0x0A00..0x0A7F || // Gurmukhi (Punjabi)
                     code in 0x0A80..0x0AFF || // Gujarati
@@ -69,29 +69,31 @@ object YouTubeUtils {
                     code in 0x0D80..0x0DFF || // Sinhala
                     code in 0x0E00..0x0E7F || // Thai
                     code in 0x0400..0x04FF || // Cyrillic
-                    code in 0x4E00..0x9FFF || // CJK Ideographs
-                    code in 0xAC00..0xD7AF    // Hangul
+                    code in 0x4E00..0x9FFF || // CJK Chinese
+                    code in 0xAC00..0xD7AF    // Hangul Korean
                 ) {
-                    nonLatinLetters++
+                    return true
                 }
             }
         }
-        if (totalLetters > 0 && (nonLatinLetters.toDouble() / totalLetters) > 0.12) {
-            return true
-        }
 
+        // 2. Comprehensive blacklist of Pakistani, Indian, and regional media outlets & terms
         val foreignKeywords = listOf(
             "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada",
             "marathi", "urdu", "bangla", "bengali", "gujarati", "desi", "bollywood",
-            "tollywood", "kollywood", "pakistan", "ary digital", "zee tv", "t-series",
-            "set india", "sab tv", "geet", "gaana", "bhajan", "natok", "dramareview",
-            "naat", "qawwali", "bayan", "voot", "hotstar", "hum tv", "geo news",
-            "aaj tak", "abp news", "india tv", "ndtv", "republic bharat", "zee news",
-            "news18", "tv9", "lallantop", "dainik", "punjab kesari", "speed records",
-            "white hill", "saregama", "tips official", "shemaroo", "goldmines",
-            "ultra movie", "pen movies", "b4u", "sonotek", "haryanvi", "chanda",
-            "khesari", "pawan singh", "bol news", "samaa", "dunya", "express news",
-            "kapil sharma", "taarak mehta", "cid", "crime patrol", "savdhaan"
+            "tollywood", "kollywood", "pakistan", "pakistani", "india", "indian", "bharat",
+            "hindustan", "ary digital", "zee tv", "t-series", "set india", "sab tv",
+            "geet", "gaana", "bhajan", "natok", "dramareview", "naat", "qawwali", "bayan",
+            "voot", "hotstar", "hum tv", "geo news", "geo tv", "aaj tak", "abp news",
+            "india tv", "ndtv", "republic bharat", "zee news", "news18", "tv9",
+            "lallantop", "dainik", "punjab kesari", "speed records", "white hill",
+            "saregama", "tips official", "shemaroo", "goldmines", "ultra movie",
+            "pen movies", "b4u", "sonotek", "haryanvi", "chanda", "khesari", "pawan singh",
+            "bol news", "samaa", "dunya", "express news", "92 news", "hum news",
+            "kapil sharma", "taarak mehta", "cid", "crime patrol", "savdhaan",
+            "babar azam", "virat kohli", "rohit sharma", "ipl 202", "psl 202", "cricket live",
+            "imran khan", "shehbaz", "nawaz sharif", "narendra modi", "bjp", "congress party",
+            "dhruv rathee", "soch by mohak", "lahore", "karachi", "islamabad", "delhi", "mumbai"
         )
         return foreignKeywords.any { fullText.contains(it) }
     }
