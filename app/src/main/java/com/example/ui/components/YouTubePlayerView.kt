@@ -71,6 +71,7 @@ fun YouTubePlayerView(
     var isPlayingState by remember { mutableStateOf(true) }
     var isMutedState by remember { mutableStateOf(false) }
     var showControlsOverlay by remember { mutableStateOf(false) }
+    var isSettingsMenuOpen by remember { mutableStateOf(false) }
     var currentPosMs by remember { mutableLongStateOf(0L) }
     var totalDurationMs by remember { mutableLongStateOf(0L) }
 
@@ -194,11 +195,11 @@ fun YouTubePlayerView(
         }
     }
 
-    // Auto-hide controls overlay after 3 seconds of inactivity (paused while scrubbing)
-    LaunchedEffect(showControlsOverlay, isDraggingScrubber) {
-        if (showControlsOverlay && !isDraggingScrubber) {
-            delay(3000)
-            if (!isDraggingScrubber) {
+    // Auto-hide controls overlay after 4 seconds of inactivity (paused while scrubbing or when Settings menu is open)
+    LaunchedEffect(showControlsOverlay, isDraggingScrubber, isSettingsMenuOpen) {
+        if (showControlsOverlay && !isDraggingScrubber && !isSettingsMenuOpen) {
+            delay(4000)
+            if (!isDraggingScrubber && !isSettingsMenuOpen) {
                 showControlsOverlay = false
             }
         }
@@ -560,10 +561,16 @@ fun YouTubePlayerView(
                             }
 
                             // 2. Settings Gear with Red HD Badge ⚙️ HD
-                            Box(contentAlignment = Alignment.TopEnd) {
-                                IconButton(
-                                    onClick = { showSettingsMenu = true },
-                                    modifier = Modifier.size(34.dp)
+                            Box {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            isSettingsMenuOpen = true
+                                            showSettingsMenu = true
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 6.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Settings,
@@ -571,20 +578,19 @@ fun YouTubePlayerView(
                                         tint = Color.White,
                                         modifier = Modifier.size(19.dp)
                                     )
-                                }
-                                Surface(
-                                    color = YouTubeRed,
-                                    shape = RoundedCornerShape(2.dp),
-                                    modifier = Modifier
-                                        .offset(x = (-2).dp, y = 3.dp)
-                                ) {
-                                    Text(
-                                        text = "HD",
-                                        color = Color.White,
-                                        fontSize = 7.sp,
-                                        fontWeight = FontWeight.Black,
-                                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 0.5.dp)
-                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Surface(
+                                        color = YouTubeRed,
+                                        shape = RoundedCornerShape(3.dp)
+                                    ) {
+                                        Text(
+                                            text = "HD",
+                                            color = Color.White,
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                                        )
+                                    }
                                 }
 
                                 // YouTube Settings Dropdown Menu
@@ -594,6 +600,7 @@ fun YouTubePlayerView(
                                         showSettingsMenu = false
                                         showSpeedSubMenu = false
                                         showQualitySubMenu = false
+                                        isSettingsMenuOpen = false
                                     }
                                 ) {
                                     if (!showSpeedSubMenu && !showQualitySubMenu) {
@@ -635,6 +642,7 @@ fun YouTubePlayerView(
                                                     selectedQuality = q
                                                     showQualitySubMenu = false
                                                     showSettingsMenu = false
+                                                    isSettingsMenuOpen = false
                                                     val (maxW, maxH) = when (q) {
                                                         "1080p" -> Pair(1920, 1080)
                                                         "720p"  -> Pair(1280, 720)
@@ -679,6 +687,7 @@ fun YouTubePlayerView(
                                                     selectedSpeed = s
                                                     showSpeedSubMenu = false
                                                     showSettingsMenu = false
+                                                    isSettingsMenuOpen = false
                                                     exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
                                                 }
                                             )
