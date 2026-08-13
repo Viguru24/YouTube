@@ -85,7 +85,13 @@ object YouTubeUtils {
             "marathi", "urdu", "bangla", "bengali", "gujarati", "desi", "bollywood",
             "tollywood", "kollywood", "pakistan", "ary digital", "zee tv", "t-series",
             "set india", "sab tv", "geet", "gaana", "bhajan", "natok", "dramareview",
-            "naat", "qawwali", "bayan", "voot", "hotstar", "hum tv", "geo news"
+            "naat", "qawwali", "bayan", "voot", "hotstar", "hum tv", "geo news",
+            "aaj tak", "abp news", "india tv", "ndtv", "republic bharat", "zee news",
+            "news18", "tv9", "lallantop", "dainik", "punjab kesari", "speed records",
+            "white hill", "saregama", "tips official", "shemaroo", "goldmines",
+            "ultra movie", "pen movies", "b4u", "sonotek", "haryanvi", "chanda",
+            "khesari", "pawan singh", "bol news", "samaa", "dunya", "express news",
+            "kapil sharma", "taarak mehta", "cid", "crime patrol", "savdhaan"
         )
         return foreignKeywords.any { fullText.contains(it) }
     }

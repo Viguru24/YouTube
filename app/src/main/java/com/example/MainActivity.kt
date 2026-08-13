@@ -125,8 +125,10 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        val isPlayingAsShort by viewModel.isPlayingAsShort.collectAsState()
+
         if (activeVideo != null) {
-            val isShort = com.example.util.YouTubeUtils.isShortVideo(activeVideo!!)
+            val isShort = isPlayingAsShort ?: com.example.util.YouTubeUtils.isShortVideo(activeVideo!!)
             if (isShort) {
                 // Full Screen Portrait Shorts Player View with swipe gestures
                 com.example.ui.components.ShortsPlayerView(
@@ -140,14 +142,14 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                         val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
                         val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
                         if (currentIndex >= 0 && currentIndex < shorts.size - 1) {
-                            viewModel.playVideo(shorts[currentIndex + 1])
+                            viewModel.playShort(shorts[currentIndex + 1])
                         }
                     },
                     onPreviousShort = {
                         val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
                         val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
                         if (currentIndex > 0) {
-                            viewModel.playVideo(shorts[currentIndex - 1])
+                            viewModel.playShort(shorts[currentIndex - 1])
                         }
                     },
                     onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
@@ -261,7 +263,8 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             googleAccount = googleAccount,
                             onCategorySelected = { viewModel.selectedCategory.value = it },
                             onSearchQueryChanged = { viewModel.searchQuery.value = it },
-                            onVideoClick = { v -> viewModel.playVideo(v) },
+                            onVideoClick = { v -> viewModel.playVideo(v, isShort = false) },
+                            onShortClick = { v -> viewModel.playShort(v) },
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },

@@ -172,6 +172,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.clearUnsavedRecommendations()
+        }
+
         viewModelScope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             searchQuery
@@ -213,8 +217,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(searchTopic)
                             .map { it.copy(category = category) }
                     }
-                    _categoryVideos.value = fetched
-                    fetched.forEach { v -> repository.saveVideo(v) }
+                    val englishOnly = fetched.filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    _categoryVideos.value = englishOnly
+                    englishOnly.forEach { v -> repository.saveVideo(v) }
                 } catch (e: Exception) {
                     android.util.Log.e("YouTubeViewModel", "Category fetch error: ${e.message}")
                 }
@@ -224,33 +229,36 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshTrendingFeed() {
         viewModelScope.launch {
-            repository.clearUnsavedRecommendations()
-            _categoryVideos.value = emptyList() // Instantly clear stale video list
-            selectedSubscribedChannel.value = "" // Reset subscribed channel filter
-            searchQuery.value = ""
-            
-            val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
-            val homeFeed = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
-            val shortsFeed = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-            
-            // Combine and sort NEWEST FIRST so latest videos and shorts appear right at top!
-            val fetched = (profileFeed + homeFeed + shortsFeed)
-                .distinctBy { it.youtubeId }
-                .sortedWith(
-                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                )
+            try {
+                repository.clearUnsavedRecommendations()
+                _categoryVideos.value = emptyList() // Instantly clear stale video list
+                selectedSubscribedChannel.value = "" // Reset subscribed channel filter
+                searchQuery.value = ""
 
-            if (fetched.isNotEmpty()) {
-                _categoryVideos.value = fetched
-                fetched.forEach { v -> repository.saveVideo(v) }
-            }
+                val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
+                val homeFeed = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
+                val shortsFeed = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
 
-            // Re-trigger selectedCategory flow to refresh UI list
-            if (selectedCategory.value == "All") {
-                selectedCategory.value = ""
-                selectedCategory.value = "All"
-            } else {
-                selectedCategory.value = "All"
+                val combined = (profileFeed + homeFeed + shortsFeed)
+                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    .distinctBy { it.youtubeId }
+                    .sortedWith(
+                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    )
+
+                if (combined.isNotEmpty()) {
+                    _categoryVideos.value = combined
+                    combined.forEach { v -> repository.saveVideo(v) }
+                }
+
+                if (selectedCategory.value == "All") {
+                    selectedCategory.value = ""
+                    selectedCategory.value = "All"
+                } else {
+                    selectedCategory.value = "All"
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeViewModel", "Feed refresh error: ${e.message}")
             }
         }
     }
@@ -369,7 +377,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         searchQuery,
         selectedCategory
     ) { all, query, category ->
-        var filtered = all
+        var filtered = all.filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
         if (category != "All") {
             filtered = filtered.filter { it.category.equals(category, ignoreCase = true) }
         }
@@ -396,9 +404,12 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val watchHistory: StateFlow<List<VideoEntity>> = repository.watchHistory
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Active playing video state
+    // Active playing video state & Shorts mode tracking
     private val _activeVideoId = MutableStateFlow<String?>(null)
     val activeVideoId: StateFlow<String?> = _activeVideoId.asStateFlow()
+
+    private val _isPlayingAsShort = MutableStateFlow<Boolean?>(null)
+    val isPlayingAsShort: StateFlow<Boolean?> = _isPlayingAsShort.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val activeVideo: StateFlow<VideoEntity?> = _activeVideoId.flatMapLatest { id ->
@@ -412,14 +423,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         else repository.getNotesForVideo(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun playVideo(video: VideoEntity) {
+    fun playVideo(video: VideoEntity, isShort: Boolean = false) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isPlayingAsShort.value = isShort
             val now = System.currentTimeMillis()
             val updated = video.copy(lastWatchedTimestamp = now)
             repository.saveVideo(updated)
             repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
             _activeVideoId.value = video.youtubeId
         }
+    }
+
+    fun playShort(video: VideoEntity) {
+        playVideo(video.copy(category = "Shorts"), isShort = true)
     }
 
     fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
@@ -431,6 +447,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setActiveVideo(youtubeId: String, startSeconds: Int = 0) {
+        _isPlayingAsShort.value = false
         _activeVideoId.value = youtubeId
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.updateWatchHistory(youtubeId, startSeconds)
@@ -439,6 +456,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearActiveVideo() {
         _activeVideoId.value = null
+        _isPlayingAsShort.value = null
     }
 
     fun onOAuthTokenReceived(accessToken: String) {

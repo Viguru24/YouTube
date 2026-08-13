@@ -53,6 +53,7 @@ fun HomeScreen(
     onCategorySelected: (String) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onVideoClick: (VideoEntity) -> Unit,
+    onShortClick: (VideoEntity) -> Unit = onVideoClick,
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
     onDeleteVideo: (VideoEntity) -> Unit,
@@ -680,7 +681,7 @@ fun HomeScreen(
                                     items(shortsList, key = { it.youtubeId }) { shortVideo ->
                                         ShortsReelCard(
                                             video = shortVideo,
-                                            onClick = { onVideoClick(shortVideo) }
+                                            onClick = { onShortClick(shortVideo) }
                                         )
                                     }
                                 }
