@@ -75,18 +75,24 @@ object YouTubeLiveSearchService {
                             String.format("%d:%02d", m, s)
                         } else "0:00"
 
-                        results.add(
-                            VideoEntity(
-                                youtubeId = vidId,
-                                title = item.name ?: "YouTube Video",
-                                channelName = item.uploaderName ?: "YouTube",
-                                thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
-                                durationText = durFormatted,
-                                category = "YouTube",
-                                publishedTimeText = item.textualUploadDate ?: "",
-                                viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                        val title = item.name ?: "YouTube Video"
+                        val channel = item.uploaderName ?: "YouTube"
+
+                        // Purge foreign / Indian scripts and non-English media unless explicitly searched
+                        if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                            results.add(
+                                VideoEntity(
+                                    youtubeId = vidId,
+                                    title = title,
+                                    channelName = channel,
+                                    thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
+                                    durationText = durFormatted,
+                                    category = "YouTube",
+                                    publishedTimeText = item.textualUploadDate ?: "",
+                                    viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -99,7 +105,7 @@ object YouTubeLiveSearchService {
         }
 
         // 2. SECONDARY: Direct YouTube Web HTML scraping
-        val webResults = searchWebHtml(trimmed)
+        val webResults = searchWebHtml(trimmed).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
         if (webResults.isNotEmpty()) {
             logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
             return@withContext webResults
@@ -108,16 +114,17 @@ object YouTubeLiveSearchService {
         // 3. FALLBACK: Fast Invidious Endpoint
         try {
             val encoded = try { URLEncoder.encode(trimmed, "UTF-8") } catch (e: Exception) { trimmed }
-            val url = "https://invidious.flokinet.to/api/v1/search?q=$encoded&type=video"
+            val url = "https://invidious.flokinet.to/api/v1/search?q=$encoded&type=video&region=US"
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .build()
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val bodyString = response.body?.string() ?: ""
-                    val parsed = parseJsonResponse(bodyString, trimmed)
+                    val parsed = parseJsonResponse(bodyString, trimmed).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                     if (parsed.isNotEmpty()) return@withContext parsed
                 }
             }
@@ -319,18 +326,19 @@ object YouTubeLiveSearchService {
      */
     suspend fun fetchHomeRecommendationFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
         try {
-            val url = "https://www.youtube.com"
+            val url = "https://www.youtube.com?hl=en&gl=US"
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Cookie", "SOCS=CAI")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
                 .build()
 
             client.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val html = response.body?.string() ?: ""
                     val parsed = parseVideoRenderers(html, "Recommended")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                     if (parsed.isNotEmpty()) return@withContext parsed
                 }
             }
@@ -343,13 +351,13 @@ object YouTubeLiveSearchService {
     private fun searchWebHtml(query: String): List<VideoEntity> {
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = "https://www.youtube.com/results?search_query=$encodedQuery"
+            val url = "https://www.youtube.com/results?search_query=$encodedQuery&hl=en&gl=US"
 
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Cookie", "SOCS=CAI")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -389,18 +397,20 @@ object YouTubeLiveSearchService {
                     val viewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: viewMatcher.group(2) ?: "") else ""
                     val duration = if (lengthMatcher.find()) cleanText(lengthMatcher.group(1) ?: lengthMatcher.group(2) ?: "") else ""
 
-                    results.add(
-                        VideoEntity(
-                            youtubeId = id,
-                            title = title,
-                            channelName = channel,
-                            thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
-                            durationText = duration,
-                            category = defaultCategory,
-                            publishedTimeText = publishedText,
-                            viewCountText = viewText
+                    if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                        results.add(
+                            VideoEntity(
+                                youtubeId = id,
+                                title = title,
+                                channelName = channel,
+                                thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
+                                durationText = duration,
+                                category = defaultCategory,
+                                publishedTimeText = publishedText,
+                                viewCountText = viewText
+                            )
                         )
-                    )
+                    }
                 }
             }
             if (results.size >= 25) break
@@ -410,13 +420,12 @@ object YouTubeLiveSearchService {
 
     /**
      * Fetches live trending YouTube Shorts feed filtered for adult topics (News, Politics, Tech, Science).
-     * Exhaustively purges kids cartoons, ABCs, nursery rhymes, phonics, and clickbait.
+     * Purges foreign scripts, Indian media, and kids cartoons.
      */
     suspend fun fetchShortsFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
         val topics = listOf(
             "#shorts latest trending news",
             "#shorts technology AI updates",
-            "#shorts current events world",
             "#shorts viral science discovery",
             "#shorts breaking commentary"
         )
@@ -429,6 +438,7 @@ object YouTubeLiveSearchService {
                 val isShortDuration = durationSec == 0 || durationSec <= 90
                 val lower = (v.title + " " + v.channelName).lowercase()
                 isShortDuration &&
+                !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) &&
                 !lower.contains("abc") &&
                 !lower.contains("alphabet") &&
                 !lower.contains("phonics") &&

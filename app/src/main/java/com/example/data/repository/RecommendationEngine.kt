@@ -65,7 +65,10 @@ object RecommendationEngine {
         if (videos.isEmpty()) return emptyList()
 
         val mutedNames = mutedChannels.map { it.channelName.lowercase() }.toSet()
-        val unmutedVideos = videos.filter { it.channelName.lowercase() !in mutedNames }
+        val unmutedVideos = videos.filter { 
+            it.channelName.lowercase() !in mutedNames && 
+            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) 
+        }
 
         // 1. Identify top favorite channels
         val topChannels = (favorites.map { it.channelName } + watchHistory.map { it.channelName })

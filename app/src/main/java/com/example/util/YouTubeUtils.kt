@@ -26,25 +26,68 @@ object YouTubeUtils {
 
     /**
      * Accurately determines whether a video entity is a YouTube Short.
-     * Enforces strict duration limits (<= 90s) so long videos are never misclassified as Shorts,
-     * and ensures true Shorts (<= 60s or marked with #shorts) play in the Shorts player.
+     * Enforces strict duration limits (<= 90s) and requires explicit Shorts categorization or #shorts tag.
      */
     fun isShortVideo(video: VideoEntity): Boolean {
         val durationSec = parseFormattedTimeToSeconds(video.durationText)
 
-        // Rule 1: Any video longer than 90 seconds (1m 30s) CANNOT be a Short
+        // Any video longer than 90 seconds (1m 30s) CANNOT be a Short
         if (durationSec > 90) return false
 
-        // Rule 2: Explicitly tagged category "Shorts" with short duration (<= 90s or unknown)
+        // Explicitly tagged category "Shorts"
         if (video.category.equals("Shorts", ignoreCase = true)) return true
 
-        // Rule 3: Has explicit hashtag #shorts in title
-        if (video.title.contains("#shorts", ignoreCase = true)) return true
-
-        // Rule 4: Explicit short duration between 1 and 60 seconds (standard YouTube Short length)
-        if (durationSec in 1..60) return true
+        // Explicit hashtag #shorts or #short in title
+        if (video.title.contains("#shorts", ignoreCase = true) || video.title.contains("#short", ignoreCase = true)) return true
 
         return false
+    }
+
+    /**
+     * Detects non-English scripts (Devanagari, Tamil, Telugu, Arabic, Cyrillic, etc.)
+     * and high-frequency non-English regional media keywords to purge unwanted foreign content.
+     */
+    fun isForeignLanguageContent(title: String, channelName: String): Boolean {
+        val fullText = "$title $channelName".lowercase()
+
+        var nonLatinLetters = 0
+        var totalLetters = 0
+        for (ch in "$title $channelName") {
+            if (ch.isLetter()) {
+                totalLetters++
+                val code = ch.code
+                if (code in 0x0600..0x06FF || // Arabic
+                    code in 0x0900..0x097F || // Devanagari (Hindi, Marathi, Sanskrit)
+                    code in 0x0980..0x09FF || // Bengali
+                    code in 0x0A00..0x0A7F || // Gurmukhi (Punjabi)
+                    code in 0x0A80..0x0AFF || // Gujarati
+                    code in 0x0B00..0x0B7F || // Oriya
+                    code in 0x0B80..0x0BFF || // Tamil
+                    code in 0x0C00..0x0C7F || // Telugu
+                    code in 0x0C80..0x0CFF || // Kannada
+                    code in 0x0D00..0x0D7F || // Malayalam
+                    code in 0x0D80..0x0DFF || // Sinhala
+                    code in 0x0E00..0x0E7F || // Thai
+                    code in 0x0400..0x04FF || // Cyrillic
+                    code in 0x4E00..0x9FFF || // CJK Ideographs
+                    code in 0xAC00..0xD7AF    // Hangul
+                ) {
+                    nonLatinLetters++
+                }
+            }
+        }
+        if (totalLetters > 0 && (nonLatinLetters.toDouble() / totalLetters) > 0.12) {
+            return true
+        }
+
+        val foreignKeywords = listOf(
+            "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada",
+            "marathi", "urdu", "bangla", "bengali", "gujarati", "desi", "bollywood",
+            "tollywood", "kollywood", "pakistan", "ary digital", "zee tv", "t-series",
+            "set india", "sab tv", "geet", "gaana", "bhajan", "natok", "dramareview",
+            "naat", "qawwali", "bayan", "voot", "hotstar", "hum tv", "geo news"
+        )
+        return foreignKeywords.any { fullText.contains(it) }
     }
 
     /**
