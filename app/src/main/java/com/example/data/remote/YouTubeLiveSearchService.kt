@@ -4,6 +4,8 @@ import android.util.Log
 import com.example.data.model.VideoEntity
 import com.example.util.YouTubeUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -33,22 +35,39 @@ object YouTubeLiveSearchService {
     private fun logD(tag: String, msg: String) {
         try {
             Log.d(tag, msg)
-        } catch (e: Throwable) {
-            println("[$tag] $msg")
-        }
+        } catch (e: Exception) { }
     }
 
     /**
-     * Fetches fresh videos from the user's subscribed profile channels (Will Ryan).
+     * Fetches a rich, dense timeline of latest uploads across the user's subscribed profile channels.
+     * Concurrently queries 15+ subscribed creators in parallel to return 80-120+ fresh videos
+     * packed tightly by upload time (minutes, hours, days).
      */
     suspend fun fetchSubscribedProfileFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val sampleChannels = com.example.data.model.WillRyanProfileData.subscribedChannels.shuffled().take(4)
-        val results = mutableListOf<VideoEntity>()
-        for (channel in sampleChannels) {
-            val fetched = searchRealYouTubeVideos(channel)
-            results.addAll(fetched.take(3))
+        val channels = com.example.data.model.WillRyanProfileData.subscribedChannels
+        val selected = channels.shuffled().take(15)
+        val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
+
+        val jobs = selected.map { channel ->
+            async {
+                try {
+                    val fetched = searchRealYouTubeVideos("$channel latest")
+                    val matched = fetched.filter { isMatchingChannel(it, channel) || it.title.lowercase().contains(channel.lowercase()) }
+                        .ifEmpty { fetched }
+                    results.addAll(matched.take(8))
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${e.message}")
+                }
+            }
         }
-        return@withContext results.distinctBy { it.youtubeId }
+        jobs.awaitAll()
+
+        return@withContext results
+            .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+            .distinctBy { it.youtubeId }
+            .sortedWith(
+                compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+            )
     }
     /**
      * Searches YouTube for any query using NewPipe Extractor, direct YouTube web search, and fallback API.
