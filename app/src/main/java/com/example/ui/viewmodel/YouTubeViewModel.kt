@@ -175,6 +175,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             searchQuery
+                .debounce(400L)
                 .collectLatest { query ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
@@ -255,6 +256,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private var channelBatchIndex = 0
+    private var isLoadingMore = false
 
     fun loadMoreCategoryVideos() {
         val channel = selectedSubscribedChannel.value.trim()
@@ -268,40 +270,51 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             loadMoreSearchResults()
             return
         }
+        if (isLoadingMore) return
+        isLoadingMore = true
         viewModelScope.launch {
-            val searchTerm = if (currentCategory != "All") currentCategory else "Trending YouTube videos"
-            val additionalQueries = listOf(
-                "best $searchTerm 2026",
-                "$searchTerm full playlist",
-                "new $searchTerm review",
-                "$searchTerm 4K",
-                "popular $searchTerm",
-                "$searchTerm #shorts"
-            )
-            val nextQuery = additionalQueries.random()
-            val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(nextQuery)
-            if (newBatch.isNotEmpty()) {
-                val updated = (_categoryVideos.value + newBatch).distinctBy { it.youtubeId }
-                _categoryVideos.value = updated
-                newBatch.forEach { v -> repository.saveVideo(v) }
+            try {
+                val searchTerm = if (currentCategory != "All") currentCategory else "Trending YouTube videos"
+                val additionalQueries = listOf(
+                    "best $searchTerm 2026",
+                    "$searchTerm full playlist",
+                    "new $searchTerm review",
+                    "$searchTerm 4K",
+                    "popular $searchTerm",
+                    "$searchTerm #shorts"
+                )
+                val nextQuery = additionalQueries.random()
+                val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(nextQuery)
+                if (newBatch.isNotEmpty()) {
+                    val updated = (_categoryVideos.value + newBatch).distinctBy { it.youtubeId }
+                    _categoryVideos.value = updated
+                    newBatch.forEach { v -> repository.saveVideo(v) }
+                }
+            } finally {
+                isLoadingMore = false
             }
         }
     }
 
     fun loadMoreSubscribedChannelVideos() {
         val channel = selectedSubscribedChannel.value.trim()
-        if (channel.isBlank()) return
+        if (channel.isBlank() || isLoadingMore) return
+        isLoadingMore = true
         viewModelScope.launch {
-            channelBatchIndex++
-            val newBatch = com.example.data.remote.YouTubeLiveSearchService.fetchChannelVideosBatch(channel, channelBatchIndex)
-            if (newBatch.isNotEmpty()) {
-                val updated = (_categoryVideos.value + newBatch)
-                    .distinctBy { it.youtubeId }
-                    .sortedWith(
-                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                    )
-                _categoryVideos.value = updated
-                newBatch.forEach { v -> repository.saveVideo(v) }
+            try {
+                channelBatchIndex++
+                val newBatch = com.example.data.remote.YouTubeLiveSearchService.fetchChannelVideosBatch(channel, channelBatchIndex)
+                if (newBatch.isNotEmpty()) {
+                    val updated = (_categoryVideos.value + newBatch)
+                        .distinctBy { it.youtubeId }
+                        .sortedWith(
+                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        )
+                    _categoryVideos.value = updated
+                    newBatch.forEach { v -> repository.saveVideo(v) }
+                }
+            } finally {
+                isLoadingMore = false
             }
         }
     }
@@ -329,14 +342,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun loadMoreSearchResults() {
         val currentQuery = searchQuery.value.trim()
-        if (currentQuery.isBlank()) return
+        if (currentQuery.isBlank() || isLoadingMore) return
+        isLoadingMore = true
         viewModelScope.launch {
-            currentSearchBatchIndex++
-            val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(currentQuery, currentSearchBatchIndex)
-            if (newBatch.isNotEmpty()) {
-                val updated = (_liveSearchResults.value + newBatch).distinctBy { it.youtubeId }
-                _liveSearchResults.value = updated
-                newBatch.forEach { v -> repository.saveVideo(v) }
+            try {
+                currentSearchBatchIndex++
+                val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(currentQuery, currentSearchBatchIndex)
+                if (newBatch.isNotEmpty()) {
+                    val updated = (_liveSearchResults.value + newBatch).distinctBy { it.youtubeId }
+                    _liveSearchResults.value = updated
+                    newBatch.forEach { v -> repository.saveVideo(v) }
+                }
+            } finally {
+                isLoadingMore = false
             }
         }
     }

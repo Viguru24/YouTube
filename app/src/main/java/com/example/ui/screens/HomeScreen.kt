@@ -74,6 +74,8 @@ fun HomeScreen(
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
+    val coroutineScope = rememberCoroutineScope()
+    val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
     var showAddChannelDialog by remember { mutableStateOf(false) }
@@ -85,6 +87,11 @@ fun HomeScreen(
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
 
     val subscribedChannelsList = com.example.data.model.WillRyanProfileData.subscribedChannels
+
+    // Reset scroll to top on category or channel change
+    LaunchedEffect(selectedCategory, selectedSubscribedChannel) {
+        gridState.scrollToItem(0)
+    }
 
     LaunchedEffect(isSearchExpanded) {
         if (isSearchExpanded) {
@@ -589,13 +596,15 @@ fun HomeScreen(
                 }
                 val mainVideosList = displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
 
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        state = gridState,
+                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
                     if (selectedSubscribedChannel.isNotBlank()) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
@@ -681,9 +690,9 @@ fun HomeScreen(
 
                     // 2. Main Videos Section (2-Column Grid)
                     itemsIndexed(mainVideosList, key = { _, video -> video.youtubeId }) { index, video ->
-                        // Infinite scroll trigger: when reaching near end of grid, fetch next batch automatically!
-                        if (index >= mainVideosList.size - 4) {
-                            LaunchedEffect(index) {
+                        // Infinite scroll trigger: only when reaching the very last item in a batch of at least 16 videos
+                        if (mainVideosList.size >= 16 && index == mainVideosList.size - 1) {
+                            LaunchedEffect(mainVideosList.size) {
                                 onLoadMore()
                             }
                         }
@@ -704,6 +713,38 @@ fun HomeScreen(
                             onMuteChannel = onMuteChannel,
                             onSaveToSubject = { v -> videoToSaveToSubject = v },
                             onNotInterested = onDeleteVideo
+                        )
+                    }
+                }
+
+                // Floating "Back to Top" Action Button
+                val showScrollToTop by remember {
+                    derivedStateOf { gridState.firstVisibleItemIndex > 3 }
+                }
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showScrollToTop,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 96.dp, end = 16.dp)
+                ) {
+                    FloatingActionButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                gridState.animateScrollToItem(0)
+                            }
+                        },
+                        containerColor = YouTubeRed,
+                        contentColor = Color.White,
+                        modifier = Modifier.size(46.dp),
+                        shape = androidx.compose.foundation.shape.CircleShape
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowUpward,
+                            contentDescription = "Scroll to top",
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -760,6 +801,7 @@ fun HomeScreen(
             )
         }
     }
+}
 }
 
 @Composable
