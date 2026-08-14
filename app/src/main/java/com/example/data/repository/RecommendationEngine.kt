@@ -8,7 +8,8 @@ data class AlgorithmSettings(
     val discoveryRatio: Float = 0.2f,       // 0.0 to 1.0 (Fresh discoveries vs familiar topics)
     val shortsMode: String = "Carousel",     // "Carousel", "Hidden", "Separate"
     val minDurationMinutes: Int = 0,        // 0, 3, 5, 10 minutes
-    val freshnessDecay: String = "Medium"   // "Slow", "Medium", "Fast"
+    val freshnessDecay: String = "Medium",   // "Slow", "Medium", "Fast"
+    val autoDeleteDownloads: String = "Never" // "Never", "24h", "48h", "7d", "30d", "Watched"
 )
 
 object RecommendationEngine {

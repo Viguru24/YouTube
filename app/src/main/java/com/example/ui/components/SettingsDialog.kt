@@ -221,6 +221,55 @@ fun SettingsDialog(
                                 label = { Text("10+ mins") }
                             )
                         }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Auto-Delete Offline Downloads Setting
+                        Text(
+                            text = "Auto-Delete Offline Downloads:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "Never",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "Never")) },
+                                label = { Text("Never", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "24h",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "24h")) },
+                                label = { Text("24 Hours", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "48h",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "48h")) },
+                                label = { Text("48 Hours", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "7d",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "7d")) },
+                                label = { Text("7 Days", fontSize = 11.sp) }
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "30d",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "30d")) },
+                                label = { Text("30 Days", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.autoDeleteDownloads == "Watched",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "Watched")) },
+                                label = { Text("After Watched ✓", fontSize = 11.sp) }
+                            )
+                        }
                     }
                 }
 

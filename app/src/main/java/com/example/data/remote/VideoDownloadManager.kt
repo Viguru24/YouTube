@@ -146,6 +146,47 @@ object VideoDownloadManager {
         return deleted
     }
 
+    /**
+     * Automatically deletes downloaded offline videos according to user-configured expiry period or completion state.
+     */
+    suspend fun cleanExpiredDownloads(
+        context: Context,
+        autoDeleteSetting: String,
+        downloadedVideos: List<VideoEntity>,
+        onVideoDeleted: suspend (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        if (autoDeleteSetting.equals("Never", ignoreCase = true)) return@withContext
+        val now = System.currentTimeMillis()
+        val thresholdMs = when (autoDeleteSetting) {
+            "24h" -> 24 * 3600 * 1000L
+            "48h" -> 48 * 3600 * 1000L
+            "7d"  -> 7 * 24 * 3600 * 1000L
+            "30d" -> 30 * 24 * 3600 * 1000L
+            else  -> Long.MAX_VALUE
+        }
+
+        for (video in downloadedVideos) {
+            var shouldDelete = false
+            val file = getLocalVideoFile(context, video.youtubeId)
+            val fileModified = if (file.exists()) file.lastModified() else video.addedTimestamp
+
+            if (autoDeleteSetting.equals("Watched", ignoreCase = true)) {
+                // If user watched >= 90% of the video or reached last 15 seconds
+                val durSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(video.durationText)
+                if (durSec > 0 && video.lastPositionSeconds >= (durSec * 0.9f)) {
+                    shouldDelete = true
+                }
+            } else if (fileModified > 0 && (now - fileModified) >= thresholdMs) {
+                shouldDelete = true
+            }
+
+            if (shouldDelete) {
+                deleteDownloadedVideo(context, video.youtubeId)
+                onVideoDeleted(video.youtubeId)
+            }
+        }
+    }
+
     private fun updateProgress(youtubeId: String, progress: Int) {
         val current = _downloadProgressMap.value.toMutableMap()
         if (progress in 0..100) {

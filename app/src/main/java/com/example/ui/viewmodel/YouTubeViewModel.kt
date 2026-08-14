@@ -53,6 +53,20 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun checkAndCleanExpiredDownloads() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val list = repository.downloadedVideos.first()
+            com.example.data.remote.VideoDownloadManager.cleanExpiredDownloads(
+                context = getApplication(),
+                autoDeleteSetting = _algorithmSettings.value.autoDeleteDownloads,
+                downloadedVideos = list,
+                onVideoDeleted = { deletedId ->
+                    repository.updateDownloadStatus(deletedId, false, "", 0.0f)
+                }
+            )
+        }
+    }
+
     fun muteChannel(channelName: String) {
         viewModelScope.launch {
             repository.muteChannel(channelName)
@@ -198,11 +212,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun updateAlgorithmSettings(newSettings: com.example.data.repository.AlgorithmSettings) {
         _algorithmSettings.value = newSettings
+        checkAndCleanExpiredDownloads()
     }
 
     init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             repository.clearUnsavedRecommendations()
+            checkAndCleanExpiredDownloads()
         }
 
         viewModelScope.launch {

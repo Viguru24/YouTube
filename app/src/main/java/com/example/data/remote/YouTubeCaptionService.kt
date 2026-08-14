@@ -145,9 +145,10 @@ object YouTubeCaptionService {
             client.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val body = resp.body?.string() ?: return emptyList()
-                    return if (body.trimStart().startsWith("{")) {
+                    val trimmed = body.trimStart()
+                    return if (trimmed.startsWith("{")) {
                         parseJson3Captions(body)
-                    } else if (body.contains("<text") || body.contains("<transcript>")) {
+                    } else if (body.contains("<tt") || body.contains("<p") || body.contains("<text") || body.contains("<transcript") || body.contains("<?xml")) {
                         parseXmlCaptions(body)
                     } else {
                         parseVttOrSrt(body)
@@ -161,10 +162,13 @@ object YouTubeCaptionService {
     }
 
     private fun parseTimedText(content: String): List<TranscriptSegment> {
-        return if (content.trimStart().startsWith("{")) {
+        val trimmed = content.trimStart()
+        return if (trimmed.startsWith("{")) {
             parseJson3Captions(content)
-        } else {
+        } else if (content.contains("<tt") || content.contains("<p") || content.contains("<text") || content.contains("<transcript") || content.contains("<?xml")) {
             parseXmlCaptions(content)
+        } else {
+            parseVttOrSrt(content)
         }
     }
 
@@ -207,28 +211,76 @@ object YouTubeCaptionService {
     private fun parseXmlCaptions(xml: String): List<TranscriptSegment> {
         val list = mutableListOf<TranscriptSegment>()
         try {
-            val pattern = Pattern.compile("""<text\s+start="([\d\.]+)"(?:\s+dur="[\d\.]+")?>([^<]+)</text>""")
-            val matcher = pattern.matcher(xml)
+            // 1. Try TTML <p begin="..."> text </p>
+            val pPattern = Pattern.compile("""<p\s+begin="([^"]+)"(?:\s+end="[^"]+")?[^>]*>(.*?)</p>""", Pattern.DOTALL)
+            val pMatcher = pPattern.matcher(xml)
             var segId = 1
-            while (matcher.find()) {
-                val startSec = matcher.group(1)?.toFloatOrNull()?.toInt() ?: 0
-                val rawText = cleanText(matcher.group(2) ?: "")
-                if (rawText.isNotBlank()) {
+            while (pMatcher.find()) {
+                val timeStr = pMatcher.group(1) ?: "0"
+                val rawText = pMatcher.group(2) ?: ""
+                val clean = cleanText(rawText.replace(Regex("""<[^>]+>"""), " "))
+                val sec = parseTimeStringToSeconds(timeStr)
+                if (clean.isNotBlank()) {
                     list.add(
                         TranscriptSegment(
                             id = segId++,
-                            timestampSeconds = startSec,
-                            timestampFormatted = formatSeconds(startSec),
-                            text = rawText,
+                            timestampSeconds = sec,
+                            timestampFormatted = formatSeconds(sec),
+                            text = clean,
                             isKeyPoint = false
                         )
                     )
+                }
+            }
+
+            // 2. Try classic YouTube <text start="..."> text </text>
+            if (list.isEmpty()) {
+                val textPattern = Pattern.compile("""<text\s+start="([^"]+)"(?:\s+dur="[^"]+")?[^>]*>(.*?)</text>""", Pattern.DOTALL)
+                val textMatcher = textPattern.matcher(xml)
+                while (textMatcher.find()) {
+                    val timeStr = textMatcher.group(1) ?: "0"
+                    val rawText = textMatcher.group(2) ?: ""
+                    val clean = cleanText(rawText.replace(Regex("""<[^>]+>"""), " "))
+                    val sec = parseTimeStringToSeconds(timeStr)
+                    if (clean.isNotBlank()) {
+                        list.add(
+                            TranscriptSegment(
+                                id = segId++,
+                                timestampSeconds = sec,
+                                timestampFormatted = formatSeconds(sec),
+                                text = clean,
+                                isKeyPoint = false
+                            )
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
             logD("parseXmlCaptions error: ${e.message}")
         }
         return groupSegmentsIntoSentences(list)
+    }
+
+    private fun parseTimeStringToSeconds(timeStr: String): Int {
+        val clean = timeStr.trim().replace("s", "")
+        if (clean.contains(":")) {
+            val parts = clean.split(":")
+            return when (parts.size) {
+                3 -> {
+                    val hrs = parts[0].toIntOrNull() ?: 0
+                    val mins = parts[1].toIntOrNull() ?: 0
+                    val secs = parts[2].toFloatOrNull()?.toInt() ?: 0
+                    hrs * 3600 + mins * 60 + secs
+                }
+                2 -> {
+                    val mins = parts[0].toIntOrNull() ?: 0
+                    val secs = parts[1].toFloatOrNull()?.toInt() ?: 0
+                    mins * 60 + secs
+                }
+                else -> 0
+            }
+        }
+        return clean.toFloatOrNull()?.toInt() ?: 0
     }
 
     private fun parseVttOrSrt(vtt: String): List<TranscriptSegment> {
