@@ -81,7 +81,10 @@ fun ShortsPlayerView(
         logs.add(0, "[$time] $msg")
     }
 
-    val exoPlayer = remember(context) {
+    var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
+    var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
+
+    val exoPlayer = remember(videoId) {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -97,8 +100,25 @@ fun ShortsPlayerView(
     }
 
     DisposableEffect(exoPlayer) {
+        val listener = object : androidx.media3.common.Player.Listener {
+            override fun onRenderedFirstFrame() {
+                isFirstFrameRendered = true
+                isLoading = false
+            }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_READY) {
+                    isFirstFrameRendered = true
+                    isLoading = false
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                isPlayingState = isPlaying
+            }
+        }
+        exoPlayer.addListener(listener)
         onDispose {
             try {
+                exoPlayer.removeListener(listener)
                 val finalSec = (exoPlayer.currentPosition / 1000).toInt()
                 if (finalSec > 0) {
                     onPositionUpdate(finalSec)
@@ -146,32 +166,50 @@ fun ShortsPlayerView(
     // Extract direct MP4 stream for vertical full-screen playback
     LaunchedEffect(videoId) {
         isLoading = true
+        isFirstFrameRendered = false
+        useWebPlayerFallback = false
         streamUrl = null
         isPlayingState = true
         logs.clear()
         addLog("Extracting stream for videoId=$videoId")
 
         try {
-            val url = kotlinx.coroutines.withTimeoutOrNull(8000L) {
-                YouTubeStreamExtractor.getDirectStreamUrl(videoId)
-            }
-            if (!url.isNullOrEmpty()) {
-                streamUrl = url
-                val mediaItem = MediaItem.fromUri(url)
+            // Check offline storage first
+            val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(context, videoId)
+            if (localFile.exists() && localFile.length() > 1024 * 100) {
+                val localUri = android.net.Uri.fromFile(localFile).toString()
+                streamUrl = localUri
+                val mediaItem = MediaItem.fromUri(localUri)
                 exoPlayer.setMediaItem(mediaItem)
                 exoPlayer.prepare()
                 exoPlayer.play()
-                isLoading = false
+                addLog("⚡ Playing from offline storage")
+                return@LaunchedEffect
+            }
+
+            val result = kotlinx.coroutines.withTimeoutOrNull(6000L) {
+                YouTubeStreamExtractor.extractVideoStreams(videoId)
+            }
+            val directUrl = result?.primaryStreamUrl ?: YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+
+            if (!directUrl.isNullOrEmpty()) {
+                streamUrl = directUrl
+                val mediaItem = MediaItem.fromUri(directUrl)
+                exoPlayer.setMediaItem(mediaItem)
+                exoPlayer.prepare()
+                exoPlayer.play()
+                addLog("Stream extracted & ExoPlayer prepared: $directUrl")
             } else {
-                addLog("⚠️ Stream extraction timed out (8.0s) → activating direct Shorts web player fallback")
+                addLog("⚠️ Stream extraction timed out -> activating Shorts Web Player fallback")
+                useWebPlayerFallback = true
                 isLoading = false
             }
         } catch (e: Exception) {
-            addLog("❌ Exception: ${e.javaClass.simpleName}: ${e.message}")
+            addLog("❌ Exception: ${e.javaClass.simpleName}: ${e.message} -> activating fallback")
+            useWebPlayerFallback = true
             isLoading = false
         }
     }
-
 
     var totalDragAmount by remember(videoId) { mutableFloatStateOf(0f) }
     var hasTriggered by remember(videoId) { mutableStateOf(false) }
@@ -181,8 +219,8 @@ fun ShortsPlayerView(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 1. Full-Screen Vertical Player Surface (ExoPlayer Native or Direct YouTube Shorts Web Player Fallback)
-        if (streamUrl != null) {
+        // 1. Full-Screen Vertical Player Surface
+        if (!useWebPlayerFallback) {
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -191,7 +229,6 @@ fun ShortsPlayerView(
                         keepScreenOn = true
                         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                        post { onResume() }
                     }
                 },
                 update = { view ->
@@ -200,11 +237,10 @@ fun ShortsPlayerView(
                     }
                     view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     view.onResume()
-                    if (isPlayingState) exoPlayer.playWhenReady = true
                 },
                 modifier = Modifier.fillMaxSize()
             )
-        } else if (!isLoading) {
+        } else {
             // Automatic Fallback: Embedded YouTube Player WebView for Shorts HTML5 Video Playback
             AndroidView(
                 factory = { ctx ->
