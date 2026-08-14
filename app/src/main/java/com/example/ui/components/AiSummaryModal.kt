@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.*
@@ -27,8 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.VideoEntity
+import com.example.data.remote.YouTubeCaptionService
 import com.example.ui.theme.YouTubeRed
-import com.example.util.TranscriptGenerator
+import com.example.util.VideoAiTranscript
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,8 +41,21 @@ fun AiSummaryModal(
     onSaveToNotes: (text: String) -> Unit
 ) {
     val context = LocalContext.current
-    val transcript = remember(video.youtubeId) { TranscriptGenerator.generateTranscript(video) }
-    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Summary, 1 = Highlights
+    var transcript by remember(video.youtubeId) { mutableStateOf<VideoAiTranscript?>(null) }
+    var isLoading by remember(video.youtubeId) { mutableStateOf(true) }
+    var selectedTab by remember { mutableIntStateOf(0) } // 0 = Summary, 1 = Highlights / Chapters
+
+    LaunchedEffect(video.youtubeId) {
+        isLoading = true
+        try {
+            val result = YouTubeCaptionService.getAuthenticSummary(video)
+            transcript = result
+        } catch (e: Exception) {
+            // Fallback
+        } finally {
+            isLoading = false
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -92,7 +107,7 @@ fun AiSummaryModal(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Gemini 2.0 Flash • Multi-Source AI",
+                            text = if (isLoading) "Analyzing real audio transcript..." else "Real Caption & Spoken Content AI",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -100,22 +115,25 @@ fun AiSummaryModal(
                 }
 
                 Row {
-                    IconButton(
-                        onClick = {
-                            val copyText = buildString {
-                                append("📝 AI Summary: ${video.title}\n\n")
-                                append("Summary:\n${transcript.executiveSummary}\n\n")
-                                append("Key Takeaways:\n")
-                                transcript.keyTakeaways.forEach { append("• $it\n") }
-                                append("\nTimeline Chapters:\n")
-                                transcript.segments.forEach { append("[${it.timestampFormatted}] ${it.text}\n") }
+                    if (transcript != null) {
+                        IconButton(
+                            onClick = {
+                                val t = transcript!!
+                                val copyText = buildString {
+                                    append("📝 AI Summary: ${video.title}\n\n")
+                                    append("Summary:\n${t.executiveSummary}\n\n")
+                                    append("Key Takeaways:\n")
+                                    t.keyTakeaways.forEach { append("• $it\n") }
+                                    append("\nTimeline Chapters:\n")
+                                    t.segments.forEach { append("[${it.timestampFormatted}] ${it.text}\n") }
+                                }
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("AI Summary", copyText))
+                                Toast.makeText(context, "AI Summary Copied to Clipboard 📋", Toast.LENGTH_SHORT).show()
                             }
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("AI Summary", copyText))
-                            Toast.makeText(context, "AI Summary Copied to Clipboard 📋", Toast.LENGTH_SHORT).show()
+                        ) {
+                            Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    ) {
-                        Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -125,149 +143,192 @@ fun AiSummaryModal(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Tab Selector
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = YouTubeRed,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = YouTubeRed
-                    )
-                }
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Executive TL;DR", fontWeight = FontWeight.Bold) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Timeline Chapters", fontWeight = FontWeight.Bold) }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Tab Content
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                if (selectedTab == 0) {
-                    // Executive Summary
-                    item {
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text(
-                                    text = transcript.executiveSummary,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    lineHeight = 22.sp
-                                )
-                            }
-                        }
-                    }
-
-                    // Key Takeaways Bullets
-                    item {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(color = YouTubeRed, strokeWidth = 3.dp)
                         Text(
-                            text = "Key Takeaways",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
+                            text = "Extracting video subtitles & analyzing speech...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else if (transcript != null) {
+                val t = transcript!!
+
+                // Tab Selector
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = YouTubeRed,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
                             color = YouTubeRed
                         )
                     }
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Executive TL;DR", fontWeight = FontWeight.Bold) }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Spoken Timeline (${t.segments.size})", fontWeight = FontWeight.Bold) }
+                    )
+                }
 
-                    items(transcript.keyTakeaways) { takeaway ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "•",
-                                color = YouTubeRed,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 16.sp,
-                                modifier = Modifier.padding(end = 8.dp)
-                            )
-                            Text(
-                                text = takeaway,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.height(12.dp))
 
-                    // 1-Tap Save to Notes
-                    item {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = {
-                                val fullNotes = "${transcript.executiveSummary}\n\nTakeaways:\n" + transcript.keyTakeaways.joinToString("\n") { "• $it" }
-                                onSaveToNotes(fullNotes)
-                                Toast.makeText(context, "Saved to Video Notes 💾", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = YouTubeRed
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(imageVector = Icons.Filled.NoteAdd, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Save Summary to Video Notes", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                } else {
-                    // Timeline Chapters (Clickable)
-                    items(transcript.segments) { segment ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                .clickable {
-                                    onSeekTo(segment.timestampSeconds)
-                                    onDismiss()
-                                }
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = segment.text,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Surface(
-                                color = YouTubeRed.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
+                // Tab Content
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
+                ) {
+                    if (selectedTab == 0) {
+                        // 1. Executive Summary Box
+                        item {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                             ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(imageVector = Icons.Filled.Lightbulb, contentDescription = null, tint = Color(0xFFFFB300), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = "Executive Summary", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = t.executiveSummary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        lineHeight = 20.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. Key Takeaways Bullet Points
+                        item {
+                            Text(text = "Key Takeaways", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        }
+
+                        items(t.keyTakeaways) { point ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text("•", color = YouTubeRed, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(end = 8.dp))
                                 Text(
-                                    text = segment.timestampFormatted,
-                                    color = YouTubeRed,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    text = point,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    lineHeight = 20.sp
                                 )
                             }
                         }
+
+                        // 3. Quick Save Button
+                        item {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val summaryNote = buildString {
+                                        append("📌 AI Summary for ${video.title}:\n")
+                                        append(t.executiveSummary)
+                                        append("\n\nKey Takeaways:\n")
+                                        t.keyTakeaways.forEach { append("• $it\n") }
+                                    }
+                                    onSaveToNotes(summaryNote)
+                                    Toast.makeText(context, "Saved to Video Notes! 📝", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.AutoMirrored.Filled.NoteAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Save Summary to Notes", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        // Timeline Chapters / Interactive Spoken Segments
+                        items(t.segments, key = { it.id }) { seg ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSeekTo(seg.timestampSeconds)
+                                        Toast.makeText(context, "Jumped to ${seg.timestampFormatted} ⏩", Toast.LENGTH_SHORT).show()
+                                        onDismiss()
+                                    },
+                                color = if (seg.isKeyPoint) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        color = YouTubeRed,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = seg.timestampFormatted,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = seg.text,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 18.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = YouTubeRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Unable to generate summary for this video.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

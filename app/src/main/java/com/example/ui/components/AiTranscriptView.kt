@@ -39,16 +39,29 @@ fun AiTranscriptView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val transcript = remember(video.youtubeId) { TranscriptGenerator.generateTranscript(video) }
+    var transcript by remember(video.youtubeId) { mutableStateOf<VideoAiTranscript?>(null) }
+    var isLoading by remember(video.youtubeId) { mutableStateOf(true) }
+
+    LaunchedEffect(video.youtubeId) {
+        isLoading = true
+        try {
+            transcript = com.example.data.remote.YouTubeCaptionService.getAuthenticSummary(video)
+        } catch (e: Exception) {
+            // Ignore
+        } finally {
+            isLoading = false
+        }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var isSummaryExpanded by remember { mutableStateOf(true) }
 
     val filteredSegments = remember(searchQuery, transcript) {
+        val segs = transcript?.segments ?: emptyList()
         if (searchQuery.isBlank()) {
-            transcript.segments
+            segs
         } else {
-            transcript.segments.filter {
+            segs.filter {
                 it.text.contains(searchQuery, ignoreCase = true) ||
                         it.timestampFormatted.contains(searchQuery)
             }
@@ -96,17 +109,19 @@ fun AiTranscriptView(
             // Copy Full Transcript Button
             IconButton(
                 onClick = {
-                    val fullText = buildString {
-                        append("AI Executive Summary:\n${transcript.executiveSummary}\n\n")
-                        append("Transcript:\n")
-                        transcript.segments.forEach {
-                            append("[${it.timestampFormatted}] ${it.text}\n")
+                    transcript?.let { t ->
+                        val fullText = buildString {
+                            append("AI Executive Summary:\n${t.executiveSummary}\n\n")
+                            append("Transcript:\n")
+                            t.segments.forEach {
+                                append("[${it.timestampFormatted}] ${it.text}\n")
+                            }
                         }
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("AI Transcript", fullText)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Full AI transcript copied to clipboard!", Toast.LENGTH_SHORT).show()
                     }
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("AI Transcript", fullText)
-                    clipboard.setPrimaryClip(clip)
-                    Toast.makeText(context, "Full AI transcript copied to clipboard!", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.testTag("copy_transcript_btn")
             ) {
@@ -177,13 +192,13 @@ fun AiTranscriptView(
                 AnimatedVisibility(visible = isSummaryExpanded) {
                     Column(modifier = Modifier.padding(top = 10.dp)) {
                         Text(
-                            text = transcript.executiveSummary,
+                            text = transcript?.executiveSummary ?: "Analyzing video subtitles and spoken dialogue...",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
                         Spacer(modifier = Modifier.height(10.dp))
-                        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                         Spacer(modifier = Modifier.height(10.dp))
 
                         Text(
@@ -195,7 +210,7 @@ fun AiTranscriptView(
 
                         Spacer(modifier = Modifier.height(4.dp))
 
-                        transcript.keyTakeaways.forEach { takeaway ->
+                        (transcript?.keyTakeaways ?: emptyList()).forEach { takeaway ->
                             Row(
                                 modifier = Modifier.padding(vertical = 3.dp),
                                 verticalAlignment = Alignment.Top
@@ -207,7 +222,7 @@ fun AiTranscriptView(
                                 )
                                 Text(
                                     text = takeaway,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
