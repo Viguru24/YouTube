@@ -131,7 +131,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
         val isPlayingAsShort by viewModel.isPlayingAsShort.collectAsState()
 
         if (activeVideo != null) {
-            val isShort = isPlayingAsShort ?: com.example.util.YouTubeUtils.isShortVideo(activeVideo!!)
+            val isShort = isPlayingAsShort == true
             if (isShort) {
                 // Full Screen Portrait Shorts Player View with swipe gestures
                 com.example.ui.components.ShortsPlayerView(

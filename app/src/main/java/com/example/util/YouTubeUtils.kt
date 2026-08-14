@@ -25,22 +25,26 @@ object YouTubeUtils {
     }
 
     /**
-     * Accurately determines whether a video entity is a YouTube Short.
-     * Enforces proven short duration (3..90s) AND explicit Shorts categorization or #shorts tag.
-     * Regular long videos (or unknown duration videos) are NEVER classified as Shorts.
+     * Strict detection for true vertical YouTube Shorts.
+     * YouTube Shorts are strictly 60 seconds or less and tagged with #shorts.
+     * Regular long/horizontal videos are NEVER classified as Shorts.
      */
     fun isShortVideo(video: VideoEntity): Boolean {
         val durationSec = parseFormattedTimeToSeconds(video.durationText)
 
-        // 1. Any video longer than 90 seconds (1m 30s) or with unknown/zero duration CANNOT be a Short
-        if (durationSec !in 3..90) return false
+        // 1. Shorts are strictly 60 seconds or less (never > 60s)
+        if (durationSec !in 3..60) return false
 
-        // 2. Must be tagged with category "Shorts" or contain #shorts / #short in title
-        val isTaggedShort = video.category.equals("Shorts", ignoreCase = true) ||
-                            video.title.contains("#shorts", ignoreCase = true) ||
-                            video.title.contains("#short", ignoreCase = true)
+        val titleLower = video.title.lowercase()
 
-        return isTaggedShort
+        // 2. Must explicitly contain #shorts or #short tag or category "Shorts"
+        val hasShortsTag = titleLower.contains("#shorts") ||
+                           titleLower.contains("#short") ||
+                           titleLower.contains(" #shorts") ||
+                           titleLower.contains("/shorts/") ||
+                           video.category.equals("Shorts", ignoreCase = true)
+
+        return hasShortsTag
     }
 
     /**

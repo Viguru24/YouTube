@@ -190,7 +190,7 @@ fun ShortsPlayerView(
                         useController = false
                         keepScreenOn = true
                         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                         post { onResume() }
                     }
                 },
@@ -198,7 +198,7 @@ fun ShortsPlayerView(
                     if (view.player != exoPlayer) {
                         view.player = exoPlayer
                     }
-                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                     view.onResume()
                     if (isPlayingState) exoPlayer.playWhenReady = true
                 },
