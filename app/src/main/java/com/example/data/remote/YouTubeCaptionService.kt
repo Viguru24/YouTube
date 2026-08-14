@@ -146,6 +146,10 @@ object YouTubeCaptionService {
                 if (resp.isSuccessful) {
                     val body = resp.body?.string() ?: return emptyList()
                     val trimmed = body.trimStart()
+                    // Reject full HTML webpages / error pages immediately
+                    if (trimmed.contains("<!DOCTYPE", ignoreCase = true) || trimmed.contains("<html", ignoreCase = true) || trimmed.contains("<nav", ignoreCase = true)) {
+                        return emptyList()
+                    }
                     return if (trimmed.startsWith("{")) {
                         parseJson3Captions(body)
                     } else if (body.contains("<tt") || body.contains("<p") || body.contains("<text") || body.contains("<transcript") || body.contains("<?xml")) {
@@ -163,6 +167,9 @@ object YouTubeCaptionService {
 
     private fun parseTimedText(content: String): List<TranscriptSegment> {
         val trimmed = content.trimStart()
+        if (trimmed.contains("<!DOCTYPE", ignoreCase = true) || trimmed.contains("<html", ignoreCase = true) || trimmed.contains("<nav", ignoreCase = true)) {
+            return emptyList()
+        }
         return if (trimmed.startsWith("{")) {
             parseJson3Captions(content)
         } else if (content.contains("<tt") || content.contains("<p") || content.contains("<text") || content.contains("<transcript") || content.contains("<?xml")) {
@@ -218,9 +225,9 @@ object YouTubeCaptionService {
             while (pMatcher.find()) {
                 val timeStr = pMatcher.group(1) ?: "0"
                 val rawText = pMatcher.group(2) ?: ""
-                val clean = cleanText(rawText.replace(Regex("""<[^>]+>"""), " "))
+                val clean = cleanText(rawText)
                 val sec = parseTimeStringToSeconds(timeStr)
-                if (clean.isNotBlank()) {
+                if (clean.isNotBlank() && !clean.contains("<") && !clean.contains(">")) {
                     list.add(
                         TranscriptSegment(
                             id = segId++,
@@ -240,9 +247,9 @@ object YouTubeCaptionService {
                 while (textMatcher.find()) {
                     val timeStr = textMatcher.group(1) ?: "0"
                     val rawText = textMatcher.group(2) ?: ""
-                    val clean = cleanText(rawText.replace(Regex("""<[^>]+>"""), " "))
+                    val clean = cleanText(rawText)
                     val sec = parseTimeStringToSeconds(timeStr)
-                    if (clean.isNotBlank()) {
+                    if (clean.isNotBlank() && !clean.contains("<") && !clean.contains(">")) {
                         list.add(
                             TranscriptSegment(
                                 id = segId++,
@@ -285,6 +292,9 @@ object YouTubeCaptionService {
 
     private fun parseVttOrSrt(vtt: String): List<TranscriptSegment> {
         val list = mutableListOf<TranscriptSegment>()
+        if (vtt.contains("<!DOCTYPE", ignoreCase = true) || vtt.contains("<html", ignoreCase = true) || vtt.contains("<nav", ignoreCase = true)) {
+            return emptyList()
+        }
         try {
             val timePat = Pattern.compile("""(\d{2}:)?(\d{2}):(\d{2})[\.,](\d{3})\s*-->\s*(\d{2}:)?(\d{2}):(\d{2})[\.,](\d{3})""")
             val lines = vtt.lines()
@@ -299,7 +309,7 @@ object YouTubeCaptionService {
                     currentSec = hrs * 3600 + mins * 60 + secs
                 } else if (line.isNotBlank() && !line.startsWith("WEBVTT") && !line.matches(Regex("""^\d+$"""))) {
                     val cleaned = cleanText(line)
-                    if (cleaned.isNotBlank()) {
+                    if (cleaned.isNotBlank() && !cleaned.contains("<") && !cleaned.contains(">") && !cleaned.contains("http")) {
                         list.add(
                             TranscriptSegment(
                                 id = segId++,
@@ -366,49 +376,54 @@ object YouTubeCaptionService {
         segments: List<TranscriptSegment>,
         chapters: List<Pair<Int, String>>
     ): VideoAiTranscript {
-        // Collect spoken text
-        val allSpokenText = segments.joinToString(" ") { it.text }
+        // Clean and filter valid speech segments (must not contain html or urls)
+        val validSegments = segments.filter { seg ->
+            val t = seg.text
+            !t.contains("<") && !t.contains(">") && !t.contains("http") && !t.contains("/api/v1") && t.length >= 15
+        }
 
-        // Extract key highlights / sentences from beginning, middle, and end
-        val totalSegs = segments.size
-        val introSegs = segments.take(3).joinToString(" ") { it.text }
-        val midSegs = segments.drop(totalSegs / 3).take(4).joinToString(" ") { it.text }
-        val conclusionSegs = segments.takeLast(3).joinToString(" ") { it.text }
+        val takeaways = mutableListOf<String>()
 
-        val executiveSummary = buildString {
-            append("In this video, ${video.channelName} covers '${video.title}'.\n\n")
-            if (introSegs.isNotBlank()) {
-                append("• Overview: $introSegs\n\n")
+        if (chapters.isNotEmpty()) {
+            chapters.take(5).forEach { ch ->
+                takeaways.add("${ch.second} (at ${formatSeconds(ch.first)})")
             }
-            if (midSegs.isNotBlank()) {
-                append("• Core Discussion: $midSegs\n\n")
-            }
-            if (conclusionSegs.isNotBlank()) {
-                append("• Key Takeaway: $conclusionSegs")
+        } else if (validSegments.isNotEmpty()) {
+            // Select 4 to 5 evenly spaced, meaningful sentences across the video
+            val numPoints = 5.coerceAtMost(validSegments.size)
+            val step = (validSegments.size / numPoints).coerceAtLeast(1)
+            for (i in 0 until numPoints) {
+                val idx = (i * step).coerceAtMost(validSegments.size - 1)
+                val rawSentence = validSegments[idx].text
+                    .replace(Regex("""^\w+\s*:\s*"""), "")
+                    .replace(Regex("""^[>•\-\s]+"""), "")
+                    .trim()
+                if (rawSentence.length > 20) {
+                    val clean = if (rawSentence.length > 130) rawSentence.take(130).substringBeforeLast(" ") + "..." else rawSentence
+                    takeaways.add(clean)
+                }
             }
         }
 
-        // Build bullet point takeaways from real speech
-        val takeaways = mutableListOf<String>()
-        val keySentences = segments.filter { it.text.length in 40..200 }
-        if (keySentences.isNotEmpty()) {
-            val step = (keySentences.size / 4).coerceAtLeast(1)
-            for (i in 0 until 4) {
-                val idx = (i * step).coerceAtMost(keySentences.size - 1)
-                val sentence = keySentences[idx].text
-                takeaways.add(sentence.replace(Regex("""^\w+\s*:\s*"""), "").take(140).trim())
+        if (takeaways.isEmpty()) {
+            takeaways.add("Main overview and discussion by ${video.channelName}")
+            takeaways.add("Core topic breakdown and analysis of ${video.title}")
+            takeaways.add("Key evidence and supporting points presented")
+            takeaways.add("Final conclusions and takeaway message")
+        }
+
+        val executiveSummary = buildString {
+            append("Key points covered in '${video.title}' by ${video.channelName}:\n\n")
+            takeaways.distinct().take(5).forEachIndexed { i, pt ->
+                append("${i + 1}. $pt\n")
             }
-        } else {
-            takeaways.add("Main overview and context presented by ${video.channelName}")
-            takeaways.add("Key demonstration and analysis of ${video.title}")
-            takeaways.add("Practical applications and final conclusion")
         }
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
-            executiveSummary = executiveSummary,
-            keyTakeaways = takeaways.distinct(),
-            segments = segments
+            executiveSummary = executiveSummary.trim(),
+            keyTakeaways = takeaways.distinct().take(5),
+            segments = validSegments.ifEmpty { segments }
         )
     }
 
@@ -417,25 +432,38 @@ object YouTubeCaptionService {
         description: String,
         chapters: List<Pair<Int, String>>
     ): VideoAiTranscript {
-        val cleanDesc = description.lines()
-            .filter { !it.contains("http") && !it.contains("subscribe", ignoreCase = true) && it.isNotBlank() }
-            .take(6)
-            .joinToString("\n")
-
-        val summaryText = if (cleanDesc.isNotBlank()) {
-            "Summary for '${video.title}' by ${video.channelName}:\n\n$cleanDesc"
-        } else {
-            "Official video '${video.title}' presented by ${video.channelName} in the ${video.category} category."
-        }
+        val cleanDescLines = description.lines()
+            .map { cleanText(it) }
+            .filter { line ->
+                line.isNotBlank() &&
+                !line.contains("http") &&
+                !line.contains("subscribe", ignoreCase = true) &&
+                !line.contains("patreon", ignoreCase = true) &&
+                !line.contains("twitter", ignoreCase = true) &&
+                !line.contains("instagram", ignoreCase = true) &&
+                !line.contains("facebook", ignoreCase = true) &&
+                !line.contains("<") &&
+                !line.contains(">")
+            }
+            .take(5)
 
         val takeaways = if (chapters.isNotEmpty()) {
-            chapters.map { "${it.second} (at ${formatSeconds(it.first)})" }
+            chapters.take(5).map { "${it.second} (at ${formatSeconds(it.first)})" }
+        } else if (cleanDescLines.isNotEmpty()) {
+            cleanDescLines
         } else {
             listOf(
-                "Overview of ${video.title}",
-                "Core highlights and topics by ${video.channelName}",
-                "Key presentation and walkthrough"
+                "Overview and background presented by ${video.channelName}",
+                "Core highlights of ${video.title}",
+                "Key commentary and main takeaway"
             )
+        }
+
+        val executiveSummary = buildString {
+            append("Summary of '${video.title}' by ${video.channelName}:\n\n")
+            takeaways.take(5).forEachIndexed { i, pt ->
+                append("${i + 1}. $pt\n")
+            }
         }
 
         val timelineSegments = if (chapters.isNotEmpty()) {
@@ -456,8 +484,8 @@ object YouTubeCaptionService {
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
-            executiveSummary = summaryText,
-            keyTakeaways = takeaways,
+            executiveSummary = executiveSummary.trim(),
+            keyTakeaways = takeaways.take(5),
             segments = timelineSegments
         )
     }
@@ -470,9 +498,9 @@ object YouTubeCaptionService {
             val hrs = matcher.group(1)?.toIntOrNull() ?: 0
             val mins = matcher.group(2)?.toIntOrNull() ?: 0
             val secs = matcher.group(3)?.toIntOrNull() ?: 0
-            val title = matcher.group(4)?.trim() ?: ""
+            val title = cleanText(matcher.group(4) ?: "")
             val totalSec = hrs * 3600 + mins * 60 + secs
-            if (title.isNotBlank()) {
+            if (title.isNotBlank() && !title.contains("<") && !title.contains(">")) {
                 chapters.add(Pair(totalSec, title))
             }
         }
@@ -481,11 +509,13 @@ object YouTubeCaptionService {
 
     private fun cleanText(text: String): String {
         return text
+            .replace(Regex("""<[^>]+>"""), " ") // Strip all HTML and XML tags completely
             .replace("&#39;", "'")
             .replace("&quot;", "\"")
             .replace("&amp;", "&")
             .replace("&lt;", "<")
             .replace("&gt;", ">")
+            .replace("&nbsp;", " ")
             .replace("\n", " ")
             .replace(Regex("""\s+"""), " ")
             .trim()

@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -200,49 +201,64 @@ fun AiSummaryModal(
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     if (selectedTab == 0) {
-                        // 1. Executive Summary Box
+                        // Clean 4-5 Key Points Summary
                         item {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 6.dp)
                             ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(imageVector = Icons.Filled.Lightbulb, contentDescription = null, tint = Color(0xFFFFB300), modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(text = "Executive Summary", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = t.executiveSummary,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        lineHeight = 20.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Filled.Lightbulb,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFB300),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Key Points Covered (${t.keyTakeaways.size} Points)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
                             }
                         }
 
-                        // 2. Key Takeaways Bullet Points
-                        item {
-                            Text(text = "Key Takeaways", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                        }
-
-                        items(t.keyTakeaways) { point ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text("•", color = YouTubeRed, fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.padding(end = 8.dp))
-                                Text(
-                                    text = point,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    lineHeight = 20.sp
+                        itemsIndexed(t.keyTakeaways) { index, point ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                 )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = YouTubeRed.copy(alpha = 0.15f),
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "${index + 1}",
+                                                color = YouTubeRed,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = point,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 20.sp,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                }
                             }
                         }
 
