@@ -18,5 +18,8 @@ data class VideoEntity(
     val isWatchLater: Boolean = false,
     val notesCount: Int = 0,
     val viewCountText: String = "",
-    val publishedTimeText: String = ""
+    val publishedTimeText: String = "",
+    val isDownloaded: Boolean = false,
+    val localFilePath: String = "",
+    val downloadSizeMb: Float = 0.0f
 )

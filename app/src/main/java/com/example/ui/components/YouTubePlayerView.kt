@@ -157,6 +157,17 @@ fun YouTubePlayerView(
 
     LaunchedEffect(videoId) {
         isLoading = true
+        // 1. Check if video is downloaded locally (Offline / Airplane Mode Playback)
+        val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(context, videoId)
+        if (localFile.exists() && localFile.length() > 1024 * 100) {
+            val localUri = android.net.Uri.fromFile(localFile).toString()
+            streamUrl = localUri
+            isLoading = false
+            addLog("⚡ Playing from Local Offline Storage (${localFile.length() / (1024 * 1024)}MB) - Offline / Airplane Mode Ready!")
+            return@LaunchedEffect
+        }
+
+        // 2. Otherwise extract online stream
         addLog("Extracting direct MP4 stream URL via InnerTube API for videoId: $videoId")
         val url = kotlinx.coroutines.withTimeoutOrNull(8000L) {
             YouTubeStreamExtractor.getDirectStreamUrl(videoId)

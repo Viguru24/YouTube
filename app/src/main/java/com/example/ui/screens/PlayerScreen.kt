@@ -49,11 +49,16 @@ fun PlayerScreen(
     areAdvertsEnabled: Boolean = false,
     onNotInterested: (VideoEntity) -> Unit = {},
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
+    isDownloaded: Boolean = false,
+    downloadProgress: Int = 0,
+    onDownloadClick: () -> Unit = {},
+    onDeleteDownloadClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
     var showDebugConsole by remember { mutableStateOf(false) }
     var showSaveToSubjectDialog by remember { mutableStateOf(false) }
+    var showAiSummaryModal by remember { mutableStateOf(false) }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -153,7 +158,7 @@ fun PlayerScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Sleek Compact Below-Video Action Bar (Icon Buttons Only - Zero Text Clutter)
+                            // Sleek Compact Below-Video Action Bar
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -161,50 +166,22 @@ fun PlayerScreen(
                                 horizontalArrangement = Arrangement.SpaceEvenly,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                 // 1. Like 👍
-                                 IconButton(
-                                     onClick = {
-                                         onFavoriteToggle(video)
-                                         android.widget.Toast.makeText(context, if (!video.isFavorite) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                                     }
-                                 ) {
-                                     Icon(
-                                         imageVector = Icons.Filled.ThumbUp,
-                                         contentDescription = "Like",
-                                         tint = if (video.isFavorite) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                         modifier = Modifier.size(22.dp)
-                                     )
-                                 }
-
-                                // 2. Not Interested 👎
+                                // 1. Like 👍
                                 IconButton(
                                     onClick = {
-                                        onNotInterested(video)
-                                        android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
-                                        onBackClick()
+                                        onFavoriteToggle(video)
+                                        android.widget.Toast.makeText(context, if (!video.isFavorite) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.ThumbDown,
-                                        contentDescription = "Not Interested",
-                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        imageVector = Icons.Filled.ThumbUp,
+                                        contentDescription = "Like",
+                                        tint = if (video.isFavorite) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(22.dp)
                                     )
                                 }
 
-                                // 3. Star ⭐ (Favorite)
-                                IconButton(
-                                    onClick = { onFavoriteToggle(video) }
-                                ) {
-                                    Icon(
-                                        imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                        contentDescription = "Favorite",
-                                        tint = if (video.isFavorite) GoldStar else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-
-                                // 4. Save As 📁 (Subject / Playlist)
+                                // 2. Save As 📁 (Subject / Playlist)
                                 IconButton(
                                     onClick = { showSaveToSubjectDialog = true }
                                 ) {
@@ -216,7 +193,7 @@ fun PlayerScreen(
                                     )
                                 }
 
-                                // 5. Watch Later 🕒
+                                // 3. Watch Later 🕒
                                 IconButton(
                                     onClick = { onWatchLaterToggle(video) }
                                 ) {
@@ -226,6 +203,72 @@ fun PlayerScreen(
                                         tint = if (video.isWatchLater) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(22.dp)
                                     )
+                                }
+
+                                // 4. ✨ 1-Tap AI Summary Button
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = Color(0xFF8E24AA).copy(alpha = 0.15f),
+                                    modifier = Modifier.clickable { showAiSummaryModal = true }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.AutoAwesome,
+                                            contentDescription = "AI Summary",
+                                            tint = Color(0xFFAB47BC),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "Summary",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFAB47BC)
+                                        )
+                                    }
+                                }
+
+                                // 5. ✈️ 1-Tap Offline Download Button
+                                if (isDownloaded) {
+                                    IconButton(
+                                        onClick = onDeleteDownloadClick
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = "Downloaded",
+                                            tint = Color(0xFF4CAF50),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                } else if (downloadProgress in 1..99) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
+                                        CircularProgressIndicator(
+                                            progress = { downloadProgress / 100f },
+                                            modifier = Modifier.size(26.dp),
+                                            color = com.example.ui.theme.YouTubeRed,
+                                            strokeWidth = 2.5.dp
+                                        )
+                                        Text(
+                                            text = "$downloadProgress",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = com.example.ui.theme.YouTubeRed
+                                        )
+                                    }
+                                } else {
+                                    IconButton(
+                                        onClick = onDownloadClick
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Download,
+                                            contentDescription = "Download Video",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -254,6 +297,22 @@ fun PlayerScreen(
                 }
             }
         }
+    }
+
+    if (showAiSummaryModal) {
+        com.example.ui.components.AiSummaryModal(
+            video = video,
+            onDismiss = { showAiSummaryModal = false },
+            onSeekTo = { seekSec ->
+                // Seek player to timestamp
+                try {
+                    (webViewInstance as? androidx.media3.exoplayer.ExoPlayer)?.seekTo((seekSec * 1000).toLong())
+                } catch (e: Exception) {}
+            },
+            onSaveToNotes = { summaryText ->
+                onAddNote(0, "00:00", summaryText)
+            }
+        )
     }
 
     if (showSaveToSubjectDialog) {

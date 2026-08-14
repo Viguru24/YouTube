@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 @Database(
     entities = [VideoEntity::class, VideoNoteEntity::class, PlaylistCategoryEntity::class, com.example.data.model.MutedChannelEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

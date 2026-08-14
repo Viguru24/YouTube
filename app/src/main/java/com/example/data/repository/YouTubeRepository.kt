@@ -18,6 +18,7 @@ class YouTubeRepository(
     val favoriteVideos: Flow<List<VideoEntity>> = videoDao.getFavoriteVideos()
     val watchLaterVideos: Flow<List<VideoEntity>> = videoDao.getWatchLaterVideos()
     val watchHistory: Flow<List<VideoEntity>> = videoDao.getWatchHistory()
+    val downloadedVideos: Flow<List<VideoEntity>> = videoDao.getDownloadedVideos()
     val categories: Flow<List<PlaylistCategoryEntity>> = categoryDao.getAllCategories()
     val mutedChannels: Flow<List<com.example.data.model.MutedChannelEntity>> = mutedChannelDao.getAllMutedChannels()
 
@@ -79,6 +80,10 @@ class YouTubeRepository(
 
     suspend fun updateWatchHistory(youtubeId: String, lastPosSeconds: Int) {
         videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), lastPosSeconds)
+    }
+
+    suspend fun updateDownloadStatus(youtubeId: String, isDownloaded: Boolean, localFilePath: String, downloadSizeMb: Float) {
+        videoDao.updateDownloadStatus(youtubeId, isDownloaded, localFilePath, downloadSizeMb)
     }
 
     suspend fun deleteVideo(video: VideoEntity) {

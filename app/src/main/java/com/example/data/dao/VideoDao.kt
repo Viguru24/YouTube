@@ -45,13 +45,19 @@ interface VideoDao {
     @Query("UPDATE videos SET lastWatchedTimestamp = :timestamp, lastPositionSeconds = :lastPos WHERE youtubeId = :youtubeId")
     suspend fun updateWatchHistory(youtubeId: String, timestamp: Long, lastPos: Int)
 
+    @Query("SELECT * FROM videos WHERE isDownloaded = 1 ORDER BY addedTimestamp DESC")
+    fun getDownloadedVideos(): Flow<List<VideoEntity>>
+
+    @Query("UPDATE videos SET isDownloaded = :isDownloaded, localFilePath = :localFilePath, downloadSizeMb = :downloadSizeMb WHERE youtubeId = :youtubeId")
+    suspend fun updateDownloadStatus(youtubeId: String, isDownloaded: Boolean, localFilePath: String, downloadSizeMb: Float)
+
     @Delete
     suspend fun deleteVideo(video: VideoEntity)
 
-    @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND lastPositionSeconds = 0")
+    @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastPositionSeconds = 0")
     suspend fun deleteStaleUnsavedVideos(cutoffTimestamp: Long)
 
-    @Query("DELETE FROM videos WHERE isFavorite = 0 AND isWatchLater = 0 AND lastPositionSeconds = 0")
+    @Query("DELETE FROM videos WHERE isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastPositionSeconds = 0")
     suspend fun clearUnsavedVideos()
 
     @Query("DELETE FROM videos WHERE lastWatchedTimestamp > 0")

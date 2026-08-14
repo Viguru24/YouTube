@@ -24,6 +24,35 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val mutedChannels: StateFlow<List<com.example.data.model.MutedChannelEntity>> = repository.mutedChannels
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val downloadedVideos: StateFlow<List<VideoEntity>> = repository.downloadedVideos
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val downloadProgressMap: StateFlow<Map<String, Int>> = com.example.data.remote.VideoDownloadManager.downloadProgressMap
+
+    fun downloadVideo(video: VideoEntity, onComplete: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            repository.saveVideo(video)
+            com.example.data.remote.VideoDownloadManager.downloadVideo(
+                context = getApplication(),
+                video = video,
+                onSuccess = { localPath, sizeMb ->
+                    viewModelScope.launch {
+                        repository.updateDownloadStatus(video.youtubeId, true, localPath, sizeMb)
+                        onComplete()
+                    }
+                },
+                onError = onError
+            )
+        }
+    }
+
+    fun deleteDownloadedVideo(video: VideoEntity) {
+        viewModelScope.launch {
+            com.example.data.remote.VideoDownloadManager.deleteDownloadedVideo(getApplication(), video.youtubeId)
+            repository.updateDownloadStatus(video.youtubeId, false, "", 0.0f)
+        }
+    }
+
     fun muteChannel(channelName: String) {
         viewModelScope.launch {
             repository.muteChannel(channelName)

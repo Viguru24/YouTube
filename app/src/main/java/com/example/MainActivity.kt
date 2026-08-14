@@ -98,6 +98,9 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
     val liveSearchResults by viewModel.liveSearchResults.collectAsStateWithLifecycle()
     val categoryVideos by viewModel.categoryVideos.collectAsStateWithLifecycle()
 
+    val downloadedVideos by viewModel.downloadedVideos.collectAsStateWithLifecycle()
+    val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
+
     val activeVideoId by viewModel.activeVideoId.collectAsStateWithLifecycle()
     val activeVideo by viewModel.activeVideo.collectAsStateWithLifecycle()
     val activeNotes by viewModel.activeNotes.collectAsStateWithLifecycle()
@@ -157,6 +160,9 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     onPositionUpdate = { _ -> }
                 )
             } else {
+                val isDownloadedVideo = activeVideo!!.isDownloaded || downloadedVideos.any { it.youtubeId == activeVideo!!.youtubeId }
+                val currentProgress = downloadProgressMap[activeVideo!!.youtubeId] ?: 0
+
                 // Standard Landscape/Portrait Video Player Screen
                 PlayerScreen(
                     video = activeVideo!!,
@@ -174,7 +180,20 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     onOpenGoogleAuth = { showGoogleAuthDialog = true },
                     areAdvertsEnabled = areAdvertsEnabled,
                     onNotInterested = { v -> viewModel.deleteVideo(v) },
-                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) }
+                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
+                    isDownloaded = isDownloadedVideo,
+                    downloadProgress = currentProgress,
+                    onDownloadClick = {
+                        viewModel.downloadVideo(activeVideo!!, onComplete = {
+                            android.widget.Toast.makeText(context, "Video Downloaded for Offline Watching! ✈️", android.widget.Toast.LENGTH_LONG).show()
+                        }, onError = { err ->
+                            android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                        })
+                    },
+                    onDeleteDownloadClick = {
+                        viewModel.deleteDownloadedVideo(activeVideo!!)
+                        android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
         } else {
@@ -296,6 +315,8 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                             onOpenAddVideoDialog = { showAddVideoDialog = true },
                             onOpenGoogleAuth = { showGoogleAuthDialog = true },
                             historyVideos = watchHistory,
+                            downloadedVideos = downloadedVideos,
+                            onDeleteDownload = { v -> viewModel.deleteDownloadedVideo(v) },
                             onOpenHistory = { selectedNavIndex = 2 }
                         )
                         2 -> HistoryScreen(

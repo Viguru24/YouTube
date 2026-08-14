@@ -43,17 +43,19 @@ fun LibraryScreen(
     onOpenAddVideoDialog: () -> Unit,
     onOpenGoogleAuth: () -> Unit,
     historyVideos: List<VideoEntity> = emptyList(),
+    downloadedVideos: List<VideoEntity> = emptyList(),
+    onDeleteDownload: (VideoEntity) -> Unit = {},
     onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Subjects/Categories, 1: Favorites, 2: Watch Later, 3: History
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Subjects, 1: Downloads, 2: Favorites, 3: Watch Later, 4: History
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Library & Subjects",
+                        text = "Library & Downloads",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -131,26 +133,33 @@ fun LibraryScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
+                    text = { Text("📥 Downloads (${downloadedVideos.size})") },
+                    icon = { Icon(Icons.Filled.DownloadDone, contentDescription = null, tint = if (selectedTab == 1) Color(0xFF4CAF50) else LocalContentColor.current) },
+                    modifier = Modifier.testTag("tab_downloads")
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
                     text = { Text("Favorites (${favoriteVideos.size})") },
                     icon = {
                         Icon(
-                            imageVector = if (selectedTab == 1) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            imageVector = if (selectedTab == 2) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = null,
-                            tint = if (selectedTab == 1) GoldStar else LocalContentColor.current
+                            tint = if (selectedTab == 2) GoldStar else LocalContentColor.current
                         )
                     },
                     modifier = Modifier.testTag("tab_favorites")
                 )
                 Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     text = { Text("Watch Later (${watchLaterVideos.size})") },
                     icon = { Icon(Icons.Outlined.WatchLater, contentDescription = null) },
                     modifier = Modifier.testTag("tab_watch_later")
                 )
                 Tab(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
+                    selected = selectedTab == 4,
+                    onClick = { selectedTab = 4 },
                     text = { Text("History (${historyVideos.size})") },
                     icon = { Icon(Icons.Filled.History, contentDescription = null) },
                     modifier = Modifier.testTag("tab_history")
@@ -169,7 +178,12 @@ fun LibraryScreen(
                     onDeleteVideo = onDeleteVideo,
                     onOpenAddCategoryDialog = onOpenAddCategoryDialog
                 )
-                1 -> VideoListTabContent(
+                1 -> DownloadedVideosTabContent(
+                    videos = downloadedVideos,
+                    onVideoClick = onVideoClick,
+                    onDeleteDownload = onDeleteDownload
+                )
+                2 -> VideoListTabContent(
                     title = "Favorite Videos",
                     emptyText = "No favorite videos saved yet. Tap the star icon on any video to bookmark it here!",
                     videos = favoriteVideos,
@@ -178,7 +192,7 @@ fun LibraryScreen(
                     onWatchLaterToggle = onWatchLaterToggle,
                     onDeleteVideo = onDeleteVideo
                 )
-                2 -> VideoListTabContent(
+                3 -> VideoListTabContent(
                     title = "Watch Later List",
                     emptyText = "Your Watch Later queue is empty. Add videos from the home feed to save them for later!",
                     videos = watchLaterVideos,
@@ -187,7 +201,7 @@ fun LibraryScreen(
                     onWatchLaterToggle = onWatchLaterToggle,
                     onDeleteVideo = onDeleteVideo
                 )
-                3 -> VideoListTabContent(
+                4 -> VideoListTabContent(
                     title = "Watch History",
                     emptyText = "No watch history recorded yet. Videos you watch will automatically appear here!",
                     videos = historyVideos,
@@ -196,6 +210,138 @@ fun LibraryScreen(
                     onWatchLaterToggle = onWatchLaterToggle,
                     onDeleteVideo = onDeleteVideo
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadedVideosTabContent(
+    videos: List<VideoEntity>,
+    onVideoClick: (VideoEntity) -> Unit,
+    onDeleteDownload: (VideoEntity) -> Unit
+) {
+    if (videos.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Filled.AirplanemodeActive,
+                    contentDescription = null,
+                    tint = YouTubeRed,
+                    modifier = Modifier.size(54.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "No Offline Downloads Yet",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Tap the ⬇️ Download button on any video to save it for offline watching (e.g. on airplanes).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+    } else {
+        val totalMb = videos.sumOf { it.downloadSizeMb.toDouble() }
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "✈️ Ready for Offline & Airplane Mode",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4CAF50)
+                    )
+                    Text(
+                        text = "${String.format(java.util.Locale.US, "%.1f", totalMb)} MB used",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            items(videos, key = { "dl_${it.youtubeId}" }) { video ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onVideoClick(video) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(100.dp)
+                                .aspectRatio(16f / 9f)
+                                .clip(RoundedCornerShape(6.dp))
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = video.thumbnailUrl,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = video.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "✓ Offline (${video.downloadSizeMb}MB)",
+                                        color = Color(0xFF4CAF50),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(onClick = { onDeleteDownload(video) }) {
+                            Icon(
+                                imageVector = Icons.Filled.DeleteOutline,
+                                contentDescription = "Delete Download",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
         }
     }
