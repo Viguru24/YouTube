@@ -205,17 +205,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
                         (profileFeed + home + shorts).distinctBy { it.youtubeId }
                     } else {
-                        val searchTopic = when (category) {
-                            "Tech & Code" -> "Tech technology news coding"
-                            "Music" -> "Trending music videos official"
-                            "Tutorials" -> "Full tutorial how to guide"
-                            "Gaming" -> "Gaming walkthrough 4K"
-                            "Focus & Ambient" -> "Focus ambient study music"
-                            else -> "$category trending videos"
-                        }
-                        // Tag results with the selected category so display filter matches
-                        com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(searchTopic)
-                            .map { it.copy(category = category) }
+                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category)
                     }
                     val englishOnly = fetched.filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                     _categoryVideos.value = englishOnly

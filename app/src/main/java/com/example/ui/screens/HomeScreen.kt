@@ -525,22 +525,23 @@ fun HomeScreen(
                 settings = algorithmSettings
             )
 
-            // Strictly sort Latest Ones First (Newest) when Subscribed Channel is selected
             val displayList = if (selectedSubscribedChannel.isNotBlank()) {
                 rawDisplayList.sortedWith(
                     compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         .thenByDescending { it.addedTimestamp }
                 )
             } else when (selectedSort) {
-                "Newest" -> rankedDisplayList.sortedWith(
-                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                        .thenByDescending { it.addedTimestamp }
-                )
                 "Oldest" -> rankedDisplayList.sortedWith(
                     compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         .thenBy { it.addedTimestamp }
                 )
-                else -> rankedDisplayList
+                else -> {
+                    // Default & Newest both strictly prioritize newest uploads first (minutes, hours, days ago)
+                    rankedDisplayList.sortedWith(
+                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            .thenByDescending { it.addedTimestamp }
+                    )
+                }
             }
 
             if (displayList.isEmpty()) {

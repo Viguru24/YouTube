@@ -71,12 +71,22 @@ object YouTubeLiveSearchService {
     }
     /**
      * Searches YouTube for any query using NewPipe Extractor, direct YouTube web search, and fallback API.
+     * Supports forcing strict YouTube upload date sorting (sp=CAI%3D).
      */
-    suspend fun searchRealYouTubeVideos(query: String): List<VideoEntity> = withContext(Dispatchers.IO) {
+    suspend fun searchRealYouTubeVideos(query: String, sortByUploadDate: Boolean = true): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        // 1. PRIMARY: NewPipe SearchExtractor (Direct YouTube parsing with real view counts, dates, titles)
+        // 1. PRIMARY: Direct YouTube Web HTML scraping with optional Sort-By-Upload-Date (sp=CAI%3D)
+        val webResults = searchWebHtml(trimmed, sortByUploadDate).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+        if (webResults.isNotEmpty()) {
+            logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
+            return@withContext if (sortByUploadDate) {
+                webResults.sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+            } else webResults
+        }
+
+        // 2. SECONDARY: NewPipe SearchExtractor
         try {
             val service = org.schabi.newpipe.extractor.ServiceList.YouTube
             val extractor = service.getSearchExtractor(trimmed)
@@ -117,23 +127,19 @@ object YouTubeLiveSearchService {
             }
             if (results.isNotEmpty()) {
                 logD("YouTubeLiveSearchService", "[NewPipe Search] Found ${results.size} real results for '$trimmed'")
-                return@withContext results
+                return@withContext if (sortByUploadDate) {
+                    results.sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                } else results
             }
         } catch (e: Exception) {
             logD("YouTubeLiveSearchService", "[NewPipe Search] Failed: ${e.message}")
         }
 
-        // 2. SECONDARY: Direct YouTube Web HTML scraping
-        val webResults = searchWebHtml(trimmed).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-        if (webResults.isNotEmpty()) {
-            logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
-            return@withContext webResults
-        }
-
         // 3. FALLBACK: Fast Invidious Endpoint
         try {
             val encoded = try { URLEncoder.encode(trimmed, "UTF-8") } catch (e: Exception) { trimmed }
-            val url = "https://invidious.flokinet.to/api/v1/search?q=$encoded&type=video&region=US"
+            val sortParam = if (sortByUploadDate) "&sort=upload_date" else ""
+            val url = "https://invidious.flokinet.to/api/v1/search?q=$encoded&type=video&region=US$sortParam"
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
@@ -144,14 +150,82 @@ object YouTubeLiveSearchService {
                 if (response.isSuccessful) {
                     val bodyString = response.body?.string() ?: ""
                     val parsed = parseJsonResponse(bodyString, trimmed).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                    if (parsed.isNotEmpty()) return@withContext parsed
+                    if (parsed.isNotEmpty()) return@withContext if (sortByUploadDate) {
+                        parsed.sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                    } else parsed
                 }
             }
         } catch (e: Exception) {
-            logD("YouTubeLiveSearchService", "Fallback fail: ${e.message}")
+            logD("YouTubeLiveSearchService", "Invidious search fallback error: ${e.message}")
         }
 
         return@withContext emptyList()
+    }
+
+    /**
+     * Dedicated category feed fetcher that queries category-specific creators and topics
+     * in parallel and sorts strictly by latest upload date.
+     */
+    suspend fun fetchCategoryFeed(category: String): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val topicQueries = when (category) {
+            "Tech & Code" -> listOf(
+                "Matthew Berman",
+                "AI Revolution",
+                "Two Bit da Vinci",
+                "Anastasi In Tech",
+                "Matt Wolfe",
+                "Sabine Hossenfelder",
+                "Nerdy Rodent",
+                "The Robotics State",
+                "Fireship",
+                "Tech AI coding breakthrough news"
+            )
+            "Tutorials" -> listOf(
+                "Warren Smith - Secret Scholar",
+                "Julian Goldie SEO",
+                "freeCodeCamp",
+                "How to tutorial guide 2026",
+                "Tutorial coding step by step"
+            )
+            "Gaming" -> listOf(
+                "ClashIQ",
+                "IGN gaming walkthrough 4K",
+                "Gaming news update today",
+                "PlayStation gameplay 4K"
+            )
+            "Music" -> listOf(
+                "Official music video 2026",
+                "Billboard top hits new release",
+                "Vevo official music video"
+            )
+            "Focus & Ambient" -> listOf(
+                "Lofi hip hop radio live stream",
+                "Ambient study music deep focus 4K",
+                "Focus ambient soundscape"
+            )
+            else -> listOf("$category latest uploads", "$category news today")
+        }
+
+        val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
+        val jobs = topicQueries.map { q ->
+            async {
+                try {
+                    val fetched = searchRealYouTubeVideos(q, sortByUploadDate = true)
+                    results.addAll(fetched.take(8))
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Category search error for '$q': ${e.message}")
+                }
+            }
+        }
+        jobs.awaitAll()
+
+        return@withContext results
+            .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+            .distinctBy { it.youtubeId }
+            .map { it.copy(category = category) }
+            .sortedWith(
+                compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+            )
     }
 
     private fun isMatchingChannel(video: VideoEntity, channelName: String): Boolean {
@@ -367,10 +441,11 @@ object YouTubeLiveSearchService {
         return@withContext emptyList()
     }
 
-    private fun searchWebHtml(query: String): List<VideoEntity> {
+    private fun searchWebHtml(query: String, sortByUploadDate: Boolean = false): List<VideoEntity> {
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = "https://www.youtube.com/results?search_query=$encodedQuery&hl=en&gl=US"
+            val sortParam = if (sortByUploadDate) "&sp=CAI%253D" else ""
+            val url = "https://www.youtube.com/results?search_query=$encodedQuery$sortParam&hl=en&gl=US"
 
             val request = Request.Builder()
                 .url(url)
