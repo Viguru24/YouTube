@@ -142,18 +142,10 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     isWatchLater = activeVideo!!.isWatchLater,
                     onBackClick = { viewModel.clearActiveVideo() },
                     onNextShort = {
-                        val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
-                        val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
-                        if (currentIndex >= 0 && currentIndex < shorts.size - 1) {
-                            viewModel.playShort(shorts[currentIndex + 1])
-                        }
+                        viewModel.playNextShort(activeVideo!!.youtubeId)
                     },
                     onPreviousShort = {
-                        val shorts = videos.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
-                        val currentIndex = shorts.indexOfFirst { it.youtubeId == activeVideo!!.youtubeId }
-                        if (currentIndex > 0) {
-                            viewModel.playShort(shorts[currentIndex - 1])
-                        }
+                        viewModel.playPreviousShort(activeVideo!!.youtubeId)
                     },
                     onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
                     onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },

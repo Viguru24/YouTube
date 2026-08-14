@@ -527,15 +527,23 @@ object YouTubeLiveSearchService {
             "Kurzgesagt #shorts",
             "Wired #shorts",
             "National Geographic #shorts",
-            "Gordon Ramsay #shorts"
+            "Gordon Ramsay #shorts",
+            "Science #shorts",
+            "Technology #shorts",
+            "Nature #shorts",
+            "Engineering #shorts",
+            "Space #shorts",
+            "History #shorts",
+            "Woodworking #shorts",
+            "Formula 1 #shorts"
         )
-        val selectedTopics = topics.shuffled().take(4)
+        val selectedTopics = topics.shuffled().take(6)
         val accumulated = mutableListOf<VideoEntity>()
         for (topic in selectedTopics) {
             val fetched = searchRealYouTubeVideos(topic)
             val filtered = fetched.filter { v ->
                 val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
-                durationSec in 3..90 &&
+                durationSec in 3..60 &&
                 !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) &&
                 !v.title.lowercase().contains("kids") &&
                 !v.title.lowercase().contains("cartoon") &&

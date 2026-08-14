@@ -442,6 +442,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         else repository.getNotesForVideo(id)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _shortsQueue = MutableStateFlow<List<VideoEntity>>(emptyList())
+    val shortsQueue: StateFlow<List<VideoEntity>> = _shortsQueue.asStateFlow()
+
     fun playVideo(video: VideoEntity, isShort: Boolean = false) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isPlayingAsShort.value = isShort
@@ -454,7 +457,62 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun playShort(video: VideoEntity) {
-        playVideo(video.copy(category = "Shorts"), isShort = true)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val shortVid = video.copy(category = "Shorts")
+            val currentList = _shortsQueue.value
+            if (!currentList.any { it.youtubeId == shortVid.youtubeId }) {
+                _shortsQueue.value = (currentList + shortVid).distinctBy { it.youtubeId }
+            }
+            // Pre-fetch more shorts in background if queue has less than 8 items
+            if (_shortsQueue.value.size < 8) {
+                try {
+                    val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                    _shortsQueue.value = (_shortsQueue.value + freshShorts).distinctBy { it.youtubeId }
+                    freshShorts.forEach { repository.saveVideo(it) }
+                } catch (e: Exception) { }
+            }
+            playVideo(shortVid, isShort = true)
+        }
+    }
+
+    fun playNextShort(currentVideoId: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var currentList = _shortsQueue.value
+            if (currentList.isEmpty()) {
+                currentList = _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+            }
+            var currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
+
+            // If nearing end of queue, fetch fresh batch immediately
+            if (currentIndex >= currentList.size - 3 || currentIndex == -1 || currentList.size < 4) {
+                try {
+                    val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                    currentList = (currentList + freshShorts).distinctBy { it.youtubeId }
+                    _shortsQueue.value = currentList
+                    freshShorts.forEach { repository.saveVideo(it) }
+                } catch (e: Exception) { }
+            }
+
+            currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
+            if (currentIndex >= 0 && currentIndex < currentList.size - 1) {
+                playShort(currentList[currentIndex + 1])
+            } else if (currentList.isNotEmpty()) {
+                val next = currentList.getOrNull(currentIndex + 1) ?: currentList.first()
+                playShort(next)
+            }
+        }
+    }
+
+    fun playPreviousShort(currentVideoId: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val currentList = _shortsQueue.value.ifEmpty {
+                _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+            }
+            val currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
+            if (currentIndex > 0) {
+                playShort(currentList[currentIndex - 1])
+            }
+        }
     }
 
     fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
