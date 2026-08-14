@@ -67,6 +67,11 @@ fun YouTubePlayerView(
     var savedPositionMs by rememberSaveable(videoId) { mutableLongStateOf(-1L) }
     var hasPreparedMedia by rememberSaveable(videoId) { mutableStateOf(false) }
 
+    // Stream extraction & dynamic quality state
+    var streamResult by remember(videoId) { mutableStateOf<com.example.data.remote.StreamExtractionResult?>(null) }
+    var availableQualities by remember(videoId) { mutableStateOf<List<String>>(emptyList()) }
+    var selectedQuality by remember(videoId) { mutableStateOf("Auto") }
+
     // Video Playback Controls Overlay State
     var isPlayingState by remember { mutableStateOf(true) }
     var isMutedState by remember { mutableStateOf(false) }
@@ -157,25 +162,33 @@ fun YouTubePlayerView(
 
     LaunchedEffect(videoId) {
         isLoading = true
+        isFirstFrameRendered = false
+        hasPreparedMedia = false
+
         // 1. Check if video is downloaded locally (Offline / Airplane Mode Playback)
         val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(context, videoId)
         if (localFile.exists() && localFile.length() > 1024 * 100) {
             val localUri = android.net.Uri.fromFile(localFile).toString()
             streamUrl = localUri
+            availableQualities = listOf("Offline Ready")
+            selectedQuality = "Offline Ready"
             isLoading = false
             addLog("⚡ Playing from Local Offline Storage (${localFile.length() / (1024 * 1024)}MB) - Offline / Airplane Mode Ready!")
             return@LaunchedEffect
         }
 
-        // 2. Otherwise extract online stream
-        addLog("Extracting direct MP4 stream URL via InnerTube API for videoId: $videoId")
-        val url = kotlinx.coroutines.withTimeoutOrNull(8000L) {
-            YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+        // 2. Otherwise extract online stream & all available resolutions
+        addLog("Extracting direct MP4 stream URL & available qualities for videoId: $videoId")
+        val result = kotlinx.coroutines.withTimeoutOrNull(8000L) {
+            YouTubeStreamExtractor.extractVideoStreams(videoId)
         }
-        if (url != null) {
-            streamUrl = url
+        if (result != null && !result.primaryStreamUrl.isNullOrEmpty()) {
+            streamResult = result
+            availableQualities = result.availableQualities
+            selectedQuality = result.availableQualities.firstOrNull { it != "Auto" } ?: "Auto"
+            streamUrl = result.primaryStreamUrl
             isLoading = false
-            addLog("Stream Extracted Successfully! MP4 URL: ${url.take(80)}...")
+            addLog("Streams Extracted! Available: ${result.availableQualities.joinToString(", ")}")
         } else {
             isLoading = false
             statusLog = "Direct stream timed out or restricted. Activating Web Player."
@@ -185,24 +198,22 @@ fun YouTubePlayerView(
 
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
-            if (!hasPreparedMedia) {
-                val mediaItem = MediaItem.fromUri(url)
-                exoPlayer.setMediaItem(mediaItem)
-                val targetSeekMs = if (savedPositionMs > 0) {
-                    savedPositionMs
-                } else if (startSeconds > 0) {
-                    (startSeconds * 1000).toLong()
-                } else 0L
+            val mediaItem = MediaItem.fromUri(url)
+            exoPlayer.setMediaItem(mediaItem)
+            val targetSeekMs = if (savedPositionMs > 0) {
+                savedPositionMs
+            } else if (startSeconds > 0) {
+                (startSeconds * 1000).toLong()
+            } else 0L
 
-                if (targetSeekMs > 0) {
-                    exoPlayer.seekTo(targetSeekMs)
-                }
-                exoPlayer.prepare()
-                exoPlayer.play()
-                hasPreparedMedia = true
-                onPlayerReady(exoPlayer)
-                addLog("ExoPlayer Prepared & Playing Native Stream at ${targetSeekMs / 1000}s")
+            if (targetSeekMs > 0) {
+                exoPlayer.seekTo(targetSeekMs)
             }
+            exoPlayer.prepare()
+            exoPlayer.play()
+            hasPreparedMedia = true
+            onPlayerReady(exoPlayer)
+            addLog("ExoPlayer Prepared & Playing Native Stream at ${targetSeekMs / 1000}s")
         }
     }
 
@@ -369,12 +380,11 @@ fun YouTubePlayerView(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.35f))
         ) {
-            // Hoist Speed / Quality / Settings state for authentic YouTube Control Deck
+            // Hoist Speed / Settings state for authentic YouTube Control Deck
             var showSettingsMenu by remember { mutableStateOf(false) }
             var showSpeedSubMenu by remember { mutableStateOf(false) }
             var showQualitySubMenu by remember { mutableStateOf(false) }
             var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-            var selectedQuality by remember { mutableStateOf("1080p") }
             var captionsEnabled by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
 
@@ -638,12 +648,24 @@ fun YouTubePlayerView(
                                             text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
                                             onClick = { showQualitySubMenu = false }
                                         )
-                                        listOf("1080p", "720p", "480p", "Auto").forEach { q ->
-                                            val isCurrent = q == selectedQuality
+                                        availableQualities.forEach { q ->
+                                            val isCurrent = q.equals(selectedQuality, ignoreCase = true)
+                                            val label = when (q) {
+                                                "2160p" -> "4K Ultra HD (2160p)"
+                                                "1440p" -> "Quad HD (1440p)"
+                                                "1080p" -> "1080p (Full HD)"
+                                                "720p"  -> "720p (HD)"
+                                                "480p"  -> "480p (Standard)"
+                                                "360p"  -> "360p (Data Saver)"
+                                                "240p"  -> "240p (Low)"
+                                                "144p"  -> "144p (Lowest)"
+                                                "Auto"  -> "Auto (Best Quality)"
+                                                else    -> q
+                                            }
                                             DropdownMenuItem(
                                                 text = {
                                                     Text(
-                                                        text = if (isCurrent) "✓ $q (High Definition)" else q,
+                                                        text = if (isCurrent) "✓ $label" else label,
                                                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                                         color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
                                                         fontSize = 13.sp
@@ -654,25 +676,27 @@ fun YouTubePlayerView(
                                                     showQualitySubMenu = false
                                                     showSettingsMenu = false
                                                     isSettingsMenuOpen = false
+
                                                     val (maxW, maxH) = when (q) {
+                                                        "2160p" -> Pair(3840, 2160)
+                                                        "1440p" -> Pair(2560, 1440)
                                                         "1080p" -> Pair(1920, 1080)
                                                         "720p"  -> Pair(1280, 720)
                                                         "480p"  -> Pair(854, 480)
+                                                        "360p"  -> Pair(640, 360)
                                                         else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
                                                     }
                                                     exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
                                                         .buildUpon().setMaxVideoSize(maxW, maxH).build()
 
                                                     coroutineScope.launch {
-                                                        val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
-                                                        if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
+                                                        val targetUrl = streamResult?.qualityUrlMap?.get(q)
+                                                            ?: com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
+                                                        if (!targetUrl.isNullOrEmpty()) {
                                                             val currentPos = exoPlayer.currentPosition
-                                                            streamUrl = newUrl
-                                                            val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
-                                                            exoPlayer.setMediaItem(mediaItem)
-                                                            exoPlayer.prepare()
-                                                            exoPlayer.seekTo(currentPos)
-                                                            exoPlayer.play()
+                                                            savedPositionMs = currentPos
+                                                            streamUrl = targetUrl
+                                                            android.widget.Toast.makeText(context, "Quality switched to $q", android.widget.Toast.LENGTH_SHORT).show()
                                                         }
                                                     }
                                                 }
