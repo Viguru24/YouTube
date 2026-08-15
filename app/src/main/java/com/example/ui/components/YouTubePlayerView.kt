@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -90,8 +92,16 @@ fun YouTubePlayerView(
     }
 
     val exoPlayer = remember(videoId) {
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
+
         ExoPlayer.Builder(context).build().apply {
             playWhenReady = true
+            setAudioAttributes(audioAttributes, true)
+            setHandleAudioBecomingNoisy(true)
+            volume = if (isMutedState) 0f else 1.0f
         }
     }
 
@@ -198,8 +208,22 @@ fun YouTubePlayerView(
 
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
-            val mediaItem = MediaItem.fromUri(url)
-            exoPlayer.setMediaItem(mediaItem)
+            val isVideoOnly = streamResult?.videoOnlyQualities?.contains(selectedQuality) == true
+            val audioUrl = streamResult?.audioStreamUrl
+
+            if (isVideoOnly && !audioUrl.isNullOrBlank()) {
+                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
+                val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(url))
+                val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(audioUrl))
+                val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+                exoPlayer.setMediaSource(mergingSource)
+            } else {
+                val mediaItem = MediaItem.fromUri(url)
+                exoPlayer.setMediaItem(mediaItem)
+            }
+
             val targetSeekMs = if (savedPositionMs > 0) {
                 savedPositionMs
             } else if (startSeconds > 0) {
@@ -213,7 +237,7 @@ fun YouTubePlayerView(
             exoPlayer.play()
             hasPreparedMedia = true
             onPlayerReady(exoPlayer)
-            addLog("ExoPlayer Prepared & Playing Native Stream at ${targetSeekMs / 1000}s")
+            addLog("ExoPlayer Prepared & Playing Native Stream with Audio at ${targetSeekMs / 1000}s")
         }
     }
 

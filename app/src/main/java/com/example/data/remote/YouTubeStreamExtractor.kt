@@ -12,8 +12,10 @@ import java.util.regex.Pattern
 
 data class StreamExtractionResult(
     val primaryStreamUrl: String?,
+    val audioStreamUrl: String? = null,
     val availableQualities: List<String> = emptyList(),
-    val qualityUrlMap: Map<String, String> = emptyMap()
+    val qualityUrlMap: Map<String, String> = emptyMap(),
+    val videoOnlyQualities: Set<String> = emptySet()
 )
 
 object YouTubeStreamExtractor {
@@ -78,6 +80,9 @@ object YouTubeStreamExtractor {
      */
     suspend fun extractVideoStreams(videoId: String): StreamExtractionResult = withContext(Dispatchers.IO) {
         val qualityMap = mutableMapOf<String, String>()
+        val videoOnlyQualities = mutableSetOf<String>()
+        var bestAudioUrl: String? = null
+        var bestCombinedUrl: String? = null
 
         // 1. PRIMARY: NewPipe Extractor
         try {
@@ -86,7 +91,16 @@ object YouTubeStreamExtractor {
             val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
 
-            // Video + Audio combined streams
+            // Best Audio Stream (for merging with video-only 1080p/1440p)
+            val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
+            for (a in audioStreams) {
+                if (!a.content.isNullOrBlank()) {
+                    bestAudioUrl = a.content
+                    break
+                }
+            }
+
+            // Video + Audio combined streams (Muxed - guaranteed instant audio!)
             val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
             for (s in videoStreams) {
                 if (!s.isVideoOnly && !s.content.isNullOrBlank()) {
@@ -95,20 +109,26 @@ object YouTubeStreamExtractor {
                         val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
                         if (!qualityMap.containsKey(key)) {
                             qualityMap[key] = s.content
+                            if (bestCombinedUrl == null) {
+                                bestCombinedUrl = s.content
+                            }
                         }
                     }
                 }
             }
 
-            // Video-only streams (e.g. 1080p, 1440p, 4K)
-            val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
-            for (s in videoOnlyStreams) {
-                if (!s.content.isNullOrBlank()) {
-                    val r = s.resolution?.trim()
-                    if (!r.isNullOrBlank()) {
-                        val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
-                        if (!qualityMap.containsKey(key)) {
-                            qualityMap[key] = s.content
+            // Video-only streams (e.g. 1080p, 1440p, 4K) - only include if audio stream is available for merging
+            if (!bestAudioUrl.isNullOrBlank()) {
+                val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
+                for (s in videoOnlyStreams) {
+                    if (!s.content.isNullOrBlank()) {
+                        val r = s.resolution?.trim()
+                        if (!r.isNullOrBlank()) {
+                            val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
+                            if (!qualityMap.containsKey(key)) {
+                                qualityMap[key] = s.content
+                                videoOnlyQualities.add(key)
+                            }
                         }
                     }
                 }
@@ -196,7 +216,8 @@ object YouTubeStreamExtractor {
             .filter { it != "HLS" && it != "Auto" }
             .sortedByDescending { it.replace("p", "").toIntOrNull() ?: 0 }
 
-        val bestUrl = sortedQualities.firstOrNull()?.let { qualityMap[it] }
+        val bestUrl = bestCombinedUrl
+            ?: sortedQualities.firstOrNull()?.let { qualityMap[it] }
             ?: qualityMap["Auto"]
             ?: qualityMap["HLS"]
             ?: qualityMap.values.firstOrNull()
@@ -211,12 +232,14 @@ object YouTubeStreamExtractor {
             listOf("Auto")
         }
 
-        logD("YouTubeStreamExtractor", "Extracted qualities for $videoId: $finalQualitiesList (Primary URL: ${bestUrl?.take(60)}...)")
+        logD("YouTubeStreamExtractor", "Extracted qualities for $videoId: $finalQualitiesList (Primary: ${bestUrl?.take(60)}..., Audio: ${bestAudioUrl?.take(60)}...)")
 
         return@withContext StreamExtractionResult(
             primaryStreamUrl = bestUrl,
+            audioStreamUrl = bestAudioUrl,
             availableQualities = finalQualitiesList,
-            qualityUrlMap = qualityMap
+            qualityUrlMap = qualityMap,
+            videoOnlyQualities = videoOnlyQualities
         )
     }
 

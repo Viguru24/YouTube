@@ -181,12 +181,12 @@ fun AiSummaryModal(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("Executive TL;DR", fontWeight = FontWeight.Bold) }
+                        text = { Text("Summary", fontWeight = FontWeight.Bold) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Spoken Timeline (${t.segments.size})", fontWeight = FontWeight.Bold) }
+                        text = { Text("Timeline (${t.segments.size})", fontWeight = FontWeight.Bold) }
                     )
                 }
 

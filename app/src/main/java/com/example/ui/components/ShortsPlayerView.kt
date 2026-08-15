@@ -194,11 +194,26 @@ fun ShortsPlayerView(
 
             if (!directUrl.isNullOrEmpty()) {
                 streamUrl = directUrl
-                val mediaItem = MediaItem.fromUri(directUrl)
-                exoPlayer.setMediaItem(mediaItem)
+                val audioUrl = result?.audioStreamUrl
+                val isVideoOnly = result?.videoOnlyQualities?.any { directUrl.contains(it) } == true
+
+                if (isVideoOnly && !audioUrl.isNullOrBlank()) {
+                    val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
+                    val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(directUrl))
+                    val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(audioUrl))
+                    val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+                    exoPlayer.setMediaSource(mergingSource)
+                } else {
+                    val mediaItem = MediaItem.fromUri(directUrl)
+                    exoPlayer.setMediaItem(mediaItem)
+                }
+
+                exoPlayer.volume = 1.0f
                 exoPlayer.prepare()
                 exoPlayer.play()
-                addLog("Stream extracted & ExoPlayer prepared: $directUrl")
+                addLog("Stream extracted & ExoPlayer prepared with audio: $directUrl")
             } else {
                 addLog("⚠️ Stream extraction timed out -> activating Shorts Web Player fallback")
                 useWebPlayerFallback = true
