@@ -12,9 +12,13 @@ data class TranscriptSegment(
 
 data class VideoAiTranscript(
     val videoId: String,
-    val executiveSummary: String,
-    val keyTakeaways: List<String>,
-    val segments: List<TranscriptSegment>
+    val hostName: String = "",
+    val topicPremise: String = "",
+    val discussionPoints: List<String> = emptyList(),
+    val conclusion: String = "",
+    val executiveSummary: String = "",
+    val keyTakeaways: List<String> = emptyList(),
+    val segments: List<TranscriptSegment> = emptyList()
 )
 
 object TranscriptGenerator {
@@ -114,6 +118,10 @@ object TranscriptGenerator {
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
+            hostName = channel,
+            topicPremise = summary,
+            discussionPoints = takeaways,
+            conclusion = "Final recap, closing observations, and key takeaways presented by $channel.",
             executiveSummary = summary,
             keyTakeaways = takeaways,
             segments = segments

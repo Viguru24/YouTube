@@ -201,77 +201,191 @@ fun AiSummaryModal(
                     contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     if (selectedTab == 0) {
-                        // Clean 4-5 Key Points Summary
+                        // 1. Host / Creator Info Card
                         item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(bottom = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Lightbulb,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFB300),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Key Points Covered (${t.keyTakeaways.size} Points)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                            }
-                        }
-
-                        itemsIndexed(t.keyTakeaways) { index, point ->
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                 )
                             ) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.Top
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Surface(
                                         shape = CircleShape,
                                         color = YouTubeRed.copy(alpha = 0.15f),
-                                        modifier = Modifier.size(24.dp)
+                                        modifier = Modifier.size(36.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = "${index + 1}",
-                                                color = YouTubeRed,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
+                                            Icon(
+                                                imageVector = Icons.Filled.Person,
+                                                contentDescription = null,
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = point,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        lineHeight = 20.sp,
-                                        fontWeight = FontWeight.Normal
-                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Host / Creator",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = t.hostName.ifBlank { video.channelName },
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        // 3. Quick Save Button
+                        // 2. Topic & Premise Card
+                        if (t.topicPremise.isNotBlank()) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Info,
+                                                contentDescription = null,
+                                                tint = Color(0xFF4CAF50),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "What This Video Is About",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = t.topicPremise,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            lineHeight = 22.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Key Discussion Highlights
+                        val points = if (t.discussionPoints.isNotEmpty()) t.discussionPoints else t.keyTakeaways
+                        if (points.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "Key Discussion Highlights",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                                )
+                            }
+
+                            itemsIndexed(points) { index, point ->
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = "•",
+                                            color = YouTubeRed,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 20.sp,
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        )
+                                        Text(
+                                            text = point,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            lineHeight = 22.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 4. Conclusion & Takeaway Card
+                        if (t.conclusion.isNotBlank()) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Flag,
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF9800),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "Conclusions & Wrap-up",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = t.conclusion,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            lineHeight = 22.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 5. Quick Save Button
                         item {
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
                                 onClick = {
                                     val summaryNote = buildString {
                                         append("📌 AI Summary for ${video.title}:\n")
-                                        append(t.executiveSummary)
-                                        append("\n\nKey Takeaways:\n")
-                                        t.keyTakeaways.forEach { append("• $it\n") }
+                                        append("🎙️ Host: ${t.hostName.ifBlank { video.channelName }}\n\n")
+                                        if (t.topicPremise.isNotBlank()) {
+                                            append("🎯 Topic & Premise:\n${t.topicPremise}\n\n")
+                                        }
+                                        val pts = if (t.discussionPoints.isNotEmpty()) t.discussionPoints else t.keyTakeaways
+                                        if (pts.isNotEmpty()) {
+                                            append("💬 Key Highlights:\n")
+                                            pts.forEach { append("• $it\n") }
+                                            append("\n")
+                                        }
+                                        if (t.conclusion.isNotBlank()) {
+                                            append("🏁 Conclusion:\n${t.conclusion}\n")
+                                        }
                                     }
                                     onSaveToNotes(summaryNote)
                                     Toast.makeText(context, "Saved to Video Notes! 📝", Toast.LENGTH_SHORT).show()

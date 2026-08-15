@@ -382,47 +382,69 @@ object YouTubeCaptionService {
             !t.contains("<") && !t.contains(">") && !t.contains("http") && !t.contains("/api/v1") && t.length >= 15
         }
 
-        val takeaways = mutableListOf<String>()
+        val host = video.channelName.ifBlank { "Creator / Host" }
 
+        // 1. Topic & Premise (from beginning)
+        val introText = validSegments.take(2).joinToString(" ") { it.text }.trim()
+        val topicPremise = if (introText.isNotBlank()) {
+            introText
+        } else {
+            "In this video, $host covers and analyzes the topic of '${video.title}'."
+        }
+
+        // 2. Key Discussion Highlights (from middle segments or chapters)
+        val discussionPoints = mutableListOf<String>()
         if (chapters.isNotEmpty()) {
-            chapters.take(5).forEach { ch ->
-                takeaways.add("${ch.second} (at ${formatSeconds(ch.first)})")
+            chapters.take(4).forEach { ch ->
+                discussionPoints.add("${ch.second} (at ${formatSeconds(ch.first)})")
             }
-        } else if (validSegments.isNotEmpty()) {
-            // Select 4 to 5 evenly spaced, meaningful sentences across the video
-            val numPoints = 5.coerceAtMost(validSegments.size)
-            val step = (validSegments.size / numPoints).coerceAtLeast(1)
-            for (i in 0 until numPoints) {
-                val idx = (i * step).coerceAtMost(validSegments.size - 1)
-                val rawSentence = validSegments[idx].text
+        } else if (validSegments.size >= 4) {
+            val midThird = validSegments.drop(validSegments.size / 4).dropLast(validSegments.size / 4)
+            val step = (midThird.size / 3).coerceAtLeast(1)
+            for (i in 0 until 3) {
+                val idx = (i * step).coerceAtMost(midThird.size - 1)
+                val rawSentence = midThird[idx].text
                     .replace(Regex("""^\w+\s*:\s*"""), "")
                     .replace(Regex("""^[>•\-\s]+"""), "")
                     .trim()
                 if (rawSentence.length > 20) {
-                    val clean = if (rawSentence.length > 130) rawSentence.take(130).substringBeforeLast(" ") + "..." else rawSentence
-                    takeaways.add(clean)
+                    discussionPoints.add(rawSentence)
                 }
             }
         }
 
-        if (takeaways.isEmpty()) {
-            takeaways.add("Main overview and discussion by ${video.channelName}")
-            takeaways.add("Core topic breakdown and analysis of ${video.title}")
-            takeaways.add("Key evidence and supporting points presented")
-            takeaways.add("Final conclusions and takeaway message")
+        if (discussionPoints.isEmpty()) {
+            discussionPoints.add("Main context, background facts, and initial setup presented by $host.")
+            discussionPoints.add("Detailed analysis, key evidence, and core arguments regarding '${video.title}'.")
+            discussionPoints.add("Discussion of implications, real-world impact, and overall perspective.")
+        }
+
+        // 3. Conclusion & Wrap-up (from final segments)
+        val endText = validSegments.takeLast(2).joinToString(" ") { it.text }.trim()
+        val conclusion = if (endText.isNotBlank()) {
+            endText
+        } else {
+            "Final wrap-up, closing insights, and conclusions presented by $host."
         }
 
         val executiveSummary = buildString {
-            append("Key points covered in '${video.title}' by ${video.channelName}:\n\n")
-            takeaways.distinct().take(5).forEachIndexed { i, pt ->
-                append("${i + 1}. $pt\n")
+            append("🎙️ Host: $host\n\n")
+            append("🎯 Topic & Premise:\n$topicPremise\n\n")
+            append("💬 Key Discussion Points:\n")
+            discussionPoints.forEachIndexed { i, pt ->
+                append("• $pt\n")
             }
+            append("\n🏁 Conclusion:\n$conclusion")
         }
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
+            hostName = host,
+            topicPremise = topicPremise,
+            discussionPoints = discussionPoints.distinct(),
+            conclusion = conclusion,
             executiveSummary = executiveSummary.trim(),
-            keyTakeaways = takeaways.distinct().take(5),
+            keyTakeaways = discussionPoints.distinct(),
             segments = validSegments.ifEmpty { segments }
         )
     }
@@ -432,6 +454,8 @@ object YouTubeCaptionService {
         description: String,
         chapters: List<Pair<Int, String>>
     ): VideoAiTranscript {
+        val host = video.channelName.ifBlank { "Creator / Host" }
+
         val cleanDescLines = description.lines()
             .map { cleanText(it) }
             .filter { line ->
@@ -445,25 +469,33 @@ object YouTubeCaptionService {
                 !line.contains("<") &&
                 !line.contains(">")
             }
-            .take(5)
 
-        val takeaways = if (chapters.isNotEmpty()) {
-            chapters.take(5).map { "${it.second} (at ${formatSeconds(it.first)})" }
-        } else if (cleanDescLines.isNotEmpty()) {
-            cleanDescLines
+        val topicPremise = cleanDescLines.firstOrNull()
+            ?: "Official release of '${video.title}' presented by $host in the ${video.category} category."
+
+        val discussionPoints = if (chapters.isNotEmpty()) {
+            chapters.take(4).map { "${it.second} (at ${formatSeconds(it.first)})" }
+        } else if (cleanDescLines.size > 1) {
+            cleanDescLines.drop(1).take(3)
         } else {
             listOf(
-                "Overview and background presented by ${video.channelName}",
-                "Core highlights of ${video.title}",
-                "Key commentary and main takeaway"
+                "Introduction, context, and background breakdown by $host.",
+                "Main demonstration and commentary on '${video.title}'.",
+                "Key takeaways and perspectives discussed in this session."
             )
         }
 
+        val conclusion = cleanDescLines.lastOrNull()?.takeIf { it != topicPremise }
+            ?: "Final summary and closing perspectives by $host on '${video.title}'."
+
         val executiveSummary = buildString {
-            append("Summary of '${video.title}' by ${video.channelName}:\n\n")
-            takeaways.take(5).forEachIndexed { i, pt ->
-                append("${i + 1}. $pt\n")
+            append("🎙️ Host: $host\n\n")
+            append("🎯 Topic & Premise:\n$topicPremise\n\n")
+            append("💬 Key Discussion Points:\n")
+            discussionPoints.forEachIndexed { i, pt ->
+                append("• $pt\n")
             }
+            append("\n🏁 Conclusion:\n$conclusion")
         }
 
         val timelineSegments = if (chapters.isNotEmpty()) {
@@ -484,8 +516,12 @@ object YouTubeCaptionService {
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
+            hostName = host,
+            topicPremise = topicPremise,
+            discussionPoints = discussionPoints,
+            conclusion = conclusion,
             executiveSummary = executiveSummary.trim(),
-            keyTakeaways = takeaways.take(5),
+            keyTakeaways = discussionPoints,
             segments = timelineSegments
         )
     }
