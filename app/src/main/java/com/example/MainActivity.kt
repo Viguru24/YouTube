@@ -50,8 +50,19 @@ class MainActivity : ComponentActivity() {
 
     private val pipReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-            when (intent?.getStringExtra(EXTRA_PIP_ACTION)) {
-                PIP_ACTION_PLAY_PAUSE -> viewModel.togglePlayPause()
+            val action = intent?.getStringExtra(EXTRA_PIP_ACTION)
+            android.util.Log.d("MainActivity", "Received PiP control action: $action")
+            when (action) {
+                PIP_ACTION_PLAY_PAUSE -> {
+                    viewModel.togglePlayPause()
+                    val newPlaying = !viewModel.isPlayerPlaying.value
+                    viewModel.setPlayerPlaying(newPlaying)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        try {
+                            setPictureInPictureParams(buildPipParams(newPlaying))
+                        } catch (e: Exception) { }
+                    }
+                }
                 PIP_ACTION_REWIND -> viewModel.seekBy(-10)
                 PIP_ACTION_FORWARD -> viewModel.seekBy(10)
                 PIP_ACTION_CLOSE -> {
@@ -164,7 +175,7 @@ class MainActivity : ComponentActivity() {
         val rewindIntent = android.app.PendingIntent.getBroadcast(
             this,
             101,
-            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_REWIND),
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_REWIND),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         actions.add(
@@ -182,7 +193,7 @@ class MainActivity : ComponentActivity() {
         val playPauseIntent = android.app.PendingIntent.getBroadcast(
             this,
             102,
-            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_PLAY_PAUSE),
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_PLAY_PAUSE),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         actions.add(
@@ -198,7 +209,7 @@ class MainActivity : ComponentActivity() {
         val forwardIntent = android.app.PendingIntent.getBroadcast(
             this,
             103,
-            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_FORWARD),
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_FORWARD),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         actions.add(
@@ -214,7 +225,7 @@ class MainActivity : ComponentActivity() {
         val closeIntent = android.app.PendingIntent.getBroadcast(
             this,
             104,
-            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_CLOSE),
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_CLOSE),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         actions.add(

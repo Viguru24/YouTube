@@ -71,25 +71,9 @@ fun PlayerScreen(
 
     val isFullscreen = isLandscape || isMaximized || isInPipMode
 
-    if (isInPipMode) {
-        // Floating PiP Pop-up Window: Display clean video player filling the entire floating window
-        YouTubePlayerView(
-            videoId = video.youtubeId,
-            startSeconds = video.lastPositionSeconds,
-            areAdvertsEnabled = areAdvertsEnabled,
-            showDebugConsole = false,
-            onToggleDebugConsole = {},
-            playerCommandFlow = playerCommandFlow,
-            onPlayingStateChanged = onPlayingStateChanged,
-            onPlayerReady = { wv -> webViewInstance = wv },
-            modifier = Modifier.fillMaxSize()
-        )
-        return
-    }
-
     Scaffold(
         topBar = {
-            if (!isFullscreen) {
+            if (!isFullscreen && !isInPipMode) {
                 TopAppBar(
                     title = {
                         Text(
@@ -128,19 +112,19 @@ fun PlayerScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
+                .padding(if (isFullscreen || isInPipMode) PaddingValues(0.dp) else innerPadding)
         ) {
             // Native ExoPlayer view — touch to show controls (scrub bar, speed, quality, mute, ±10s)
             YouTubePlayerView(
                 videoId = video.youtubeId,
                 startSeconds = video.lastPositionSeconds,
                 areAdvertsEnabled = areAdvertsEnabled,
-                showDebugConsole = showDebugConsole,
+                showDebugConsole = showDebugConsole && !isInPipMode,
                 onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
                 playerCommandFlow = playerCommandFlow,
                 onPlayingStateChanged = onPlayingStateChanged,
                 onPlayerReady = { wv -> webViewInstance = wv },
-                modifier = if (isFullscreen) {
+                modifier = if (isFullscreen || isInPipMode) {
                     Modifier.fillMaxSize()
                 } else {
                     Modifier
@@ -149,8 +133,8 @@ fun PlayerScreen(
                 }
             )
 
-            // Below-video content (portrait only)
-            if (!isFullscreen) {
+            // Below-video content (portrait non-PiP only)
+            if (!isFullscreen && !isInPipMode) {
                 // Strictly sort Up Next videos by published timestamp descending (Newest First!)
                 val otherVideos = playlistVideos
                     .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
