@@ -12,6 +12,12 @@ interface PlaylistCategoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: PlaylistCategoryEntity)
 
+    @Update
+    suspend fun updateCategory(category: PlaylistCategoryEntity)
+
     @Query("DELETE FROM playlist_categories WHERE id = :id")
     suspend fun deleteCategory(id: Long)
+
+    @Query("DELETE FROM playlist_categories WHERE name = :name")
+    suspend fun deleteCategoryByName(name: String)
 }

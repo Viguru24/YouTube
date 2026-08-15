@@ -72,6 +72,7 @@ fun HomeScreen(
     selectedSubscribedChannel: String = "",
     onSubscribedChannelSelected: (String) -> Unit = {},
     onOpenHistory: () -> Unit = {},
+    onOpenManageTopicsAndCreators: (initialTab: Int) -> Unit = {},
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
@@ -212,10 +213,10 @@ fun HomeScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("➕ Add Subscribed Channel", fontWeight = FontWeight.Bold) },
+                                    text = { Text("⚙️ Manage Creators (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                                     onClick = {
                                         showSubscribedChannelsMenu = false
-                                        showAddChannelDialog = true
+                                        onOpenManageTopicsAndCreators(0)
                                     }
                                 )
                                 HorizontalDivider()
@@ -304,6 +305,13 @@ fun HomeScreen(
                                     onClick = {
                                         showMoreActionsMenu = false
                                         showSortSubMenu = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🏷️ Manage Topics & Creators") },
+                                    onClick = {
+                                        showMoreActionsMenu = false
+                                        onOpenManageTopicsAndCreators(0)
                                     }
                                 )
                                 DropdownMenuItem(
@@ -475,6 +483,17 @@ fun HomeScreen(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant
                             ),
                             modifier = Modifier.testTag("category_chip_$category")
+                        )
+                    }
+
+                    item {
+                        FilterChip(
+                            selected = false,
+                            onClick = { onOpenManageTopicsAndCreators(1) },
+                            label = { Text("✏️ Edit Topics", fontWeight = FontWeight.SemiBold, color = YouTubeRed) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
                         )
                     }
                 }

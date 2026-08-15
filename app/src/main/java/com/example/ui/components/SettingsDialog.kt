@@ -31,6 +31,7 @@ fun SettingsDialog(
     onAlgorithmSettingsChanged: (AlgorithmSettings) -> Unit = {},
     mutedChannels: List<MutedChannelEntity> = emptyList(),
     onUnmuteChannel: (String) -> Unit = {},
+    onOpenManageTopicsAndCreators: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var newBlockedKeyword by remember { mutableStateOf("") }
@@ -279,7 +280,26 @@ fun SettingsDialog(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Full Manager Launch Button
+                        OutlinedButton(
+                            onClick = {
+                                onDismiss()
+                                onOpenManageTopicsAndCreators()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(imageVector = Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("🏷️ Manage Topics & Creators (Add/Remove/Edit)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // ⚡ Boosted Topics & Creators Manager
                         Text(

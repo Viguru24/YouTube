@@ -139,7 +139,15 @@ class YouTubeRepository(
         categoryDao.insertCategory(category)
     }
 
+    suspend fun updateCategory(category: PlaylistCategoryEntity) {
+        categoryDao.updateCategory(category)
+    }
+
     suspend fun deleteCategory(categoryId: Long) {
         categoryDao.deleteCategory(categoryId)
+    }
+
+    suspend fun deleteCategoryByName(name: String) {
+        categoryDao.deleteCategoryByName(name)
     }
 }

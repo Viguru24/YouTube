@@ -268,8 +268,12 @@ fun MainAppContent(
     val watchLaterVideos by viewModel.watchLaterVideos.collectAsStateWithLifecycle()
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val subscribedCreators by viewModel.subscribedCreators.collectAsStateWithLifecycle()
     val googleAccount by viewModel.googleAccount.collectAsStateWithLifecycle()
     val areAdvertsEnabled by viewModel.areAdvertsEnabled.collectAsStateWithLifecycle()
+
+    var showManageTopicsAndCreatorsDialog by remember { mutableStateOf(false) }
+    var manageInitialTab by remember { mutableIntStateOf(0) }
 
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
@@ -479,6 +483,10 @@ fun MainAppContent(
                             selectedSubscribedChannel = selectedSubscribedChannel,
                             onSubscribedChannelSelected = { channel -> viewModel.selectSubscribedChannel(channel) },
                             onOpenHistory = { selectedNavIndex = 2 },
+                            onOpenManageTopicsAndCreators = { tab ->
+                                manageInitialTab = tab
+                                showManageTopicsAndCreatorsDialog = true
+                            },
                             onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) }
                         )
                         1 -> LibraryScreen(
@@ -572,7 +580,27 @@ fun MainAppContent(
                 onAlgorithmSettingsChanged = { viewModel.updateAlgorithmSettings(it) },
                 mutedChannels = mutedChannels,
                 onUnmuteChannel = { viewModel.unmuteChannel(it) },
+                onOpenManageTopicsAndCreators = {
+                    manageInitialTab = 0
+                    showManageTopicsAndCreatorsDialog = true
+                },
                 onDismiss = { showSettingsDialog = false }
+            )
+        }
+
+        // Manage Topics & Creators Dialog
+        if (showManageTopicsAndCreatorsDialog) {
+            com.example.ui.components.ManageTopicsAndCreatorsDialog(
+                subscribedCreators = subscribedCreators,
+                categories = categories,
+                onAddCreator = { name -> viewModel.addSubscribedCreator(name) },
+                onRemoveCreator = { name -> viewModel.removeSubscribedCreator(name) },
+                onRenameCreator = { oldName, newName -> viewModel.renameSubscribedCreator(oldName, newName) },
+                onAddCategory = { name, icon, colorHex -> viewModel.addCategory(name, icon, colorHex) },
+                onRemoveCategory = { cat -> viewModel.deleteCategory(cat) },
+                onRenameCategory = { cat, newName -> viewModel.renameCategory(cat, newName) },
+                initialTab = manageInitialTab,
+                onDismiss = { showManageTopicsAndCreatorsDialog = false }
             )
         }
     }

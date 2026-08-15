@@ -767,6 +767,83 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun renameCategory(category: PlaylistCategoryEntity, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
+        viewModelScope.launch {
+            repository.updateCategory(category.copy(name = trimmed))
+        }
+    }
+
+    fun deleteCategory(category: PlaylistCategoryEntity) {
+        viewModelScope.launch {
+            repository.deleteCategory(category.id)
+            if (selectedCategory.value.equals(category.name, ignoreCase = true)) {
+                selectedCategory.value = "All"
+            }
+        }
+    }
+
+    // Subscribed Creators Management (Add, Remove, Rename)
+    private fun saveSubscribedCreators(creators: List<String>) {
+        val prefs = getApplication<android.app.Application>().getSharedPreferences("creator_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putStringSet("subscribed_creators", creators.toSet()).apply()
+    }
+
+    private fun loadSubscribedCreators(): List<String> {
+        val prefs = getApplication<android.app.Application>().getSharedPreferences("creator_prefs", android.content.Context.MODE_PRIVATE)
+        val saved = prefs.getStringSet("subscribed_creators", null)
+        if (saved != null) {
+            return saved.toList().sorted()
+        }
+        return com.example.data.model.WillRyanProfileData.subscribedChannels.toList()
+    }
+
+    private val _subscribedCreators = MutableStateFlow<List<String>>(loadSubscribedCreators())
+    val subscribedCreators: StateFlow<List<String>> = _subscribedCreators.asStateFlow()
+
+    fun addSubscribedCreator(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        val current = _subscribedCreators.value.toMutableList()
+        if (!current.any { it.equals(trimmed, ignoreCase = true) }) {
+            current.add(0, trimmed)
+            _subscribedCreators.value = current
+            saveSubscribedCreators(current)
+            com.example.data.model.WillRyanProfileData.addSubscribedChannel(trimmed)
+            refreshTrendingFeed()
+        }
+    }
+
+    fun removeSubscribedCreator(name: String) {
+        val current = _subscribedCreators.value.filter { !it.equals(name.trim(), ignoreCase = true) }
+        _subscribedCreators.value = current
+        saveSubscribedCreators(current)
+        com.example.data.model.WillRyanProfileData.subscribedChannels.removeIf { it.equals(name.trim(), ignoreCase = true) }
+        if (selectedSubscribedChannel.value.equals(name.trim(), ignoreCase = true)) {
+            selectedSubscribedChannel.value = ""
+        }
+        refreshTrendingFeed()
+    }
+
+    fun renameSubscribedCreator(oldName: String, newName: String) {
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
+        val current = _subscribedCreators.value.map {
+            if (it.equals(oldName.trim(), ignoreCase = true)) trimmed else it
+        }
+        _subscribedCreators.value = current
+        saveSubscribedCreators(current)
+        val idx = com.example.data.model.WillRyanProfileData.subscribedChannels.indexOfFirst { it.equals(oldName.trim(), ignoreCase = true) }
+        if (idx >= 0) {
+            com.example.data.model.WillRyanProfileData.subscribedChannels[idx] = trimmed
+        }
+        if (selectedSubscribedChannel.value.equals(oldName.trim(), ignoreCase = true)) {
+            selectedSubscribedChannel.value = trimmed
+        }
+        refreshTrendingFeed()
+    }
+
     fun clearHistory() {
         viewModelScope.launch {
             repository.clearHistory()
