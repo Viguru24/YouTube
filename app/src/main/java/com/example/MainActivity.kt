@@ -563,9 +563,15 @@ fun MainAppContent(
 
         // App Settings Dialog
         if (showSettingsDialog) {
+            val algorithmSettings by viewModel.algorithmSettings.collectAsStateWithLifecycle()
+            val mutedChannels by viewModel.mutedChannels.collectAsStateWithLifecycle()
             com.example.ui.components.SettingsDialog(
                 areAdvertsEnabled = areAdvertsEnabled,
                 onAdvertsToggle = { viewModel.setAdvertsEnabled(it) },
+                algorithmSettings = algorithmSettings,
+                onAlgorithmSettingsChanged = { viewModel.updateAlgorithmSettings(it) },
+                mutedChannels = mutedChannels,
+                onUnmuteChannel = { viewModel.unmuteChannel(it) },
                 onDismiss = { showSettingsDialog = false }
             )
         }

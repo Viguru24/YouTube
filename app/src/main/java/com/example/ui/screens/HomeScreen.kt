@@ -307,6 +307,13 @@ fun HomeScreen(
                                     }
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("⚙️ Settings & Algorithm") },
+                                    onClick = {
+                                        showMoreActionsMenu = false
+                                        onOpenSettings()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In") },
                                     onClick = {
                                         showMoreActionsMenu = false
