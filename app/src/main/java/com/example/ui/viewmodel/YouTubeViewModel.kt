@@ -235,6 +235,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    private fun saveDislikedVideoIds(ids: Set<String>) {
+        val prefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putStringSet("disliked_video_ids", ids).apply()
+    }
+
+    private fun loadDislikedVideoIds(): Set<String> {
+        val prefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        return prefs.getStringSet("disliked_video_ids", emptySet()) ?: emptySet()
+    }
+
+    private val _dislikedVideoIds = MutableStateFlow<Set<String>>(loadDislikedVideoIds())
+    val dislikedVideoIds: StateFlow<Set<String>> = _dislikedVideoIds.asStateFlow()
+
     private val _algorithmSettings = MutableStateFlow(loadAlgorithmSettings())
     val algorithmSettings: StateFlow<com.example.data.repository.AlgorithmSettings> = _algorithmSettings.asStateFlow()
 
@@ -507,11 +520,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         _isPlayerPlaying.value = playing
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val activeVideo: StateFlow<VideoEntity?> = _activeVideoId.flatMapLatest { id ->
-        if (id == null) flowOf(null)
-        else repository.getVideoById(id)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _activeVideo = MutableStateFlow<VideoEntity?>(null)
+    val activeVideo: StateFlow<VideoEntity?> = _activeVideo.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val activeNotes: StateFlow<List<VideoNoteEntity>> = _activeVideoId.flatMapLatest { id ->
@@ -523,40 +533,80 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val shortsQueue: StateFlow<List<VideoEntity>> = _shortsQueue.asStateFlow()
 
     fun playVideo(video: VideoEntity, isShort: Boolean = false) {
+        android.util.Log.d("YouTubeViewModel", "playVideo called: id=${video.youtubeId}, isShort=$isShort, title=${video.title}")
+        _isPlayingAsShort.value = isShort
+        _activeVideoId.value = video.youtubeId
+        _activeVideo.value = video
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _isPlayingAsShort.value = isShort
             val now = System.currentTimeMillis()
             val updated = video.copy(lastWatchedTimestamp = now)
             repository.saveVideo(updated)
             repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
-            _activeVideoId.value = video.youtubeId
         }
     }
 
     fun playShort(video: VideoEntity) {
+        android.util.Log.d("YouTubeViewModel", "playShort called: id=${video.youtubeId}, title=${video.title}")
+        val shortVid = video.copy(category = "Shorts")
+        val currentList = _shortsQueue.value
+        if (!currentList.any { it.youtubeId == shortVid.youtubeId }) {
+            _shortsQueue.value = (currentList + shortVid).distinctBy { it.youtubeId }
+        }
+        // 1. Immediately launch video with 0ms delay
+        playVideo(shortVid, isShort = true)
+
+        // 2. Pre-fetch more shorts in background asynchronously without delaying UI
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val shortVid = video.copy(category = "Shorts")
-            val currentList = _shortsQueue.value
-            if (!currentList.any { it.youtubeId == shortVid.youtubeId }) {
-                _shortsQueue.value = (currentList + shortVid).distinctBy { it.youtubeId }
-            }
-            // Pre-fetch more shorts in background if queue has less than 8 items
             if (_shortsQueue.value.size < 8) {
                 try {
                     val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                    _shortsQueue.value = (_shortsQueue.value + freshShorts).distinctBy { it.youtubeId }
-                    freshShorts.forEach { repository.saveVideo(it) }
+                    val unDisliked = freshShorts.filter { it.youtubeId !in _dislikedVideoIds.value }
+                    _shortsQueue.value = (_shortsQueue.value + unDisliked).distinctBy { it.youtubeId }
+                    unDisliked.forEach { repository.saveVideo(it) }
                 } catch (e: Exception) { }
             }
-            playVideo(shortVid, isShort = true)
         }
+    }
+
+    fun thumbsUpShort(video: VideoEntity) {
+        toggleFavorite(video.youtubeId, video.isFavorite)
+        // Boost creator in algorithm settings if not already present
+        if (!video.isFavorite) {
+            val currentBoosted = _algorithmSettings.value.boostedTopics.toMutableList()
+            if (!currentBoosted.any { it.equals(video.channelName, ignoreCase = true) }) {
+                currentBoosted.add(0, video.channelName)
+                updateAlgorithmSettings(_algorithmSettings.value.copy(boostedTopics = currentBoosted))
+            }
+        }
+    }
+
+    fun thumbsDownShort(video: VideoEntity) {
+        val newDisliked = _dislikedVideoIds.value + video.youtubeId
+        _dislikedVideoIds.value = newDisliked
+        saveDislikedVideoIds(newDisliked)
+
+        // If favorited, unfavorite
+        if (video.isFavorite) {
+            toggleFavorite(video.youtubeId, true)
+        }
+
+        // Remove from shorts queue
+        val currentQueue = _shortsQueue.value.filter { it.youtubeId != video.youtubeId }
+        _shortsQueue.value = currentQueue
+
+        // Remove from category videos / feed
+        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != video.youtubeId }
+
+        // Immediately skip to next short
+        playNextShort(video.youtubeId)
     }
 
     fun playNextShort(currentVideoId: String) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            var currentList = _shortsQueue.value
+            val disliked = _dislikedVideoIds.value
+            var currentList = _shortsQueue.value.filter { it.youtubeId !in disliked }
             if (currentList.isEmpty()) {
-                currentList = _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                currentList = _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in disliked }
             }
             var currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
 
@@ -564,9 +614,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             if (currentIndex >= currentList.size - 3 || currentIndex == -1 || currentList.size < 4) {
                 try {
                     val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                    currentList = (currentList + freshShorts).distinctBy { it.youtubeId }
+                    val unDisliked = freshShorts.filter { it.youtubeId !in disliked }
+                    currentList = (currentList + unDisliked).distinctBy { it.youtubeId }
                     _shortsQueue.value = currentList
-                    freshShorts.forEach { repository.saveVideo(it) }
+                    unDisliked.forEach { repository.saveVideo(it) }
                 } catch (e: Exception) { }
             }
 
@@ -574,7 +625,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             if (currentIndex >= 0 && currentIndex < currentList.size - 1) {
                 playShort(currentList[currentIndex + 1])
             } else if (currentList.isNotEmpty()) {
-                val next = currentList.getOrNull(currentIndex + 1) ?: currentList.first()
+                val next = currentList.firstOrNull { it.youtubeId != currentVideoId } ?: currentList.first()
                 playShort(next)
             }
         }
@@ -610,6 +661,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearActiveVideo() {
         _activeVideoId.value = null
+        _activeVideo.value = null
         _isPlayingAsShort.value = null
     }
 

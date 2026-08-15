@@ -63,6 +63,7 @@ object RecommendationEngine {
         favorites: List<VideoEntity>,
         watchHistory: List<VideoEntity>,
         mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
+        dislikedVideoIds: Set<String> = emptySet(),
         settings: AlgorithmSettings
     ): List<VideoEntity> {
         if (videos.isEmpty()) return emptyList()
@@ -71,11 +72,12 @@ object RecommendationEngine {
         val blockedLower = settings.blockedKeywords.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         val boostedLower = settings.boostedTopics.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
-        val unmutedVideos = videos.filter {
-            val titleLower = it.title.lowercase()
-            val chanLower = it.channelName.lowercase()
+        val unmutedVideos = videos.filter { video ->
+            if (video.youtubeId in dislikedVideoIds) return@filter false
+            val titleLower = video.title.lowercase()
+            val chanLower = video.channelName.lowercase()
             chanLower !in mutedNames &&
-            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) &&
+            !YouTubeUtils.isForeignLanguageContent(video.title, video.channelName) &&
             blockedLower.none { blk -> titleLower.contains(blk) || chanLower.contains(blk) }
         }
 

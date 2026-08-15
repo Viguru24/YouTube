@@ -269,6 +269,7 @@ fun MainAppContent(
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val subscribedCreators by viewModel.subscribedCreators.collectAsStateWithLifecycle()
+    val dislikedVideoIds by viewModel.dislikedVideoIds.collectAsStateWithLifecycle()
     val googleAccount by viewModel.googleAccount.collectAsStateWithLifecycle()
     val areAdvertsEnabled by viewModel.areAdvertsEnabled.collectAsStateWithLifecycle()
 
@@ -324,6 +325,7 @@ fun MainAppContent(
                     channelName = activeVideo!!.channelName,
                     isFavorite = activeVideo!!.isFavorite,
                     isWatchLater = activeVideo!!.isWatchLater,
+                    isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
                     isInPipMode = isInPipMode,
                     onEnterPip = onEnterPip,
                     playerCommandFlow = viewModel.playerCommand,
@@ -334,6 +336,12 @@ fun MainAppContent(
                     },
                     onPreviousShort = {
                         viewModel.playPreviousShort(activeVideo!!.youtubeId)
+                    },
+                    onThumbsUp = { viewModel.thumbsUpShort(activeVideo!!) },
+                    onThumbsDown = {
+                        val v = activeVideo!!
+                        viewModel.thumbsDownShort(v)
+                        android.widget.Toast.makeText(context, "Disliked & removed from feed 👎", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
                     onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },
@@ -477,6 +485,7 @@ fun MainAppContent(
                             onRefreshFeed = { viewModel.refreshFeed() },
                             liveSearchResults = liveSearchResults,
                             categoryVideos = categoryVideos,
+                            dislikedVideoIds = dislikedVideoIds,
                             onLoadMore = { viewModel.loadMoreCategoryVideos() },
                             selectedTimeFilter = selectedTimeFilter,
                             onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },

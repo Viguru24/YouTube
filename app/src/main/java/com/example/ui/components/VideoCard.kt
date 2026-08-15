@@ -46,19 +46,10 @@ fun VideoCard(
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
+        onClick = { onVideoClick(video) },
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .pointerInput(video.youtubeId) {
-                detectTapGestures(
-                    onTap = { onVideoClick(video) },
-                    onLongPress = {
-                        val link = "https://youtu.be/${video.youtubeId}"
-                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
-                        android.widget.Toast.makeText(context, "Link Copied: $link 📋", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
             .testTag("video_card_${video.youtubeId}"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface

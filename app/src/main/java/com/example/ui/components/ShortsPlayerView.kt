@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,6 +58,7 @@ fun ShortsPlayerView(
     channelName: String,
     isFavorite: Boolean = false,
     isWatchLater: Boolean = false,
+    isDisliked: Boolean = false,
     isInPipMode: Boolean = false,
     onEnterPip: () -> Unit = {},
     playerCommandFlow: kotlinx.coroutines.flow.SharedFlow<String>? = null,
@@ -63,7 +66,9 @@ fun ShortsPlayerView(
     onBackClick: () -> Unit,
     onNextShort: () -> Unit,
     onPreviousShort: () -> Unit,
-    onFavoriteToggle: () -> Unit,
+    onThumbsUp: () -> Unit = {},
+    onThumbsDown: () -> Unit = {},
+    onFavoriteToggle: () -> Unit = onThumbsUp,
     onWatchLaterToggle: () -> Unit,
     onPositionUpdate: (seconds: Int) -> Unit = {},
     modifier: Modifier = Modifier
@@ -578,32 +583,68 @@ fun ShortsPlayerView(
                     .windowInsetsPadding(WindowInsets.navigationBars)
                     .padding(bottom = 12.dp, end = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Like / Favorite Button
+                // 1. Thumbs Up (Like) Button
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = onThumbsUp,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                            contentDescription = "Like",
+                            tint = if (isFavorite) YouTubeRed else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text("Like", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
+
+                // 2. Thumbs Down (Dislike) Button
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = onThumbsDown,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                            contentDescription = "Dislike",
+                            tint = if (isDisliked) Color(0xFFE53935) else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text("Dislike", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
+
+                // 3. Star / Favorite Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
                         onClick = onFavoriteToggle,
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = "Star",
                             tint = if (isFavorite) Color(0xFFFFD700) else Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Text("Star", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
                 }
 
-                // HD Quality Selector Badge Button
+                // 4. HD Quality Selector Badge Button
                 Surface(
                     shape = CircleShape,
                     onClick = { showQualityDialog = true },
                     color = Color.Black.copy(alpha = 0.45f),
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
@@ -615,19 +656,19 @@ fun ShortsPlayerView(
                     }
                 }
 
-                // Watch Later Toggle (With Clear "Later" Label)
+                // 5. Watch Later Toggle
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
                         onClick = onWatchLaterToggle,
                         modifier = Modifier
-                            .size(42.dp)
+                            .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
                             contentDescription = "Watch Later",
                             tint = Color.White,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                     Text("Later", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)

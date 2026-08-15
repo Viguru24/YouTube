@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.*
@@ -65,6 +67,7 @@ fun HomeScreen(
     categoryVideos: List<VideoEntity> = emptyList(),
     algorithmSettings: com.example.data.repository.AlgorithmSettings = com.example.data.repository.AlgorithmSettings(),
     mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
+    dislikedVideoIds: Set<String> = emptySet(),
     onMuteChannel: (String) -> Unit = {},
     onLoadMore: () -> Unit = {},
     selectedTimeFilter: String = "Any Time",
@@ -565,6 +568,7 @@ fun HomeScreen(
                 favorites = videos.filter { it.isFavorite },
                 watchHistory = historyVideos,
                 mutedChannels = mutedChannels,
+                dislikedVideoIds = dislikedVideoIds,
                 settings = algorithmSettings
             )
 
@@ -630,13 +634,11 @@ fun HomeScreen(
                     }
                 }
             } else {
-                val shortsList = remember(displayList) {
+                val shortsList = remember(displayList, algorithmSettings.shortsMode) {
                     if (algorithmSettings.shortsMode == "Hidden") {
                         emptyList()
                     } else {
-                        displayList
-                            .filter { com.example.util.YouTubeUtils.isShortVideo(it) }
-                            .shuffled()
+                        displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
                     }
                 }
                 val mainVideosList = displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
@@ -725,7 +727,10 @@ fun HomeScreen(
                                     items(shortsList, key = { it.youtubeId }) { shortVideo ->
                                         ShortsReelCard(
                                             video = shortVideo,
-                                            onClick = { onShortClick(shortVideo) }
+                                            onClick = {
+                                                android.util.Log.d("ShortsReel", "ShortsReelCard CLICKED: ${shortVideo.youtubeId} - ${shortVideo.title}")
+                                                onShortClick(shortVideo)
+                                            }
                                         )
                                     }
                                 }
@@ -910,21 +915,11 @@ private fun ShortsReelCard(
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     Column(
-        modifier = Modifier
-            .width(155.dp)
-            .pointerInput(video.youtubeId) {
-                detectTapGestures(
-                    onTap = { onClick() },
-                    onLongPress = {
-                        val link = "https://youtu.be/${video.youtubeId}"
-                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(link))
-                        android.widget.Toast.makeText(context, "Short Link Copied: $link 📋", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
+        modifier = Modifier.width(155.dp)
     ) {
         // Vertical Short Poster Card (Clean & Tap Anywhere to Play, 0 Play Buttons)
         Card(
+            onClick = onClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(235.dp)
