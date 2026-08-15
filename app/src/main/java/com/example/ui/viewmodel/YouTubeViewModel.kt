@@ -246,10 +246,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 _categoryVideos.value = emptyList() // Clear immediately on category switch
                 try {
                     val fetched = if (category == "All") {
-                        val profileFeed = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
-                        val home = com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
-                        val shorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                        (profileFeed + home + shorts).distinctBy { it.youtubeId }
+                        val homeFeed = try {
+                            com.example.data.remote.YouTubeLiveSearchService.fetchHomeRecommendationFeed()
+                        } catch (e: Exception) { emptyList() }
+
+                        val profileFeed = try {
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed()
+                        } catch (e: Exception) { emptyList() }
+
+                        val shortsFeed = try {
+                            com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                        } catch (e: Exception) { emptyList() }
+
+                        (homeFeed + profileFeed + shortsFeed).distinctBy { it.youtubeId }
                     } else {
                         com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category)
                     }

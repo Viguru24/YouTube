@@ -45,16 +45,18 @@ object YouTubeLiveSearchService {
      */
     suspend fun fetchSubscribedProfileFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
         val channels = com.example.data.model.WillRyanProfileData.subscribedChannels
-        val selected = channels.shuffled().take(15)
+        val selected = channels.shuffled().take(10)
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
 
         val jobs = selected.map { channel ->
             async {
                 try {
-                    val fetched = searchRealYouTubeVideos("$channel latest")
+                    val fetched = kotlinx.coroutines.withTimeoutOrNull(2500L) {
+                        searchRealYouTubeVideos("$channel latest")
+                    } ?: emptyList()
                     val matched = fetched.filter { isMatchingChannel(it, channel) || it.title.lowercase().contains(channel.lowercase()) }
                         .ifEmpty { fetched }
-                    results.addAll(matched.take(8))
+                    results.addAll(matched.take(6))
                 } catch (e: Exception) {
                     logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${e.message}")
                 }
@@ -77,16 +79,7 @@ object YouTubeLiveSearchService {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        // 1. PRIMARY: Direct YouTube Web HTML scraping with optional Sort-By-Upload-Date (sp=CAI%3D)
-        val webResults = searchWebHtml(trimmed, sortByUploadDate).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-        if (webResults.isNotEmpty()) {
-            logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
-            return@withContext if (sortByUploadDate) {
-                webResults.sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-            } else webResults
-        }
-
-        // 2. SECONDARY: NewPipe SearchExtractor
+        // 1. PRIMARY & FASTEST: NewPipe SearchExtractor (200-400ms, official YouTube API payload)
         try {
             val service = org.schabi.newpipe.extractor.ServiceList.YouTube
             val extractor = service.getSearchExtractor(trimmed)
@@ -132,7 +125,16 @@ object YouTubeLiveSearchService {
                 } else results
             }
         } catch (e: Exception) {
-            logD("YouTubeLiveSearchService", "[NewPipe Search] Failed: ${e.message}")
+            logD("YouTubeLiveSearchService", "[NewPipe Search] Failed for '$trimmed': ${e.message}")
+        }
+
+        // 2. SECONDARY: Direct YouTube Web HTML scraping
+        val webResults = searchWebHtml(trimmed, sortByUploadDate).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+        if (webResults.isNotEmpty()) {
+            logD("YouTubeLiveSearchService", "[Web Search] Found ${webResults.size} real results for '$trimmed'")
+            return@withContext if (sortByUploadDate) {
+                webResults.sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+            } else webResults
         }
 
         // 3. FALLBACK: Fast Invidious Endpoint
