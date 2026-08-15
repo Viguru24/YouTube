@@ -456,6 +456,28 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val _isPlayingAsShort = MutableStateFlow<Boolean?>(null)
     val isPlayingAsShort: StateFlow<Boolean?> = _isPlayingAsShort.asStateFlow()
 
+    private val _isPlayerPlaying = MutableStateFlow<Boolean>(true)
+    val isPlayerPlaying: StateFlow<Boolean> = _isPlayerPlaying.asStateFlow()
+
+    private val _playerCommand = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 5)
+    val playerCommand: kotlinx.coroutines.flow.SharedFlow<String> = _playerCommand.asSharedFlow()
+
+    fun togglePlayPause() {
+        _playerCommand.tryEmit("TOGGLE_PLAY_PAUSE")
+    }
+
+    fun seekBy(seconds: Int) {
+        if (seconds > 0) {
+            _playerCommand.tryEmit("SEEK_FORWARD_$seconds")
+        } else {
+            _playerCommand.tryEmit("SEEK_BACKWARD_${-seconds}")
+        }
+    }
+
+    fun setPlayerPlaying(playing: Boolean) {
+        _isPlayerPlaying.value = playing
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     val activeVideo: StateFlow<VideoEntity?> = _activeVideoId.flatMapLatest { id ->
         if (id == null) flowOf(null)

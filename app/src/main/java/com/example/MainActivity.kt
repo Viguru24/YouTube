@@ -21,6 +21,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.example.ui.components.AddCategoryDialog
 import com.example.ui.components.AddVideoDialog
 import com.example.ui.components.GoogleSignInDialog
@@ -37,9 +39,40 @@ class MainActivity : ComponentActivity() {
     private val viewModel: YouTubeViewModel by viewModels()
     private var isInPipMode by mutableStateOf(false)
 
+    companion object {
+        const val ACTION_PIP_CONTROL = "com.example.PIP_CONTROL"
+        const val EXTRA_PIP_ACTION = "pip_action"
+        const val PIP_ACTION_PLAY_PAUSE = "play_pause"
+        const val PIP_ACTION_REWIND = "rewind"
+        const val PIP_ACTION_FORWARD = "forward"
+        const val PIP_ACTION_CLOSE = "close"
+    }
+
+    private val pipReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            when (intent?.getStringExtra(EXTRA_PIP_ACTION)) {
+                PIP_ACTION_PLAY_PAUSE -> viewModel.togglePlayPause()
+                PIP_ACTION_REWIND -> viewModel.seekBy(-10)
+                PIP_ACTION_FORWARD -> viewModel.seekBy(10)
+                PIP_ACTION_CLOSE -> {
+                    viewModel.clearActiveVideo()
+                    moveTaskToBack(true)
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Register PiP control broadcast receiver with RECEIVER_NOT_EXPORTED for security
+        val filter = android.content.IntentFilter(ACTION_PIP_CONTROL)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(pipReceiver, filter)
+        }
 
         // Keep device screen on continuously (prevents sleep, dimming & screensaver)
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -66,6 +99,17 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("MainActivity", "NewPipe Extractor init failed: ${e.message}")
         }
 
+        // Automatically update PiP buttons when playing state changes
+        lifecycleScope.launch {
+            viewModel.isPlayerPlaying.collect { isPlaying ->
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    try {
+                        setPictureInPictureParams(buildPipParams(isPlaying))
+                    } catch (e: Exception) { }
+                }
+            }
+        }
+
         setContent {
             YouTubePlayerTheme {
                 MainAppContent(
@@ -75,6 +119,13 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(pipReceiver)
+        } catch (e: Exception) { }
     }
 
     override fun onPictureInPictureModeChanged(
@@ -94,13 +145,96 @@ class MainActivity : ComponentActivity() {
 
     private fun enterPipMode() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            val isShort = viewModel.isPlayingAsShort.value == true
-            val aspectRatio = if (isShort) android.util.Rational(9, 16) else android.util.Rational(16, 9)
-            val params = android.app.PictureInPictureParams.Builder()
-                .setAspectRatio(aspectRatio)
-                .build()
+            val params = buildPipParams(viewModel.isPlayerPlaying.value)
             enterPictureInPictureMode(params)
         }
+    }
+
+    private fun buildPipParams(isPlaying: Boolean): android.app.PictureInPictureParams {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+            throw UnsupportedOperationException("PiP requires Android 8.0+")
+        }
+
+        val isShort = viewModel.isPlayingAsShort.value == true
+        val aspectRatio = if (isShort) android.util.Rational(9, 16) else android.util.Rational(16, 9)
+
+        val actions = mutableListOf<android.app.RemoteAction>()
+
+        // 1. Rewind 10s action
+        val rewindIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            101,
+            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_REWIND),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_rew),
+                "-10s",
+                "Rewind 10 Seconds",
+                rewindIntent
+            )
+        )
+
+        // 2. Play / Pause action
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseText = if (isPlaying) "Pause" else "Play"
+        val playPauseIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            102,
+            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_PLAY_PAUSE),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, playPauseIcon),
+                playPauseText,
+                playPauseText,
+                playPauseIntent
+            )
+        )
+
+        // 3. Fast Forward 10s action
+        val forwardIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            103,
+            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_FORWARD),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_ff),
+                "+10s",
+                "Forward 10 Seconds",
+                forwardIntent
+            )
+        )
+
+        // 4. Close Pop-Up action
+        val closeIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            104,
+            android.content.Intent(ACTION_PIP_CONTROL).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_CLOSE),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
+                "Close",
+                "Close Pop-up",
+                closeIntent
+            )
+        )
+
+        val builder = android.app.PictureInPictureParams.Builder()
+            .setAspectRatio(aspectRatio)
+            .setActions(actions)
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(true)
+        }
+
+        return builder.build()
     }
 }
 
@@ -177,6 +311,8 @@ fun MainAppContent(
                     isWatchLater = activeVideo!!.isWatchLater,
                     isInPipMode = isInPipMode,
                     onEnterPip = onEnterPip,
+                    playerCommandFlow = viewModel.playerCommand,
+                    onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
                     onBackClick = { viewModel.clearActiveVideo() },
                     onNextShort = {
                         viewModel.playNextShort(activeVideo!!.youtubeId)
@@ -200,6 +336,8 @@ fun MainAppContent(
                     googleAccount = googleAccount,
                     isInPipMode = isInPipMode,
                     onEnterPip = onEnterPip,
+                    playerCommandFlow = viewModel.playerCommand,
+                    onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
                     onBackClick = { viewModel.clearActiveVideo() },
                     onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                     onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },

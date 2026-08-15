@@ -56,6 +56,8 @@ fun YouTubePlayerView(
     areAdvertsEnabled: Boolean = false,
     showDebugConsole: Boolean = false,
     onToggleDebugConsole: () -> Unit = {},
+    playerCommandFlow: kotlinx.coroutines.flow.SharedFlow<String>? = null,
+    onPlayingStateChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -117,6 +119,7 @@ fun YouTubePlayerView(
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
+                onPlayingStateChanged(isPlaying)
             }
         }
         exoPlayer.addListener(listener)
@@ -131,6 +134,25 @@ fun YouTubePlayerView(
                 // Ignore
             }
             exoPlayer.release()
+        }
+    }
+
+    // Handle remote PiP and external commands (Play/Pause, Seek)
+    LaunchedEffect(playerCommandFlow) {
+        playerCommandFlow?.collect { cmd ->
+            when {
+                cmd == "TOGGLE_PLAY_PAUSE" -> {
+                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                }
+                cmd.startsWith("SEEK_FORWARD_") -> {
+                    val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
+                    exoPlayer.seekTo(exoPlayer.currentPosition + sec * 1000L)
+                }
+                cmd.startsWith("SEEK_BACKWARD_") -> {
+                    val sec = cmd.substringAfter("SEEK_BACKWARD_").toIntOrNull() ?: 10
+                    exoPlayer.seekTo((exoPlayer.currentPosition - sec * 1000L).coerceAtLeast(0L))
+                }
+            }
         }
     }
 

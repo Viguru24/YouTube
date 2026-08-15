@@ -58,6 +58,8 @@ fun ShortsPlayerView(
     isWatchLater: Boolean = false,
     isInPipMode: Boolean = false,
     onEnterPip: () -> Unit = {},
+    playerCommandFlow: kotlinx.coroutines.flow.SharedFlow<String>? = null,
+    onPlayingStateChanged: (Boolean) -> Unit = {},
     onBackClick: () -> Unit,
     onNextShort: () -> Unit,
     onPreviousShort: () -> Unit,
@@ -116,6 +118,7 @@ fun ShortsPlayerView(
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
+                onPlayingStateChanged(isPlaying)
             }
         }
         exoPlayer.addListener(listener)
@@ -129,6 +132,24 @@ fun ShortsPlayerView(
             } catch (e: Exception) { }
             exoPlayer.release()
             MediaPlaybackService.stop(context)
+        }
+    }
+
+    LaunchedEffect(playerCommandFlow) {
+        playerCommandFlow?.collect { cmd ->
+            when {
+                cmd == "TOGGLE_PLAY_PAUSE" -> {
+                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                }
+                cmd.startsWith("SEEK_FORWARD_") -> {
+                    val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
+                    exoPlayer.seekTo(exoPlayer.currentPosition + sec * 1000L)
+                }
+                cmd.startsWith("SEEK_BACKWARD_") -> {
+                    val sec = cmd.substringAfter("SEEK_BACKWARD_").toIntOrNull() ?: 10
+                    exoPlayer.seekTo((exoPlayer.currentPosition - sec * 1000L).coerceAtLeast(0L))
+                }
+            }
         }
     }
 

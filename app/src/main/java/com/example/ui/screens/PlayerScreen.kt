@@ -41,6 +41,8 @@ fun PlayerScreen(
     googleAccount: GoogleAccount,
     isInPipMode: Boolean = false,
     onEnterPip: () -> Unit = {},
+    playerCommandFlow: kotlinx.coroutines.flow.SharedFlow<String>? = null,
+    onPlayingStateChanged: (Boolean) -> Unit = {},
     onBackClick: () -> Unit,
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
@@ -77,6 +79,8 @@ fun PlayerScreen(
             areAdvertsEnabled = areAdvertsEnabled,
             showDebugConsole = false,
             onToggleDebugConsole = {},
+            playerCommandFlow = playerCommandFlow,
+            onPlayingStateChanged = onPlayingStateChanged,
             onPlayerReady = { wv -> webViewInstance = wv },
             modifier = Modifier.fillMaxSize()
         )
@@ -133,6 +137,8 @@ fun PlayerScreen(
                 areAdvertsEnabled = areAdvertsEnabled,
                 showDebugConsole = showDebugConsole,
                 onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
+                playerCommandFlow = playerCommandFlow,
+                onPlayingStateChanged = onPlayingStateChanged,
                 onPlayerReady = { wv -> webViewInstance = wv },
                 modifier = if (isFullscreen) {
                     Modifier.fillMaxSize()
