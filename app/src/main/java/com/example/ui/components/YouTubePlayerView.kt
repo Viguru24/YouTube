@@ -88,9 +88,24 @@ fun YouTubePlayerView(
     var sponsorSegments by remember(videoId) { mutableStateOf<List<SponsorSegment>>(emptyList()) }
     var lastSkippedSegmentKey by remember(videoId) { mutableStateOf("") }
 
+    // Real-Time Closed Captions (CC) State
+    var captionsEnabled by remember { mutableStateOf(false) }
+    var captionSegments by remember(videoId) { mutableStateOf<List<com.example.util.TranscriptSegment>>(emptyList()) }
+    var activeCaptionText by remember { mutableStateOf<String?>(null) }
+    var isCaptionsLoading by remember { mutableStateOf(false) }
+
     fun addLog(msg: String) {
         val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
         debugLogs.add(entry)
+    }
+
+    // Keep screen on during playback
+    DisposableEffect(Unit) {
+        val activity = (context as? android.app.Activity)
+        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     val exoPlayer = remember(videoId) {
@@ -99,12 +114,25 @@ fun YouTubePlayerView(
             .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
 
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-            setAudioAttributes(audioAttributes, true)
-            setHandleAudioBecomingNoisy(true)
-            volume = if (isMutedState) 0f else 1.0f
-        }
+        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 120_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
+        ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
+            .build().apply {
+                playWhenReady = true
+                setAudioAttributes(audioAttributes, true)
+                setHandleAudioBecomingNoisy(true)
+                setWakeMode(C.WAKE_MODE_NETWORK)
+                volume = if (isMutedState) 0f else 1.0f
+            }
     }
 
     DisposableEffect(exoPlayer) {
@@ -169,8 +197,8 @@ fun YouTubePlayerView(
     var isDraggingScrubber by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
 
-    // Position ticker: saves current playback timestamp & automatically skips SponsorBlock segments
-    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments, isDraggingScrubber) {
+    // Position ticker: saves current playback timestamp & automatically skips SponsorBlock segments & updates CC subtitles
+    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments, isDraggingScrubber, captionsEnabled, captionSegments) {
         if (hasPreparedMedia) {
             while (isActive) {
                 try {
@@ -178,6 +206,17 @@ fun YouTubePlayerView(
                     if (pos > 0 && !isDraggingScrubber) {
                         savedPositionMs = pos
                         currentPosMs = pos
+
+                        // Real-time Closed Captions (CC) Matcher
+                        val currentSec = (pos / 1000).toInt()
+                        if (captionsEnabled && captionSegments.isNotEmpty()) {
+                            val matching = captionSegments
+                                .filter { it.timestampSeconds <= currentSec }
+                                .lastOrNull { (currentSec - it.timestampSeconds) <= 5 }
+                            activeCaptionText = matching?.text?.trim()
+                        } else {
+                            activeCaptionText = null
+                        }
 
                         // Automatic SponsorBlock In-Video Segment Skip
                         if (sponsorSegments.isNotEmpty()) {
@@ -203,6 +242,26 @@ fun YouTubePlayerView(
                     // Ignore
                 }
                 delay(100)
+            }
+        }
+    }
+
+    // Background fetch of real subtitles when CC is enabled
+    LaunchedEffect(videoId, captionsEnabled) {
+        if (captionsEnabled && captionSegments.isEmpty()) {
+            isCaptionsLoading = true
+            try {
+                val segments = com.example.data.remote.YouTubeCaptionService.fetchTimedCaptions(videoId)
+                captionSegments = segments
+                if (segments.isEmpty()) {
+                    addLog("ℹ️ No English captions found for this video.")
+                } else {
+                    addLog("✅ CC Subtitles Enabled: Loaded ${segments.size} timed lines")
+                }
+            } catch (e: Exception) {
+                addLog("⚠️ Subtitle fetch error: ${e.message}")
+            } finally {
+                isCaptionsLoading = false
             }
         }
     }
@@ -248,8 +307,15 @@ fun YouTubePlayerView(
             val isVideoOnly = streamResult?.videoOnlyQualities?.contains(selectedQuality) == true
             val audioUrl = streamResult?.audioStreamUrl
 
+            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(15000)
+                .setAllowCrossProtocolRedirects(true)
+
+            val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
+
             if (isVideoOnly && !audioUrl.isNullOrBlank()) {
-                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
                 val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(url))
                 val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -257,8 +323,9 @@ fun YouTubePlayerView(
                 val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
                 exoPlayer.setMediaSource(mergingSource)
             } else {
-                val mediaItem = MediaItem.fromUri(url)
-                exoPlayer.setMediaItem(mediaItem)
+                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(url))
+                exoPlayer.setMediaSource(mediaSource)
             }
 
             val targetSeekMs = if (savedPositionMs > 0) {
@@ -387,11 +454,10 @@ fun YouTubePlayerView(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
-                        settings.allowFileAccess = true
-                        settings.allowContentAccess = true
-                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 
                         webChromeClient = android.webkit.WebChromeClient()
@@ -401,6 +467,7 @@ fun YouTubePlayerView(
                                 isFirstFrameRendered = true
                             }
                         }
+                        val ccPolicy = if (captionsEnabled) 1 else 0
                         val embedHtml = """
                             <!DOCTYPE html>
                             <html>
@@ -414,7 +481,7 @@ fun YouTubePlayerView(
                             </head>
                             <body>
                                 <div class="iframe-container">
-                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&cc_load_policy=0&iv_load_policy=3" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&cc_load_policy=$ccPolicy&iv_load_policy=3" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
                                 </div>
                             </body>
                             </html>
@@ -432,6 +499,31 @@ fun YouTubePlayerView(
             )
         }
 
+        // Real-Time Closed Caption (CC) Subtitle Overlay (YouTube Style)
+        if (captionsEnabled && !activeCaptionText.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(
+                        bottom = if (showControlsOverlay) 80.dp else 24.dp,
+                        start = 20.dp,
+                        end = 20.dp
+                    )
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = activeCaptionText!!,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+
         // Touch On-Screen Scrubber & Options Bar Overlay (No center buttons/texts - completely invisible gestures)
         AnimatedVisibility(
             visible = showControlsOverlay && streamUrl != null && !isLoading,
@@ -446,7 +538,6 @@ fun YouTubePlayerView(
             var showSpeedSubMenu by remember { mutableStateOf(false) }
             var showQualitySubMenu by remember { mutableStateOf(false) }
             var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-            var captionsEnabled by remember { mutableStateOf(false) }
             val coroutineScope = rememberCoroutineScope()
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -616,11 +707,13 @@ fun YouTubePlayerView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            // 1. Subtitles / Captions Button [=]
+                            // 1. Subtitles / Captions Button [CC]
                             IconButton(
                                 onClick = {
-                                    captionsEnabled = !captionsEnabled
-                                    Toast.makeText(context, if (captionsEnabled) "Subtitles (CC) Turned On" else "Subtitles (CC) Turned Off", Toast.LENGTH_SHORT).show()
+                                    val nextState = !captionsEnabled
+                                    captionsEnabled = nextState
+                                    val msg = if (nextState) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier.size(34.dp)
                             ) {

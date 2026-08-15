@@ -93,6 +93,11 @@ fun ShortsPlayerView(
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
     var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
 
+    // Real-Time Closed Captions (CC) State
+    var captionsEnabled by remember { mutableStateOf(false) }
+    var captionSegments by remember(videoId) { mutableStateOf<List<com.example.util.TranscriptSegment>>(emptyList()) }
+    var activeCaptionText by remember { mutableStateOf<String?>(null) }
+
     // Use a single persistent ExoPlayer instance across Shorts swipes to avoid hardware codec exhaustion
     val exoPlayer = remember {
         val audioAttributes = AudioAttributes.Builder()
@@ -192,8 +197,44 @@ fun ShortsPlayerView(
         }
     }
 
+    // Real-time position ticker to update Closed Captions in Shorts
+    LaunchedEffect(exoPlayer, captionsEnabled, captionSegments) {
+        while (isActive) {
+            try {
+                if (exoPlayer.isPlaying) {
+                    val pos = exoPlayer.currentPosition
+                    val currentSec = (pos / 1000).toInt()
+                    if (captionsEnabled && captionSegments.isNotEmpty()) {
+                        val matching = captionSegments
+                            .filter { it.timestampSeconds <= currentSec }
+                            .lastOrNull { (currentSec - it.timestampSeconds) <= 5 }
+                        activeCaptionText = matching?.text?.trim()
+                    } else {
+                        activeCaptionText = null
+                    }
+                }
+            } catch (e: Exception) { }
+            delay(100)
+        }
+    }
+
+    // Background fetch of real subtitles when CC is enabled
+    LaunchedEffect(videoId, captionsEnabled) {
+        if (captionsEnabled && captionSegments.isEmpty()) {
+            try {
+                val segments = com.example.data.remote.YouTubeCaptionService.fetchTimedCaptions(videoId)
+                captionSegments = segments
+                if (segments.isNotEmpty()) {
+                    addLog("✅ CC Subtitles Enabled: Loaded ${segments.size} lines")
+                }
+            } catch (e: Exception) {
+                addLog("⚠️ Subtitle fetch error: ${e.message}")
+            }
+        }
+    }
+
     // Extract direct MP4 stream for vertical full-screen playback
-    LaunchedEffect(videoId) {
+    LaunchedEffect(videoId, selectedQuality) {
         isLoading = true
         isFirstFrameRendered = false
         useWebPlayerFallback = false
@@ -301,11 +342,10 @@ fun ShortsPlayerView(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
-                        settings.allowFileAccess = true
-                        settings.allowContentAccess = true
-                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
                         settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
 
                         webChromeClient = android.webkit.WebChromeClient()
@@ -520,6 +560,28 @@ fun ShortsPlayerView(
                 }
             }
         }
+
+        // Real-Time Closed Caption (CC) Subtitle Overlay for Shorts
+        if (captionsEnabled && !activeCaptionText.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 90.dp, start = 16.dp, end = 72.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.85f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = activeCaptionText!!,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = 17.sp
+                )
+            }
+        }
+
         if (!isInPipMode) {
             // 4. Bottom-Left Details Text & Interactive Timeline Scrubber
             Column(
@@ -637,6 +699,32 @@ fun ShortsPlayerView(
                         )
                     }
                     Text("Star", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
+
+                // 4. Closed Captions (CC) Subtitles Button
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = {
+                            val next = !captionsEnabled
+                            captionsEnabled = next
+                            android.widget.Toast.makeText(
+                                context,
+                                if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ClosedCaption,
+                            contentDescription = "Subtitles",
+                            tint = if (captionsEnabled) YouTubeRed else Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text("CC", color = if (captionsEnabled) YouTubeRed else Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // 4. HD Quality Selector Badge Button

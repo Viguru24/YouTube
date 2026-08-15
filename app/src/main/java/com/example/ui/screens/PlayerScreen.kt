@@ -223,13 +223,14 @@ fun PlayerScreen(
                                 }
 
                                 // 4. ✨ 1-Tap AI Summary Button
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = Color(0xFF8E24AA).copy(alpha = 0.15f),
-                                    modifier = Modifier.clickable { showAiSummaryModal = true }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .background(Color(0xFF8E24AA).copy(alpha = 0.15f))
+                                        .clickable { showAiSummaryModal = true }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
