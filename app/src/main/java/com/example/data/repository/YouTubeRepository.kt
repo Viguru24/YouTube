@@ -56,12 +56,21 @@ class YouTubeRepository(
         if (existing != null) {
             val updated = video.copy(
                 lastPositionSeconds = if (video.lastPositionSeconds > 0) video.lastPositionSeconds else existing.lastPositionSeconds,
-                lastWatchedTimestamp = System.currentTimeMillis()
+                lastWatchedTimestamp = if (video.lastWatchedTimestamp > 0) video.lastWatchedTimestamp else existing.lastWatchedTimestamp,
+                isFavorite = existing.isFavorite,
+                isWatchLater = existing.isWatchLater,
+                isDownloaded = existing.isDownloaded,
+                localFilePath = existing.localFilePath,
+                downloadSizeMb = existing.downloadSizeMb
             )
             videoDao.insertVideo(updated)
         } else {
-            videoDao.insertVideo(video.copy(lastWatchedTimestamp = System.currentTimeMillis()))
+            videoDao.insertVideo(video)
         }
+    }
+
+    suspend fun sanitizeWatchTimestamps() {
+        videoDao.sanitizeWatchTimestamps()
     }
 
     suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {

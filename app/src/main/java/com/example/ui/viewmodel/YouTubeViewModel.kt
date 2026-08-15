@@ -217,6 +217,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.sanitizeWatchTimestamps()
             repository.clearUnsavedRecommendations()
             checkAndCleanExpiredDownloads()
         }

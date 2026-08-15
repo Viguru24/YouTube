@@ -62,4 +62,7 @@ interface VideoDao {
 
     @Query("DELETE FROM videos WHERE lastWatchedTimestamp > 0")
     suspend fun clearWatchHistory()
+
+    @Query("UPDATE videos SET lastWatchedTimestamp = 0 WHERE lastPositionSeconds = 0")
+    suspend fun sanitizeWatchTimestamps()
 }

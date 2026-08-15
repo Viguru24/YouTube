@@ -475,14 +475,12 @@ fun HomeScreen(
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
             // Automatically remove any video that has been watched or partially watched from the feed
-            val watchedIds = remember(historyVideos, videos) {
-                val fromHistory = historyVideos.map { it.youtubeId }
-                val fromVideos = videos.filter { it.lastPositionSeconds > 0 || it.lastWatchedTimestamp > 0L }.map { it.youtubeId }
-                (fromHistory + fromVideos).toSet()
+            val watchedIds = remember(historyVideos) {
+                historyVideos.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
             }
 
             fun isVideoWatched(video: VideoEntity): Boolean {
-                return video.youtubeId in watchedIds || video.lastPositionSeconds > 0 || video.lastWatchedTimestamp > 0L
+                return video.youtubeId in watchedIds || video.lastPositionSeconds > 0
             }
 
             val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
