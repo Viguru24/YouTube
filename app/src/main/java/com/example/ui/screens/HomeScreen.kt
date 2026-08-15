@@ -474,29 +474,40 @@ fun HomeScreen(
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
-            val watchedIds = historyVideos.map { it.youtubeId }.toSet()
+            // Automatically remove any video that has been watched or partially watched from the feed
+            val watchedIds = remember(historyVideos, videos) {
+                val fromHistory = historyVideos.map { it.youtubeId }
+                val fromVideos = videos.filter { it.lastPositionSeconds > 0 || it.lastWatchedTimestamp > 0L }.map { it.youtubeId }
+                (fromHistory + fromVideos).toSet()
+            }
+
+            fun isVideoWatched(video: VideoEntity): Boolean {
+                return video.youtubeId in watchedIds || video.lastPositionSeconds > 0 || video.lastWatchedTimestamp > 0L
+            }
 
             val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
                 val targetCh = selectedSubscribedChannel.lowercase().trim()
                 categoryVideos.filter { video ->
                     val vCh = video.channelName.lowercase().trim()
-                    vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
-                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))
+                    (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
+                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoWatched(video)
                 }.distinctBy { it.youtubeId }
             } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
-                if (liveSearchResults.isNotEmpty()) {
+                val searchList = if (liveSearchResults.isNotEmpty()) {
                     liveSearchResults
                 } else {
                     com.example.util.YouTubeUtils.searchYouTubeVideos(searchQuery)
                 }
+                searchList.filter { !isVideoWatched(it) }.distinctBy { it.youtubeId }
             } else if (selectedCategory != "All") {
-                categoryVideos.filter { it.category.equals(selectedCategory, ignoreCase = true) }.distinctBy { it.youtubeId }
-            } else {
-                // Main Home Feed: Prioritize fresh categoryVideos and filter out watched videos so feed is always fresh!
                 categoryVideos
-                    .filter { it.youtubeId !in watchedIds && it.lastPositionSeconds == 0 }
+                    .filter { it.category.equals(selectedCategory, ignoreCase = true) && !isVideoWatched(it) }
                     .distinctBy { it.youtubeId }
-                    .ifEmpty { categoryVideos.distinctBy { it.youtubeId } }
+            } else {
+                // Main Home Feed: strictly filter out any video that has been watched or partially watched!
+                categoryVideos
+                    .filter { !isVideoWatched(it) }
+                    .distinctBy { it.youtubeId }
             }
 
             // Apply Upload Date Time Selector Filter to Search Results

@@ -120,7 +120,7 @@ fun PlayerScreen(
             if (!isFullscreen) {
                 // Strictly sort Up Next videos by published timestamp descending (Newest First!)
                 val otherVideos = playlistVideos
-                    .filter { it.youtubeId != video.youtubeId }
+                    .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
                     .sortedWith(compareBy<VideoEntity> {
                         com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
                     })
