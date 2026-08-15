@@ -35,6 +35,7 @@ import com.example.ui.viewmodel.YouTubeViewModel
 class MainActivity : ComponentActivity() {
 
     private val viewModel: YouTubeViewModel by viewModels()
+    private var isInPipMode by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,14 +68,48 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             YouTubePlayerTheme {
-                MainAppContent(viewModel = viewModel)
+                MainAppContent(
+                    viewModel = viewModel,
+                    isInPipMode = isInPipMode,
+                    onEnterPip = { enterPipMode() }
+                )
             }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (viewModel.activeVideo.value != null) {
+            enterPipMode()
+        }
+    }
+
+    private fun enterPipMode() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val isShort = viewModel.isPlayingAsShort.value == true
+            val aspectRatio = if (isShort) android.util.Rational(9, 16) else android.util.Rational(16, 9)
+            val params = android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(aspectRatio)
+                .build()
+            enterPictureInPictureMode(params)
         }
     }
 }
 
 @Composable
-fun MainAppContent(viewModel: YouTubeViewModel) {
+fun MainAppContent(
+    viewModel: YouTubeViewModel,
+    isInPipMode: Boolean = false,
+    onEnterPip: () -> Unit = {}
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedNavIndex by remember { mutableIntStateOf(0) } // 0: Home, 1: Library, 2: History
 
@@ -119,7 +154,7 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
     }
 
     // Intercept Android system edge swipe-back gesture: navigate within YouTube app instead of exiting to launcher
-    androidx.activity.compose.BackHandler(enabled = activeVideo != null || selectedNavIndex != 0) {
+    androidx.activity.compose.BackHandler(enabled = !isInPipMode && (activeVideo != null || selectedNavIndex != 0)) {
         if (activeVideo != null) {
             viewModel.clearActiveVideo()
         } else if (selectedNavIndex != 0) {
@@ -140,6 +175,8 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     channelName = activeVideo!!.channelName,
                     isFavorite = activeVideo!!.isFavorite,
                     isWatchLater = activeVideo!!.isWatchLater,
+                    isInPipMode = isInPipMode,
+                    onEnterPip = onEnterPip,
                     onBackClick = { viewModel.clearActiveVideo() },
                     onNextShort = {
                         viewModel.playNextShort(activeVideo!!.youtubeId)
@@ -161,6 +198,8 @@ fun MainAppContent(viewModel: YouTubeViewModel) {
                     notes = activeNotes,
                     playlistVideos = videos,
                     googleAccount = googleAccount,
+                    isInPipMode = isInPipMode,
+                    onEnterPip = onEnterPip,
                     onBackClick = { viewModel.clearActiveVideo() },
                     onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                     onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },

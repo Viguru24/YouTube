@@ -39,6 +39,8 @@ fun PlayerScreen(
     notes: List<VideoNoteEntity>,
     playlistVideos: List<VideoEntity>,
     googleAccount: GoogleAccount,
+    isInPipMode: Boolean = false,
+    onEnterPip: () -> Unit = {},
     onBackClick: () -> Unit,
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
@@ -65,7 +67,21 @@ fun PlayerScreen(
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isMaximized by remember { mutableStateOf(false) }
 
-    val isFullscreen = isLandscape || isMaximized
+    val isFullscreen = isLandscape || isMaximized || isInPipMode
+
+    if (isInPipMode) {
+        // Floating PiP Pop-up Window: Display clean video player filling the entire floating window
+        YouTubePlayerView(
+            videoId = video.youtubeId,
+            startSeconds = video.lastPositionSeconds,
+            areAdvertsEnabled = areAdvertsEnabled,
+            showDebugConsole = false,
+            onToggleDebugConsole = {},
+            onPlayerReady = { wv -> webViewInstance = wv },
+            modifier = Modifier.fillMaxSize()
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -84,6 +100,17 @@ fun PlayerScreen(
                             modifier = Modifier.testTag("player_back_btn")
                         ) {
                             Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = onEnterPip,
+                            modifier = Modifier.testTag("player_pip_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PictureInPictureAlt,
+                                contentDescription = "Floating Pop-up Window"
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

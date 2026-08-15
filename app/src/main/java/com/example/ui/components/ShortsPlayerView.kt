@@ -56,6 +56,8 @@ fun ShortsPlayerView(
     channelName: String,
     isFavorite: Boolean = false,
     isWatchLater: Boolean = false,
+    isInPipMode: Boolean = false,
+    onEnterPip: () -> Unit = {},
     onBackClick: () -> Unit,
     onNextShort: () -> Unit,
     onPreviousShort: () -> Unit,
@@ -406,40 +408,57 @@ fun ShortsPlayerView(
             }
         }
 
-        // 3. Top Controls Row: Back arrow + Debug toggle
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(start = 10.dp, top = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onBackClick,
+        if (!isInPipMode) {
+            // 3. Top Controls Row: Back arrow + PiP + Debug toggle
+            Row(
                 modifier = Modifier
-                    .size(42.dp)
-                    .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(start = 10.dp, top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
-            }
-            Spacer(modifier = Modifier.width(6.dp))
-            // Debug console toggle button
-            IconButton(
-                onClick = { showDebugConsole = !showDebugConsole },
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = if (showDebugConsole) Icons.Filled.BugReport else Icons.Filled.BugReport,
-                    contentDescription = "Debug",
-                    tint = if (showDebugConsole) YouTubeRed else Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(18.dp)
-                )
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.Black.copy(alpha = 0.3f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                // Picture-in-Picture Pop-up Button
+                IconButton(
+                    onClick = onEnterPip,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PictureInPictureAlt,
+                        contentDescription = "Floating Pop-up Window",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                // Debug console toggle button
+                IconButton(
+                    onClick = { showDebugConsole = !showDebugConsole },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.BugReport,
+                        contentDescription = "Debug",
+                        tint = if (showDebugConsole) YouTubeRed else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
 
@@ -475,148 +494,123 @@ fun ShortsPlayerView(
                 }
             }
         }
-
-        // 4. Bottom-Left Details Text & Interactive Timeline Scrubber
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth(0.78f)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(bottom = 6.dp, start = 14.dp, end = 10.dp)
-        ) {
-            Text(
-                text = channelName,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = videoTitle,
-                fontSize = 11.sp,
-                lineHeight = 13.sp,
-                color = Color.White.copy(alpha = 0.85f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-
-        }
-
-        // Thin, barely-visible scrubber — pinned to absolute bottom edge
-        val activePosMs = if (isScrubbing) scrubPositionMs.toLong() else currentPositionMs
-        val durMs = if (totalDurationMs > 0) totalDurationMs else 1L
-        Slider(
-            value = activePosMs.toFloat().coerceIn(0f, durMs.toFloat()),
-            onValueChange = { v ->
-                isScrubbing = true
-                scrubPositionMs = v
-            },
-            onValueChangeFinished = {
-                isScrubbing = false
-                exoPlayer.seekTo(scrubPositionMs.toLong())
-            },
-            valueRange = 0f..durMs.toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = Color.White.copy(alpha = 0.45f),
-                activeTrackColor = Color.White.copy(alpha = 0.6f),
-                inactiveTrackColor = Color.White.copy(alpha = 0.12f),
-                disabledThumbColor = Color.Transparent,
-                disabledActiveTrackColor = Color.Transparent
-            ),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(16.dp)
-                .padding(horizontal = 0.dp)
-        )
-
-        // 5. Right-Side Action Controls: Like, Dislike, Resolution Selector & Watch Later
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(bottom = 12.dp, end = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // 1. Thumbs Up 👍
-            var isLikedShort by remember(videoId, isFavorite) { mutableStateOf(isFavorite) }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = {
-                        isLikedShort = !isLikedShort
-                        onFavoriteToggle()
-                        android.widget.Toast.makeText(context, if (isLikedShort) "Liked Short 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ThumbUp,
-                        contentDescription = "Like",
-                        tint = if (isLikedShort) YouTubeRed else Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Text("Like", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
-            }
-
-            // 2. Thumbs Down 👎 (Not Interested -> Next Short)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = {
-                        android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
-                        onNextShort()
-                    },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ThumbDown,
-                        contentDescription = "Not Interested",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Text("Dislike", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
-            }
-
-            // Quality / Resolution Selector Button
-            Surface(
-                onClick = { showQualityDialog = true },
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.45f),
-                modifier = Modifier.size(42.dp)
+        if (!isInPipMode) {
+            // 4. Bottom-Left Details Text & Interactive Timeline Scrubber
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth(0.78f)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(bottom = 6.dp, start = 14.dp, end = 10.dp)
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = if (selectedQuality == "Auto") "HD" else selectedQuality.replace("p", ""),
-                        color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black
-                    )
-                }
+                Text(
+                    text = channelName,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = videoTitle,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
             }
 
-            // Watch Later Toggle (With Clear "Later" Label)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(
-                    onClick = onWatchLaterToggle,
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                        contentDescription = "Watch Later",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+            // Thin, barely-visible scrubber — pinned to absolute bottom edge
+            val activePosMs = if (isScrubbing) scrubPositionMs.toLong() else currentPositionMs
+            val durMs = if (totalDurationMs > 0) totalDurationMs else 1L
+            Slider(
+                value = activePosMs.toFloat().coerceIn(0f, durMs.toFloat()),
+                onValueChange = { v ->
+                    isScrubbing = true
+                    scrubPositionMs = v
+                },
+                onValueChangeFinished = {
+                    isScrubbing = false
+                    exoPlayer.seekTo(scrubPositionMs.toLong())
+                },
+                valueRange = 0f..durMs.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White.copy(alpha = 0.45f),
+                    activeTrackColor = Color.White.copy(alpha = 0.6f),
+                    inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+                    disabledThumbColor = Color.Transparent,
+                    disabledActiveTrackColor = Color.Transparent
+                ),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .height(16.dp)
+                    .padding(horizontal = 0.dp)
+            )
+
+            // 5. Right-Side Action Controls: Like, Dislike, Resolution Selector & Watch Later
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(bottom = 12.dp, end = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Like / Favorite Button
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = onFavoriteToggle,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = "Star",
+                            tint = if (isFavorite) Color(0xFFFFD700) else Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Text("Star", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
                 }
-                Text("Later", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+
+                // HD Quality Selector Badge Button
+                Surface(
+                    shape = CircleShape,
+                    onClick = { showQualityDialog = true },
+                    color = Color.Black.copy(alpha = 0.45f),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = if (selectedQuality == "Auto") "HD" else selectedQuality.replace("p", ""),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+
+                // Watch Later Toggle (With Clear "Later" Label)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = onWatchLaterToggle,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                            contentDescription = "Watch Later",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Text("Later", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }
