@@ -84,7 +84,8 @@ fun ShortsPlayerView(
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
     var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
 
-    val exoPlayer = remember(videoId) {
+    // Use a single persistent ExoPlayer instance across Shorts swipes to avoid hardware codec exhaustion
+    val exoPlayer = remember {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -99,7 +100,7 @@ fun ShortsPlayerView(
         }
     }
 
-    DisposableEffect(exoPlayer) {
+    DisposableEffect(Unit) {
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onRenderedFirstFrame() {
                 isFirstFrameRendered = true
@@ -172,6 +173,12 @@ fun ShortsPlayerView(
         isPlayingState = true
         logs.clear()
         addLog("Extracting stream for videoId=$videoId")
+
+        // Safely stop previous short before preparing next one
+        try {
+            exoPlayer.stop()
+            exoPlayer.clearMediaItems()
+        } catch (e: Exception) { }
 
         try {
             // Check offline storage first
