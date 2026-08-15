@@ -156,6 +156,21 @@ fun YouTubePlayerView(
                     if (pos > 0 && !isDraggingScrubber) {
                         savedPositionMs = pos
                         currentPosMs = pos
+
+                        // Automatic SponsorBlock In-Video Segment Skip
+                        if (sponsorSegments.isNotEmpty()) {
+                            val segment = sponsorSegments.firstOrNull { seg ->
+                                pos >= seg.startMs && pos < (seg.endMs - 300)
+                            }
+                            if (segment != null) {
+                                exoPlayer.seekTo(segment.endMs + 100)
+                                val startFormatted = formatMs(segment.startMs)
+                                val endFormatted = formatMs(segment.endMs)
+                                val message = "⏭️ Skipped ${segment.category.replaceFirstChar { it.uppercase() }} ($startFormatted → $endFormatted)"
+                                addLog(message)
+                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     }
                     val dur = exoPlayer.duration
                     if (dur > 0) {
