@@ -414,7 +414,7 @@ fun HomeScreen(
             }
 
             // Category Filter Chips & Search Time Selector Row
-            val defaultCategories = listOf("All", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
+            val defaultCategories = listOf("All", "⏰ Last 24h", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
             val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
 
             if (searchQuery.isNotEmpty()) {
@@ -497,6 +497,14 @@ fun HomeScreen(
                     com.example.util.YouTubeUtils.searchYouTubeVideos(searchQuery)
                 }
                 searchList.filter { !isVideoWatched(it) }.distinctBy { it.youtubeId }
+            } else if (selectedCategory == "⏰ Last 24h") {
+                categoryVideos
+                    .filter {
+                        val timeLower = it.publishedTimeText.lowercase()
+                        (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
+                        !isVideoWatched(it)
+                    }
+                    .distinctBy { it.youtubeId }
             } else if (selectedCategory != "All") {
                 categoryVideos
                     .filter { it.category.equals(selectedCategory, ignoreCase = true) && !isVideoWatched(it) }

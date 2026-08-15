@@ -9,7 +9,9 @@ data class AlgorithmSettings(
     val shortsMode: String = "Carousel",     // "Carousel", "Hidden", "Separate"
     val minDurationMinutes: Int = 0,        // 0, 3, 5, 10 minutes
     val freshnessDecay: String = "Medium",   // "Slow", "Medium", "Fast"
-    val autoDeleteDownloads: String = "Never" // "Never", "24h", "48h", "7d", "30d", "Watched"
+    val autoDeleteDownloads: String = "Never", // "Never", "24h", "48h", "7d", "30d", "Watched"
+    val blockedKeywords: List<String> = emptyList(), // Custom keywords/channels permanently excluded
+    val boostedTopics: List<String> = emptyList()     // Custom topics/creators prioritized at the top
 )
 
 object RecommendationEngine {
@@ -66,9 +68,15 @@ object RecommendationEngine {
         if (videos.isEmpty()) return emptyList()
 
         val mutedNames = mutedChannels.map { it.channelName.lowercase() }.toSet()
-        val unmutedVideos = videos.filter { 
-            it.channelName.lowercase() !in mutedNames && 
-            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) 
+        val blockedLower = settings.blockedKeywords.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val boostedLower = settings.boostedTopics.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+
+        val unmutedVideos = videos.filter {
+            val titleLower = it.title.lowercase()
+            val chanLower = it.channelName.lowercase()
+            chanLower !in mutedNames &&
+            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) &&
+            blockedLower.none { blk -> titleLower.contains(blk) || chanLower.contains(blk) }
         }
 
         // 1. Identify top favorite channels
@@ -90,7 +98,15 @@ object RecommendationEngine {
             if (video.isFavorite) score += 40.0f
             if (video.isWatchLater) score += 25.0f
 
-            // B. Creator & Subscribed Profile Channel Boost
+            // B. User Boosted Topics & Creators (Top Priority)
+            val titleLower = video.title.lowercase()
+            val chanLower = video.channelName.lowercase()
+            val catLower = video.category.lowercase()
+            if (boostedLower.any { bst -> titleLower.contains(bst) || chanLower.contains(bst) || catLower.contains(bst) }) {
+                score += 90.0f
+            }
+
+            // C. Creator & Subscribed Profile Channel Boost
             val isSubscribedProfileChannel = com.example.data.model.WillRyanProfileData.subscribedChannels.any {
                 it.contains(video.channelName, ignoreCase = true) || video.channelName.contains(it, ignoreCase = true)
             }

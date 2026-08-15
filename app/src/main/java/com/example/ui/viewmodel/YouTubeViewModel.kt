@@ -207,11 +207,40 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val _categoryVideos = MutableStateFlow<List<VideoEntity>>(emptyList())
     val categoryVideos: StateFlow<List<VideoEntity>> = _categoryVideos.asStateFlow()
 
-    private val _algorithmSettings = MutableStateFlow(com.example.data.repository.AlgorithmSettings())
+    private fun saveAlgorithmSettings(settings: com.example.data.repository.AlgorithmSettings) {
+        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        algoPrefs.edit()
+            .putFloat("creator_weight", settings.creatorWeight)
+            .putFloat("discovery_ratio", settings.discoveryRatio)
+            .putString("shorts_mode", settings.shortsMode)
+            .putInt("min_duration", settings.minDurationMinutes)
+            .putString("freshness_decay", settings.freshnessDecay)
+            .putString("auto_delete", settings.autoDeleteDownloads)
+            .putStringSet("blocked_keywords", settings.blockedKeywords.toSet())
+            .putStringSet("boosted_topics", settings.boostedTopics.toSet())
+            .apply()
+    }
+
+    private fun loadAlgorithmSettings(): com.example.data.repository.AlgorithmSettings {
+        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        return com.example.data.repository.AlgorithmSettings(
+            creatorWeight = algoPrefs.getFloat("creator_weight", 0.7f),
+            discoveryRatio = algoPrefs.getFloat("discovery_ratio", 0.2f),
+            shortsMode = algoPrefs.getString("shorts_mode", "Carousel") ?: "Carousel",
+            minDurationMinutes = algoPrefs.getInt("min_duration", 0),
+            freshnessDecay = algoPrefs.getString("freshness_decay", "Medium") ?: "Medium",
+            autoDeleteDownloads = algoPrefs.getString("auto_delete", "Never") ?: "Never",
+            blockedKeywords = algoPrefs.getStringSet("blocked_keywords", emptySet())?.toList() ?: emptyList(),
+            boostedTopics = algoPrefs.getStringSet("boosted_topics", emptySet())?.toList() ?: emptyList()
+        )
+    }
+
+    private val _algorithmSettings = MutableStateFlow(loadAlgorithmSettings())
     val algorithmSettings: StateFlow<com.example.data.repository.AlgorithmSettings> = _algorithmSettings.asStateFlow()
 
     fun updateAlgorithmSettings(newSettings: com.example.data.repository.AlgorithmSettings) {
         _algorithmSettings.value = newSettings
+        saveAlgorithmSettings(newSettings)
         checkAndCleanExpiredDownloads()
     }
 

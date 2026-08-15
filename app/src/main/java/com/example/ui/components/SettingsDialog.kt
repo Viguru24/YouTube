@@ -1,14 +1,16 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.TvOff
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,9 +18,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.YouTubeRed
-
+import com.example.data.model.MutedChannelEntity
 import com.example.data.repository.AlgorithmSettings
+import com.example.ui.theme.YouTubeRed
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,10 +29,14 @@ fun SettingsDialog(
     onAdvertsToggle: (Boolean) -> Unit,
     algorithmSettings: AlgorithmSettings = AlgorithmSettings(),
     onAlgorithmSettingsChanged: (AlgorithmSettings) -> Unit = {},
-    mutedChannels: List<com.example.data.model.MutedChannelEntity> = emptyList(),
+    mutedChannels: List<MutedChannelEntity> = emptyList(),
     onUnmuteChannel: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    var newBlockedKeyword by remember { mutableStateOf("") }
+    var newBoostedTopic by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -48,7 +54,9 @@ fun SettingsDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState)
             ) {
                 // Adverts Toggle Card
                 Card(
@@ -269,6 +277,136 @@ fun SettingsDialog(
                                 onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "Watched")) },
                                 label = { Text("After Watched ✓", fontSize = 11.sp) }
                             )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // ⚡ Boosted Topics & Creators Manager
+                        Text(
+                            text = "⚡ Boosted Topics & Creators (Top Priority):",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = YouTubeRed
+                        )
+                        Text(
+                            text = "Floats matching topics and creators to the very top of your feed.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = newBoostedTopic,
+                                onValueChange = { newBoostedTopic = it },
+                                placeholder = { Text("e.g. AI Tech, Finance, SpaceX", fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Button(
+                                onClick = {
+                                    val trimmed = newBoostedTopic.trim()
+                                    if (trimmed.isNotEmpty() && trimmed !in algorithmSettings.boostedTopics) {
+                                        onAlgorithmSettingsChanged(
+                                            algorithmSettings.copy(boostedTopics = algorithmSettings.boostedTopics + trimmed)
+                                        )
+                                        newBoostedTopic = ""
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                                modifier = Modifier.height(44.dp)
+                            ) {
+                                Text("+ Boost", fontSize = 12.sp)
+                            }
+                        }
+                        if (algorithmSettings.boostedTopics.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                algorithmSettings.boostedTopics.forEach { topic ->
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(
+                                                algorithmSettings.copy(boostedTopics = algorithmSettings.boostedTopics.filter { it != topic })
+                                            )
+                                        },
+                                        label = { Text("⚡ $topic ✕", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 🚫 Blocked Keywords & Channels Manager
+                        Text(
+                            text = "🚫 Blocked Keywords & Channels (Permanent Exclude):",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFE53935)
+                        )
+                        Text(
+                            text = "Hides any video containing these keywords or channel names.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedTextField(
+                                value = newBlockedKeyword,
+                                onValueChange = { newBlockedKeyword = it },
+                                placeholder = { Text("e.g. drama, spoilers, gossip", fontSize = 12.sp) },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(50.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Button(
+                                onClick = {
+                                    val trimmed = newBlockedKeyword.trim()
+                                    if (trimmed.isNotEmpty() && trimmed !in algorithmSettings.blockedKeywords) {
+                                        onAlgorithmSettingsChanged(
+                                            algorithmSettings.copy(blockedKeywords = algorithmSettings.blockedKeywords + trimmed)
+                                        )
+                                        newBlockedKeyword = ""
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                                modifier = Modifier.height(44.dp)
+                            ) {
+                                Text("+ Block", fontSize = 12.sp)
+                            }
+                        }
+                        if (algorithmSettings.blockedKeywords.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                algorithmSettings.blockedKeywords.forEach { kw ->
+                                    FilterChip(
+                                        selected = true,
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(
+                                                algorithmSettings.copy(blockedKeywords = algorithmSettings.blockedKeywords.filter { it != kw })
+                                            )
+                                        },
+                                        label = { Text("🚫 $kw ✕", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
