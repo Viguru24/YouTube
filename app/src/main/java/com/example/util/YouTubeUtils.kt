@@ -6,7 +6,7 @@ import java.util.regex.Pattern
 object YouTubeUtils {
     // Regex pattern matching various YouTube URL formats
     private val YOUTUBE_ID_PATTERN: Pattern = Pattern.compile(
-        "(?:youtube(?:-nocookie)?\\.com/(?:[^/\\n\\s]+/.+/|(?:v|e(?:mbed)?)/|.*[?&]v=)|youtu\\.be/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})",
+        "(?:youtube(?:-nocookie)?\\.com/(?:[^/\\n\\s]+/.+/|(?:v|e(?:mbed)?|live)/|.*[?&]v=)|youtu\\.be/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})",
         Pattern.CASE_INSENSITIVE
     )
 
@@ -30,21 +30,17 @@ object YouTubeUtils {
      * Regular long/horizontal videos are NEVER classified as Shorts.
      */
     fun isShortVideo(video: VideoEntity): Boolean {
-        val durationSec = parseFormattedTimeToSeconds(video.durationText)
+        if (video.category.equals("Shorts", ignoreCase = true)) return true
 
-        // 1. Shorts are strictly 60 seconds or less (never > 60s)
-        if (durationSec !in 3..60) return false
+        val durationSec = parseFormattedTimeToSeconds(video.durationText)
+        if (durationSec > 90) return false // Long videos are never Shorts
 
         val titleLower = video.title.lowercase()
-
-        // 2. Must explicitly contain #shorts or #short tag or category "Shorts"
         val hasShortsTag = titleLower.contains("#shorts") ||
                            titleLower.contains("#short") ||
-                           titleLower.contains(" #shorts") ||
-                           titleLower.contains("/shorts/") ||
-                           video.category.equals("Shorts", ignoreCase = true)
+                           titleLower.contains("/shorts/")
 
-        return hasShortsTag
+        return hasShortsTag || (durationSec in 1..60 && video.durationText.isNotBlank())
     }
 
     /**

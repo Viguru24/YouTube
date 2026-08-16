@@ -143,20 +143,15 @@ object RecommendationEngine {
                 score += 65.0f // Boost fresh unknown topics to break recommendation fatigue
             }
 
-            // F. Freshness & Recency Decay Engine
+            // F. Freshness & Recency Engine (Massive boost for today's new uploads)
             val timeText = video.publishedTimeText.lowercase()
-            val recencyBonus = when (settings.freshnessDecay) {
-                "Fast" -> when {
-                    timeText.contains("hour") || timeText.contains("min") || timeText.contains("today") -> 45.0f
-                    timeText.contains("day") -> 25.0f
-                    else -> 0.0f
-                }
-                "Slow" -> 10.0f
-                else -> when { // Medium (Default)
-                    timeText.contains("hour") || timeText.contains("min") || timeText.contains("today") -> 25.0f
-                    timeText.contains("day") -> 15.0f
-                    else -> 5.0f
-                }
+            val recencyBonus = when {
+                timeText.contains("min") || timeText.contains("hour") || timeText.contains("just now") || timeText.contains("moment") -> 200.0f
+                timeText.contains("today") -> 150.0f
+                timeText.contains("1 day") || timeText.contains("yesterday") -> 80.0f
+                timeText.contains("day") -> 50.0f
+                timeText.contains("week") -> 25.0f
+                else -> 5.0f
             }
             score += recencyBonus
 
@@ -170,23 +165,31 @@ object RecommendationEngine {
 
             // H. Watched Progress / Deprioritize Already Watched Videos on Feed
             if (video.lastPositionSeconds > 0) {
-                score -= 30.0f // Deprioritize already watched videos to keep discovery feed fresh
+                score -= 60.0f // Deprioritize already watched videos to keep discovery feed fresh
             }
 
             Pair(video, score)
         }
 
-        // 3. Sort descending by score
-        val sortedList = scoredList.sortedByDescending { it.second }.map { it.first }
+        // 3. Sort descending by score, breaking ties with actual upload time
+        val sortedList = scoredList
+            .sortedWith(
+                compareByDescending<Pair<VideoEntity, Float>> { it.second }
+                    .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.first.publishedTimeText) }
+            )
+            .map { it.first }
 
-        // 4. Channel Diversity Cap: Enforce max 2 videos per channel in top 10
+        // 4. Channel Diversity Cap: Enforce max 3 videos per channel in top 15, prioritizing newest
         val finalDiverseList = mutableListOf<VideoEntity>()
         val channelCounts = mutableMapOf<String, Int>()
 
         for (v in sortedList) {
             val count = channelCounts.getOrDefault(v.channelName, 0)
-            if (finalDiverseList.size < 10 && count >= 2) {
-                continue // Skip to enforce channel diversity in top 10
+            val isFresh = v.publishedTimeText.contains("hour", ignoreCase = true) || v.publishedTimeText.contains("min", ignoreCase = true)
+            // Allow up to 4 fresh videos for active creators, 2 for older videos
+            val maxAllowed = if (isFresh) 4 else 2
+            if (finalDiverseList.size < 15 && count >= maxAllowed) {
+                continue
             }
             channelCounts[v.channelName] = count + 1
             finalDiverseList.add(v)

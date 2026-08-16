@@ -21,6 +21,18 @@ interface VideoDao {
     @Query("SELECT * FROM videos WHERE category = :category ORDER BY addedTimestamp DESC")
     fun getVideosByCategory(category: String): Flow<List<VideoEntity>>
 
+    @Query("SELECT * FROM videos ORDER BY addedTimestamp DESC")
+    suspend fun getAllVideosDirect(): List<VideoEntity>
+
+    @Query("SELECT * FROM videos WHERE category = :category ORDER BY addedTimestamp DESC")
+    suspend fun getVideosByCategoryDirect(category: String): List<VideoEntity>
+
+    @Query("SELECT * FROM videos WHERE channelName = :channelName OR channelName LIKE '%' || :channelName || '%' ORDER BY addedTimestamp DESC")
+    fun getVideosByChannel(channelName: String): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE channelName = :channelName OR channelName LIKE '%' || :channelName || '%' ORDER BY addedTimestamp DESC")
+    suspend fun getVideosByChannelDirect(channelName: String): List<VideoEntity>
+
     @Query("SELECT * FROM videos WHERE youtubeId = :youtubeId LIMIT 1")
     fun getVideoByIdFlow(youtubeId: String): Flow<VideoEntity?>
 
@@ -30,8 +42,14 @@ interface VideoDao {
     @Query("SELECT * FROM videos WHERE title LIKE '%' || :query || '%' OR channelName LIKE '%' || :query || '%'")
     fun searchVideos(query: String): Flow<List<VideoEntity>>
 
+    @Query("SELECT * FROM videos WHERE title LIKE '%' || :query || '%' OR channelName LIKE '%' || :query || '%'")
+    suspend fun searchVideosDirect(query: String): List<VideoEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVideo(video: VideoEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertVideos(videos: List<VideoEntity>)
 
     @Update
     suspend fun updateVideo(video: VideoEntity)
@@ -54,15 +72,12 @@ interface VideoDao {
     @Delete
     suspend fun deleteVideo(video: VideoEntity)
 
-    @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastPositionSeconds = 0")
+    @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastWatchedTimestamp = 0 AND lastPositionSeconds = 0")
     suspend fun deleteStaleUnsavedVideos(cutoffTimestamp: Long)
 
-    @Query("DELETE FROM videos WHERE isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastPositionSeconds = 0")
+    @Query("DELETE FROM videos WHERE isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastWatchedTimestamp = 0 AND lastPositionSeconds = 0")
     suspend fun clearUnsavedVideos()
 
-    @Query("DELETE FROM videos WHERE lastWatchedTimestamp > 0")
+    @Query("UPDATE videos SET lastWatchedTimestamp = 0")
     suspend fun clearWatchHistory()
-
-    @Query("UPDATE videos SET lastWatchedTimestamp = 0 WHERE lastPositionSeconds = 0")
-    suspend fun sanitizeWatchTimestamps()
 }

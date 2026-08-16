@@ -216,18 +216,19 @@ object YouTubeStreamExtractor {
             .filter { it != "HLS" && it != "Auto" }
             .sortedByDescending { it.replace("p", "").toIntOrNull() ?: 0 }
 
-        val bestUrl = bestCombinedUrl
+        // Prioritize non-throttled HLS adaptive stream or stable combined muxed stream
+        val bestUrl = qualityMap["HLS"]
+            ?: bestCombinedUrl
             ?: sortedQualities.firstOrNull()?.let { qualityMap[it] }
             ?: qualityMap["Auto"]
-            ?: qualityMap["HLS"]
             ?: qualityMap.values.firstOrNull()
 
-        if (bestUrl != null && !qualityMap.containsKey("Auto")) {
+        if (bestUrl != null) {
             qualityMap["Auto"] = bestUrl
         }
 
         val finalQualitiesList = if (sortedQualities.isNotEmpty()) {
-            (sortedQualities + "Auto").distinct()
+            (listOf("Auto") + sortedQualities).distinct()
         } else {
             listOf("Auto")
         }

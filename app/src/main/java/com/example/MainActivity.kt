@@ -385,7 +385,9 @@ fun MainAppContent(
                     onDeleteDownloadClick = {
                         viewModel.deleteDownloadedVideo(activeVideo!!)
                         android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    },
+                    subscribedCreators = subscribedCreators,
+                    onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) }
                 )
             }
         } else {
@@ -479,6 +481,7 @@ fun MainAppContent(
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
+                            onNotInterested = { v -> viewModel.markNotInterested(v) },
                             onOpenAddVideoDialog = { showAddVideoDialog = true },
                             onOpenGoogleAuth = { showGoogleAuthDialog = true },
                             onOpenSettings = { showSettingsDialog = true },
@@ -491,6 +494,7 @@ fun MainAppContent(
                             onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },
                             selectedSubscribedChannel = selectedSubscribedChannel,
                             onSubscribedChannelSelected = { channel -> viewModel.selectSubscribedChannel(channel) },
+                            onRefreshSubscribedChannel = { channel -> viewModel.refreshSubscribedChannel(channel) },
                             onOpenHistory = { selectedNavIndex = 2 },
                             onOpenManageTopicsAndCreators = { tab ->
                                 manageInitialTab = tab
@@ -542,9 +546,9 @@ fun MainAppContent(
                         category = cat,
                         durationText = dur,
                         initialNote = initNote,
-                        onSuccess = { newId ->
+                        onSuccess = { video ->
                             showAddVideoDialog = false
-                            viewModel.setActiveVideo(newId)
+                            viewModel.playVideo(video, isShort = com.example.util.YouTubeUtils.isShortVideo(video))
                         },
                         onError = onError
                     )

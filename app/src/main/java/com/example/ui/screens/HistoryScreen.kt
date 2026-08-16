@@ -1,20 +1,30 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.data.model.VideoEntity
-import com.example.ui.components.VideoCard
 import com.example.ui.theme.YouTubeRed
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,6 +56,14 @@ fun HistoryScreen(
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
+                        if (historyVideos.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(${historyVideos.size})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 actions = {
@@ -98,22 +116,24 @@ fun HistoryScreen(
                         Text(
                             text = "Videos you watch in your personal YouTube player will automatically appear here.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    items(historyVideos, key = { "hist_${it.youtubeId}" }) { video ->
-                        VideoCard(
+                    items(historyVideos, key = { "hist_grid_${it.youtubeId}" }) { video ->
+                        CompactHistoryBox(
                             video = video,
-                            onVideoClick = onVideoClick,
-                            onFavoriteToggle = onFavoriteToggle,
-                            onWatchLaterToggle = onWatchLaterToggle,
-                            onDeleteClick = onDeleteVideo
+                            onClick = { onVideoClick(video) },
+                            onRemove = { onDeleteVideo(video) }
                         )
                     }
                 }
@@ -143,5 +163,147 @@ fun HistoryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun CompactHistoryBox(
+    video: VideoEntity,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Thumbnail Box with Duration Badge and Progress Bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(Color.Black)
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Duration Badge
+                if (video.durationText.isNotBlank()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.75f),
+                        shape = RoundedCornerShape(3.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                    ) {
+                        Text(
+                            text = video.durationText,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+
+                // Delete X Button overlay in top-right
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(bottomStart = 8.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(26.dp)
+                        .clickable { onRemove() }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Remove from history",
+                            tint = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                // Red Watch Progress Bar
+                if (video.lastPositionSeconds > 0) {
+                    val totalSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(video.durationText)
+                    val progressFraction = if (totalSec > 0) {
+                        (video.lastPositionSeconds.toFloat() / totalSec.toFloat()).coerceIn(0.05f, 1f)
+                    } else 0.5f
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth(progressFraction)
+                            .height(3.dp)
+                            .background(YouTubeRed)
+                    )
+                }
+            }
+
+            // Text Info: Title, Channel, Time Ago
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 15.sp
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = video.channelName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 10.sp
+                )
+
+                if (video.lastWatchedTimestamp > 0) {
+                    val timeAgo = formatWatchedTimeAgo(video.lastWatchedTimestamp)
+                    Text(
+                        text = timeAgo,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatWatchedTimeAgo(timestamp: Long): String {
+    val diffMs = System.currentTimeMillis() - timestamp
+    val mins = diffMs / (1000 * 60)
+    val hours = mins / 60
+    val days = hours / 24
+
+    return when {
+        mins < 1 -> "Watched just now"
+        mins < 60 -> "Watched ${mins}m ago"
+        hours < 24 -> "Watched ${hours}h ago"
+        days == 1L -> "Watched yesterday"
+        else -> "Watched ${days}d ago"
     }
 }

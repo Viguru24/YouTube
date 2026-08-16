@@ -43,12 +43,36 @@ class YouTubeRepository(
         return videoDao.getVideosByCategory(category)
     }
 
+    suspend fun getAllVideosDirect(): List<VideoEntity> {
+        return videoDao.getAllVideosDirect()
+    }
+
+    suspend fun getVideosByCategoryDirect(category: String): List<VideoEntity> {
+        return videoDao.getVideosByCategoryDirect(category)
+    }
+
+    fun getVideosByChannel(channelName: String): Flow<List<VideoEntity>> {
+        return videoDao.getVideosByChannel(channelName)
+    }
+
+    suspend fun getVideosByChannelDirect(channelName: String): List<VideoEntity> {
+        return videoDao.getVideosByChannelDirect(channelName)
+    }
+
     fun getVideoById(youtubeId: String): Flow<VideoEntity?> {
         return videoDao.getVideoByIdFlow(youtubeId)
     }
 
+    suspend fun getVideoDirect(youtubeId: String): VideoEntity? {
+        return videoDao.getVideoById(youtubeId)
+    }
+
     fun searchVideos(query: String): Flow<List<VideoEntity>> {
         return videoDao.searchVideos(query)
+    }
+
+    suspend fun searchVideosDirect(query: String): List<VideoEntity> {
+        return videoDao.searchVideosDirect(query)
     }
 
     suspend fun saveVideo(video: VideoEntity) {
@@ -69,8 +93,8 @@ class YouTubeRepository(
         }
     }
 
-    suspend fun sanitizeWatchTimestamps() {
-        videoDao.sanitizeWatchTimestamps()
+    suspend fun saveVideos(videos: List<VideoEntity>) {
+        videos.forEach { saveVideo(it) }
     }
 
     suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
@@ -80,11 +104,23 @@ class YouTubeRepository(
     }
 
     suspend fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {
-        videoDao.updateFavorite(youtubeId, !currentFavorite)
+        val target = !currentFavorite
+        val existing = videoDao.getVideoById(youtubeId)
+        if (existing != null) {
+            videoDao.insertVideo(existing.copy(isFavorite = target))
+        } else {
+            videoDao.updateFavorite(youtubeId, target)
+        }
     }
 
     suspend fun toggleWatchLater(youtubeId: String, currentWatchLater: Boolean) {
-        videoDao.updateWatchLater(youtubeId, !currentWatchLater)
+        val target = !currentWatchLater
+        val existing = videoDao.getVideoById(youtubeId)
+        if (existing != null) {
+            videoDao.insertVideo(existing.copy(isWatchLater = target))
+        } else {
+            videoDao.updateWatchLater(youtubeId, target)
+        }
     }
 
     suspend fun updateWatchHistory(youtubeId: String, lastPosSeconds: Int) {

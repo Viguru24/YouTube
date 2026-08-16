@@ -26,7 +26,7 @@ object YouTubeCaptionService {
     /**
      * Fetches real captions and description for the video, and compiles an authentic AI summary.
      */
-    suspend fun getAuthenticSummary(video: VideoEntity): VideoAiTranscript = withContext(Dispatchers.IO) {
+    suspend fun getAuthenticSummary(video: VideoEntity, context: android.content.Context? = null): VideoAiTranscript = withContext(Dispatchers.IO) {
         val videoId = video.youtubeId
         val spokenSegments = mutableListOf<TranscriptSegment>()
         var fullDescription = ""
@@ -130,7 +130,25 @@ object YouTubeCaptionService {
         }
 
         // =========================================================================
-        // STEP 4: Build authentic summary from real spoken text or description
+        // STEP 4: Real LLM Summarizer (Gemini / Groq)
+        // =========================================================================
+        if (context != null && spokenSegments.isNotEmpty()) {
+            val fullTranscriptText = spokenSegments.joinToString(" ") { it.text }
+            val llmSummary = AiSummarizerClient.generateLlmSummary(
+                context = context,
+                videoId = video.youtubeId,
+                title = video.title,
+                channelName = video.channelName,
+                rawTranscriptText = fullTranscriptText,
+                spokenSegments = spokenSegments
+            )
+            if (llmSummary != null) {
+                return@withContext llmSummary
+            }
+        }
+
+        // =========================================================================
+        // STEP 5: Fallback Cleaned Synthesizer
         // =========================================================================
         if (spokenSegments.isNotEmpty()) {
             return@withContext buildSummaryFromRealTranscript(video, spokenSegments, extractedChapters)
@@ -509,6 +527,8 @@ object YouTubeCaptionService {
             if (hasTerminalPunctuation || isLongEnough) {
                 var clean = str
                     .replace(INTRO_GREETING_REGEX, "")
+                    .replace(Regex("(?i)\\b(uh|um|you know|i mean|like I said|and I mean|so basically|kind of|sort of)\\b,?\\s*"), "")
+                    .replace(Regex("(?i)\\b(all right,? we're going to do a little bit of a)\\b\\s*"), "")
                     .replace(Regex("""^\s*[>•\-\s]+"""), "")
                     .replace(Regex("""\s+"""), " ")
                     .trim()

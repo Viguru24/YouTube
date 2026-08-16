@@ -3,14 +3,20 @@ package com.example.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +36,7 @@ import com.example.data.model.VideoEntity
 import com.example.data.model.VideoNoteEntity
 import com.example.ui.components.YouTubePlayerView
 import com.example.ui.theme.GoldStar
+import com.example.ui.theme.YouTubeRed
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +64,8 @@ fun PlayerScreen(
     downloadProgress: Int = 0,
     onDownloadClick: () -> Unit = {},
     onDeleteDownloadClick: () -> Unit = {},
+    subscribedCreators: List<String> = emptyList(),
+    onToggleSubscribe: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
@@ -83,21 +92,20 @@ fun PlayerScreen(
                         )
                     },
                     navigationIcon = {
-                        IconButton(
-                            onClick = onBackClick,
-                            modifier = Modifier.testTag("player_back_btn")
-                        ) {
-                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                        IconButton(onClick = onBackClick) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     },
                     actions = {
-                        IconButton(
-                            onClick = onEnterPip,
-                            modifier = Modifier.testTag("player_pip_btn")
-                        ) {
+                        IconButton(onClick = { showDebugConsole = !showDebugConsole }) {
                             Icon(
-                                imageVector = Icons.Filled.PictureInPictureAlt,
-                                contentDescription = "Floating Pop-up Window"
+                                imageVector = Icons.Filled.BugReport,
+                                contentDescription = "Debug Logs",
+                                tint = if (showDebugConsole) YouTubeRed else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     },
@@ -109,191 +117,309 @@ fun PlayerScreen(
         },
         modifier = modifier
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isFullscreen || isInPipMode) PaddingValues(0.dp) else innerPadding)
+                .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
         ) {
-            // Native ExoPlayer view — touch to show controls (scrub bar, speed, quality, mute, ±10s)
-            YouTubePlayerView(
-                videoId = video.youtubeId,
-                startSeconds = video.lastPositionSeconds,
-                areAdvertsEnabled = areAdvertsEnabled,
-                showDebugConsole = showDebugConsole && !isInPipMode,
-                onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
-                playerCommandFlow = playerCommandFlow,
-                onPlayingStateChanged = onPlayingStateChanged,
-                onPlayerReady = { wv -> webViewInstance = wv },
-                modifier = if (isFullscreen || isInPipMode) {
-                    Modifier.fillMaxSize()
-                } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                }
-            )
+            val otherVideos = playlistVideos
+                .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
+                .sortedWith(compareBy<VideoEntity> {
+                    com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                })
 
-            // Below-video content (portrait non-PiP only)
-            if (!isFullscreen && !isInPipMode) {
-                // Strictly sort Up Next videos by published timestamp descending (Newest First!)
-                val otherVideos = playlistVideos
-                    .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
-                    .sortedWith(compareBy<VideoEntity> {
-                        com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                    })
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 32.dp)
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Video Player Area - Single persistent ExoPlayer instance across rotation & fullscreen
+                Box(
+                    modifier = (if (isFullscreen) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                    }).background(Color.Black)
                 ) {
-                    // Title + Channel + Below-Video Action Buttons
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                        ) {
-                            Text(
-                                text = video.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            val subDetails = listOfNotNull(
-                                video.channelName.takeIf { it.isNotBlank() },
-                                video.publishedTimeText.takeIf { it.isNotBlank() },
-                                video.viewCountText.takeIf { it.isNotBlank() }
-                            ).joinToString(" • ")
+                    YouTubePlayerView(
+                        videoId = video.youtubeId,
+                        startSeconds = video.lastPositionSeconds,
+                        areAdvertsEnabled = areAdvertsEnabled,
+                        showDebugConsole = showDebugConsole && !isInPipMode,
+                        onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
+                        playerCommandFlow = playerCommandFlow,
+                        onPlayingStateChanged = onPlayingStateChanged,
+                        onNextVideo = {
+                            val next = otherVideos.firstOrNull()
+                            if (next != null) onSelectOtherVideo(next)
+                        },
+                        onPreviousVideo = {
+                            val prev = playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
+                            if (prev != null) onSelectOtherVideo(prev)
+                        },
+                        onPlayerReady = { wv -> webViewInstance = wv },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
 
-                            Text(
-                                text = subDetails,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                // Below-video content (portrait non-PiP only)
+                if (!isFullscreen && !isInPipMode) {
 
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Sleek Compact Below-Video Action Bar
-                            Row(
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(bottom = 32.dp)
+                    ) {
+                        // Title + Channel + Below-Video Action Buttons
+                        item {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(horizontal = 16.dp, vertical = 12.dp)
                             ) {
-                                // 1. Like 👍
-                                IconButton(
-                                    onClick = {
-                                        onFavoriteToggle(video)
-                                        android.widget.Toast.makeText(context, if (!video.isFavorite) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.ThumbUp,
-                                        contentDescription = "Like",
-                                        tint = if (video.isFavorite) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                                Text(
+                                    text = video.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
 
-                                // 2. Save As 📁 (Subject / Playlist)
-                                IconButton(
-                                    onClick = { showSaveToSubjectDialog = true }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Folder,
-                                        contentDescription = "Save As",
-                                        tint = com.example.ui.theme.YouTubeRed,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-
-                                // 3. Watch Later 🕒
-                                IconButton(
-                                    onClick = { onWatchLaterToggle(video) }
-                                ) {
-                                    Icon(
-                                        imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                                        contentDescription = "Watch Later",
-                                        tint = if (video.isWatchLater) com.example.ui.theme.YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-
-                                // 4. ✨ 1-Tap AI Summary Button
-                                Box(
+                                // Creator Row + Subscribe Button
+                                Row(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(Color(0xFF8E24AA).copy(alpha = 0.15f))
-                                        .clickable { showAiSummaryModal = true }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = video.channelName.take(1).uppercase(),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 16.sp,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = video.channelName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val subDetails = listOfNotNull(
+                                                video.publishedTimeText.takeIf { it.isNotBlank() },
+                                                video.viewCountText.takeIf { it.isNotBlank() }
+                                            ).joinToString(" • ")
+                                            if (subDetails.isNotBlank()) {
+                                                Text(
+                                                    text = subDetails,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    val isSubbed = subscribedCreators.any { it.equals(video.channelName.trim(), ignoreCase = true) }
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable {
+                                                onToggleSubscribe(video.channelName)
+                                                val msg = if (!isSubbed) "Subscribed to ${video.channelName}! 🎉" else "Unsubscribed from ${video.channelName}"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (isSubbed) MaterialTheme.colorScheme.surfaceVariant else YouTubeRed
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            if (isSubbed) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Check,
+                                                    contentDescription = "Subscribed",
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = if (isSubbed) "Subscribed" else "Subscribe",
+                                                color = if (isSubbed) MaterialTheme.colorScheme.onSurface else Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Sleek Icon-Only YouTube Action Bar (No bulky text labels)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 1. Like 👍
+                                    var isLiked by remember(video.youtubeId, video.isFavorite) { mutableStateOf(video.isFavorite) }
+                                    IconButton(
+                                        onClick = {
+                                            isLiked = !isLiked
+                                            onFavoriteToggle(video)
+                                            android.widget.Toast.makeText(context, if (isLiked) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isLiked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                            contentDescription = "Like",
+                                            tint = if (isLiked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // 2. Dislike 👎
+                                    var isDisliked by remember(video.youtubeId) { mutableStateOf(false) }
+                                    IconButton(
+                                        onClick = {
+                                            isDisliked = !isDisliked
+                                            if (isDisliked) {
+                                                if (isLiked) {
+                                                    isLiked = false
+                                                    onFavoriteToggle(video)
+                                                }
+                                                onNotInterested(video)
+                                                android.widget.Toast.makeText(context, "Disliked 👎", android.widget.Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                android.widget.Toast.makeText(context, "Removed Dislike", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isDisliked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                            contentDescription = "Dislike",
+                                            tint = if (isDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // 3. Save As Folder 📁
+                                    IconButton(
+                                        onClick = { showSaveToSubjectDialog = true },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Folder,
+                                            contentDescription = "Save As",
+                                            tint = YouTubeRed,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // 4. Watch Later 🕒
+                                    var isWatchLater by remember(video.youtubeId, video.isWatchLater) { mutableStateOf(video.isWatchLater) }
+                                    IconButton(
+                                        onClick = {
+                                            isWatchLater = !isWatchLater
+                                            onWatchLaterToggle(video)
+                                            val msg = if (isWatchLater) "Saved to Watch Later 🕒" else "Removed from Watch Later"
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isWatchLater) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                                            contentDescription = "Watch Later",
+                                            tint = if (isWatchLater) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // 5. ✨ AI Summary
+                                    IconButton(
+                                        onClick = { showAiSummaryModal = true },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF8E24AA).copy(alpha = 0.18f))
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.AutoAwesome,
                                             contentDescription = "AI Summary",
                                             tint = Color(0xFFAB47BC),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Text(
-                                            text = "Summary",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color(0xFFAB47BC)
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
-                                }
 
-                                // 5. ✈️ 1-Tap Offline Download Button
-                                if (isDownloaded) {
+                                    // 6. ⬇️ Download
                                     IconButton(
-                                        onClick = onDeleteDownloadClick
+                                        onClick = {
+                                            if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
+                                        },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.CheckCircle,
-                                            contentDescription = "Downloaded",
-                                            tint = Color(0xFF4CAF50),
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                } else if (downloadProgress in 1..99) {
-                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(36.dp)) {
-                                        CircularProgressIndicator(
-                                            progress = { downloadProgress / 100f },
-                                            modifier = Modifier.size(26.dp),
-                                            color = com.example.ui.theme.YouTubeRed,
-                                            strokeWidth = 2.5.dp
-                                        )
-                                        Text(
-                                            text = "$downloadProgress",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = com.example.ui.theme.YouTubeRed
-                                        )
-                                    }
-                                } else {
-                                    IconButton(
-                                        onClick = onDownloadClick
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Download,
-                                            contentDescription = "Download Video",
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(22.dp)
-                                        )
+                                        if (isDownloaded) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CheckCircle,
+                                                contentDescription = "Downloaded",
+                                                tint = Color(0xFF4CAF50),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        } else if (downloadProgress in 1..99) {
+                                            CircularProgressIndicator(
+                                                progress = { downloadProgress / 100f },
+                                                modifier = Modifier.size(20.dp),
+                                                color = YouTubeRed,
+                                                strokeWidth = 2.dp
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Filled.Download,
+                                                contentDescription = "Download Video",
+                                                tint = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                            )
                         }
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                        )
-                    }
 
                     // Up Next
                     if (otherVideos.isNotEmpty()) {
@@ -316,6 +442,7 @@ fun PlayerScreen(
             }
         }
     }
+}
 
     if (showAiSummaryModal) {
         com.example.ui.components.AiSummaryModal(

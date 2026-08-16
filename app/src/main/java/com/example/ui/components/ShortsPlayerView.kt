@@ -319,14 +319,14 @@ fun ShortsPlayerView(
                         useController = false
                         keepScreenOn = true
                         setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     }
                 },
                 update = { view ->
                     if (view.player != exoPlayer) {
                         view.player = exoPlayer
                     }
-                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     view.onResume()
                 },
                 modifier = Modifier.fillMaxSize()
@@ -387,16 +387,7 @@ fun ShortsPlayerView(
             )
         }
 
-        var showPlayPauseIndicator by remember { mutableStateOf(false) }
-
-        LaunchedEffect(showPlayPauseIndicator) {
-            if (showPlayPauseIndicator) {
-                delay(800)
-                showPlayPauseIndicator = false
-            }
-        }
-
-        // Gesture Layer: Intercepts Tap (Play/Pause) and Vertical Drag Swipes (Next/Previous Short)
+        // Gesture Layer: Intercepts Tap (Play/Pause), Double-Tap (Seek +/-5s), and Vertical Drag Swipes (Next/Previous Short)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -404,7 +395,22 @@ fun ShortsPlayerView(
                     detectTapGestures(
                         onTap = {
                             isPlayingState = !isPlayingState
-                            showPlayPauseIndicator = true
+                            if (isPlayingState) {
+                                exoPlayer.play()
+                            } else {
+                                exoPlayer.pause()
+                            }
+                        },
+                        onDoubleTap = { offset ->
+                            val w = size.width
+                            if (offset.x < w / 2f) {
+                                val target = (exoPlayer.currentPosition - 5000L).coerceAtLeast(0L)
+                                exoPlayer.seekTo(target)
+                            } else {
+                                val dur = if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE
+                                val target = (exoPlayer.currentPosition + 5000L).coerceAtMost(dur)
+                                exoPlayer.seekTo(target)
+                            }
                         }
                     )
                 }
@@ -430,29 +436,6 @@ fun ShortsPlayerView(
                     )
                 }
         )
-
-        // Center Animated Play/Pause Feedback Indicator
-        androidx.compose.animation.AnimatedVisibility(
-            visible = showPlayPauseIndicator,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.65f),
-                modifier = Modifier.size(76.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = if (isPlayingState) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                        contentDescription = if (isPlayingState) "Play" else "Pause",
-                        tint = Color.White,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-            }
-        }
 
         // 2. Loading Overlay (Fades out cleanly when stream is ready)
         AnimatedVisibility(
@@ -587,29 +570,28 @@ fun ShortsPlayerView(
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .fillMaxWidth(0.78f)
+                    .fillMaxWidth(0.74f)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(bottom = 6.dp, start = 14.dp, end = 10.dp)
+                    .padding(bottom = 28.dp, start = 14.dp, end = 10.dp)
             ) {
                 Text(
                     text = channelName,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = videoTitle,
-                    fontSize = 11.sp,
-                    lineHeight = 13.sp,
-                    color = Color.White.copy(alpha = 0.85f),
-                    maxLines = 1,
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-
             }
 
-            // Thin, barely-visible scrubber — pinned to absolute bottom edge
+            // Interactive YouTube Red scrubber with clear visibility
             val activePosMs = if (isScrubbing) scrubPositionMs.toLong() else currentPositionMs
             val durMs = if (totalDurationMs > 0) totalDurationMs else 1L
             Slider(
@@ -624,9 +606,9 @@ fun ShortsPlayerView(
                 },
                 valueRange = 0f..durMs.toFloat(),
                 colors = SliderDefaults.colors(
-                    thumbColor = Color.White.copy(alpha = 0.45f),
-                    activeTrackColor = Color.White.copy(alpha = 0.6f),
-                    inactiveTrackColor = Color.White.copy(alpha = 0.12f),
+                    thumbColor = YouTubeRed,
+                    activeTrackColor = YouTubeRed,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.35f),
                     disabledThumbColor = Color.Transparent,
                     disabledActiveTrackColor = Color.Transparent
                 ),
@@ -634,31 +616,38 @@ fun ShortsPlayerView(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .height(16.dp)
-                    .padding(horizontal = 0.dp)
+                    .padding(bottom = 4.dp, start = 6.dp, end = 6.dp)
+                    .height(20.dp)
             )
 
             // 5. Right-Side Action Controls: Like, Dislike, Resolution Selector & Watch Later
+            var localIsFavorite by remember(videoId, isFavorite) { mutableStateOf(isFavorite) }
+            var localIsDisliked by remember(videoId, isDisliked) { mutableStateOf(isDisliked) }
+
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(bottom = 12.dp, end = 14.dp),
+                    .padding(bottom = 28.dp, end = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // 1. Thumbs Up (Like) Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onThumbsUp,
+                        onClick = {
+                            localIsFavorite = !localIsFavorite
+                            if (localIsFavorite) localIsDisliked = false
+                            onThumbsUp()
+                        },
                         modifier = Modifier
                             .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                            imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                             contentDescription = "Like",
-                            tint = if (isFavorite) YouTubeRed else Color.White,
+                            tint = if (localIsFavorite) YouTubeRed else Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -668,15 +657,19 @@ fun ShortsPlayerView(
                 // 2. Thumbs Down (Dislike) Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onThumbsDown,
+                        onClick = {
+                            localIsDisliked = !localIsDisliked
+                            if (localIsDisliked) localIsFavorite = false
+                            onThumbsDown()
+                        },
                         modifier = Modifier
                             .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                            imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                             contentDescription = "Dislike",
-                            tint = if (isDisliked) Color(0xFFE53935) else Color.White,
+                            tint = if (localIsDisliked) Color(0xFFE53935) else Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -686,15 +679,18 @@ fun ShortsPlayerView(
                 // 3. Star / Favorite Button
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     IconButton(
-                        onClick = onFavoriteToggle,
+                        onClick = {
+                            localIsFavorite = !localIsFavorite
+                            onFavoriteToggle()
+                        },
                         modifier = Modifier
                             .size(40.dp)
                             .background(Color.Black.copy(alpha = 0.45f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            imageVector = if (localIsFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = "Star",
-                            tint = if (isFavorite) Color(0xFFFFD700) else Color.White,
+                            tint = if (localIsFavorite) Color(0xFFFFD700) else Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }

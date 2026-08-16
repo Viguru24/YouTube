@@ -45,11 +45,17 @@ fun AiSummaryModal(
     var transcript by remember(video.youtubeId) { mutableStateOf<VideoAiTranscript?>(null) }
     var isLoading by remember(video.youtubeId) { mutableStateOf(true) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Summary, 1 = Highlights / Chapters
+    var showApiKeyCard by remember { mutableStateOf(!com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(video.youtubeId) {
+    var selectedProvider by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getAiProvider(context)) }
+    var geminiKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGeminiApiKey(context)) }
+    var groqKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGroqApiKey(context)) }
+
+    LaunchedEffect(video.youtubeId, refreshTrigger) {
         isLoading = true
         try {
-            val result = YouTubeCaptionService.getAuthenticSummary(video)
+            val result = YouTubeCaptionService.getAuthenticSummary(video, context)
             transcript = result
         } catch (e: Exception) {
             // Fallback
@@ -117,15 +123,24 @@ fun AiSummaryModal(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
+                        val provider = com.example.data.remote.AiSummarizerClient.getAiProvider(context)
+                        val hasKey = com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)
                         Text(
-                            text = if (isLoading) "Analyzing real audio transcript..." else "Real Caption & Spoken Content AI",
+                            text = if (isLoading) "Generating AI summary..." else if (hasKey) "✨ Powered by ${if (provider == "groq") "Groq Llama 3" else "Google Gemini"}" else "Real Caption & Spoken Content AI",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showApiKeyCard = !showApiKeyCard }) {
+                        Icon(
+                            imageVector = Icons.Filled.Key,
+                            contentDescription = "AI Model Settings",
+                            tint = if (com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)) Color(0xFF4CAF50) else Color(0xFFFFB300)
+                        )
+                    }
                     if (transcript != null) {
                         IconButton(
                             onClick = {
@@ -148,6 +163,73 @@ fun AiSummaryModal(
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // Expandable AI Settings Card
+            if (showApiKeyCard) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Connect AI Key for Executive Summaries", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = selectedProvider == "gemini",
+                                onClick = { selectedProvider = "gemini" },
+                                label = { Text("Gemini 1.5 (Free)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            FilterChip(
+                                selected = selectedProvider == "groq",
+                                onClick = { selectedProvider = "groq" },
+                                label = { Text("Groq Llama 3 (Free)") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (selectedProvider == "gemini") {
+                            OutlinedTextField(
+                                value = geminiKeyInput,
+                                onValueChange = { geminiKeyInput = it },
+                                label = { Text("Gemini API Key") },
+                                placeholder = { Text("AIzaSy...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = groqKeyInput,
+                                onValueChange = { groqKeyInput = it },
+                                label = { Text("Groq API Key") },
+                                placeholder = { Text("gsk_...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { showApiKeyCard = false }) { Text("Dismiss") }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Button(
+                                onClick = {
+                                    com.example.data.remote.AiSummarizerClient.setAiProvider(context, selectedProvider)
+                                    if (selectedProvider == "gemini") {
+                                        com.example.data.remote.AiSummarizerClient.setGeminiApiKey(context, geminiKeyInput)
+                                    } else {
+                                        com.example.data.remote.AiSummarizerClient.setGroqApiKey(context, groqKeyInput)
+                                    }
+                                    Toast.makeText(context, "AI Model Saved! Generating...", Toast.LENGTH_SHORT).show()
+                                    showApiKeyCard = false
+                                    refreshTrigger++
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                            ) {
+                                Text("Save & Summarize ✨", color = Color.White, fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }

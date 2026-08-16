@@ -59,6 +59,7 @@ fun HomeScreen(
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
     onDeleteVideo: (VideoEntity) -> Unit,
+    onNotInterested: (VideoEntity) -> Unit = onDeleteVideo,
     onOpenAddVideoDialog: () -> Unit,
     onOpenGoogleAuth: () -> Unit,
     onOpenSettings: () -> Unit = {},
@@ -74,6 +75,7 @@ fun HomeScreen(
     onTimeFilterSelected: (String) -> Unit = {},
     selectedSubscribedChannel: String = "",
     onSubscribedChannelSelected: (String) -> Unit = {},
+    onRefreshSubscribedChannel: (String) -> Unit = {},
     onOpenHistory: () -> Unit = {},
     onOpenManageTopicsAndCreators: (initialTab: Int) -> Unit = {},
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
@@ -149,6 +151,9 @@ fun HomeScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
+                                coroutineScope.launch {
+                                    gridState.scrollToItem(0)
+                                }
                                 onCategorySelected("All")
                                 onSearchQueryChanged("")
                                 onSubscribedChannelSelected("")
@@ -503,21 +508,30 @@ fun HomeScreen(
             }
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
-            // Automatically remove any video that has been watched or partially watched from the feed
+            // Automatically remove any video that has been watched, disliked, or muted from the feed
             val watchedIds = remember(historyVideos) {
                 historyVideos.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
             }
 
-            fun isVideoWatched(video: VideoEntity): Boolean {
-                return video.youtubeId in watchedIds || video.lastPositionSeconds > 0
+            val mutedChannelNames = remember(mutedChannels) {
+                mutedChannels.map { it.channelName.lowercase().trim() }.toSet()
             }
+
+            fun isVideoHidden(video: VideoEntity, allowWatched: Boolean = false): Boolean {
+                val isWatched = !allowWatched && (video.youtubeId in watchedIds)
+                val isDisliked = video.youtubeId in dislikedVideoIds
+                val isMuted = video.channelName.lowercase().trim() in mutedChannelNames
+                return isWatched || isDisliked || isMuted
+            }
+
+            val candidateList = categoryVideos.ifEmpty { videos }
 
             val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
                 val targetCh = selectedSubscribedChannel.lowercase().trim()
-                categoryVideos.filter { video ->
+                candidateList.filter { video ->
                     val vCh = video.channelName.lowercase().trim()
                     (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
-                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoWatched(video)
+                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video, allowWatched = true)
                 }.distinctBy { it.youtubeId }
             } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
                 val searchList = if (liveSearchResults.isNotEmpty()) {
@@ -525,24 +539,31 @@ fun HomeScreen(
                 } else {
                     com.example.util.YouTubeUtils.searchYouTubeVideos(searchQuery)
                 }
-                searchList.filter { !isVideoWatched(it) }.distinctBy { it.youtubeId }
+                searchList.filter { !isVideoHidden(it, allowWatched = true) }.distinctBy { it.youtubeId }
             } else if (selectedCategory == "⏰ Last 24h") {
-                categoryVideos
+                candidateList
                     .filter {
                         val timeLower = it.publishedTimeText.lowercase()
                         (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
-                        !isVideoWatched(it)
+                        !isVideoHidden(it)
                     }
                     .distinctBy { it.youtubeId }
             } else if (selectedCategory != "All") {
-                categoryVideos
-                    .filter { it.category.equals(selectedCategory, ignoreCase = true) && !isVideoWatched(it) }
+                candidateList
+                    .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
                     .distinctBy { it.youtubeId }
             } else {
-                // Main Home Feed: strictly filter out any video that has been watched or partially watched!
-                categoryVideos
-                    .filter { !isVideoWatched(it) }
+                // Main Home Feed: filter out any video that has been watched, disliked, or muted!
+                val filtered = candidateList
+                    .filter { !isVideoHidden(it) }
                     .distinctBy { it.youtubeId }
+                // If aggressive watch filtering leaves fewer than 4 items, backfill with not-disliked candidate items
+                if (filtered.size >= 4) {
+                    filtered
+                } else {
+                    val notDisliked = candidateList.filter { it.youtubeId !in dislikedVideoIds && it.channelName.lowercase().trim() !in mutedChannelNames }
+                    (filtered + notDisliked).distinctBy { it.youtubeId }
+                }
             }
 
             // Apply Upload Date Time Selector Filter to Search Results
@@ -572,8 +593,8 @@ fun HomeScreen(
                 settings = algorithmSettings
             )
 
-            val displayList = if (selectedSubscribedChannel.isNotBlank()) {
-                rawDisplayList.sortedWith(
+            val displayList = if (selectedSubscribedChannel.isNotBlank() || searchQuery.isNotBlank()) {
+                timeFilteredList.sortedWith(
                     compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         .thenByDescending { it.addedTimestamp }
                 )
@@ -667,13 +688,26 @@ fun HomeScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = YouTubeRed
                                 )
-                                TextButton(
-                                    onClick = {
-                                        onSubscribedChannelSelected("")
-                                        onCategorySelected("All")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { onRefreshSubscribedChannel(selectedSubscribedChannel) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Refresh,
+                                            contentDescription = "Refresh Channel",
+                                            tint = YouTubeRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
-                                ) {
-                                    Text("Clear ✖", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    TextButton(
+                                        onClick = {
+                                            onSubscribedChannelSelected("")
+                                            onCategorySelected("All")
+                                        }
+                                    ) {
+                                        Text("Clear ✖", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -740,9 +774,9 @@ fun HomeScreen(
 
                     // 2. Main Videos Section (2-Column Grid)
                     itemsIndexed(mainVideosList, key = { _, video -> video.youtubeId }) { index, video ->
-                        // Infinite scroll trigger: only when reaching the very last item in a batch of at least 16 videos
-                        if (mainVideosList.size >= 16 && index == mainVideosList.size - 1) {
-                            LaunchedEffect(mainVideosList.size) {
+                        // Infinite scroll trigger: prefetch when within last 4 items of current batch
+                        if (index >= (mainVideosList.size - 4).coerceAtLeast(0)) {
+                            LaunchedEffect(index, mainVideosList.size) {
                                 onLoadMore()
                             }
                         }
@@ -764,6 +798,27 @@ fun HomeScreen(
                             onSaveToSubject = { v -> videoToSaveToSubject = v },
                             onNotInterested = onDeleteVideo
                         )
+                    }
+
+                    // Bottom loading indicator & infinite scroll anchor
+                    if (mainVideosList.isNotEmpty()) {
+                        item(span = { GridItemSpan(2) }) {
+                            LaunchedEffect(Unit) {
+                                onLoadMore()
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = YouTubeRed,
+                                    strokeWidth = 2.5.dp
+                                )
+                            }
+                        }
                     }
                 }
 

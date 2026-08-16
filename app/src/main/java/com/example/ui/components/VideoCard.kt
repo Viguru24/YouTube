@@ -45,6 +45,20 @@ fun VideoCard(
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     var showMenu by remember { mutableStateOf(false) }
 
+    fun formatDisplayChannelName(name: String): String {
+        val trimmed = name.trim()
+        return when {
+            trimmed.equals("Benny Johnson", ignoreCase = true) -> "Benny J"
+            trimmed.equals("Tal Oran - TheTraveler", ignoreCase = true) -> "Tal Oran"
+            trimmed.equals("Warren Smith - Secret Scholar", ignoreCase = true) -> "Warren Smith"
+            trimmed.equals("LARRY with Larry Elder", ignoreCase = true) -> "Larry Elder"
+            trimmed.equals("The Podcast of the Lotus Eaters", ignoreCase = true) -> "Lotus Eaters"
+            trimmed.equals("Dr. Steve Turley", ignoreCase = true) -> "Steve Turley"
+            trimmed.length > 18 -> trimmed.take(16) + "…"
+            else -> trimmed
+        }
+    }
+
     Card(
         onClick = { onVideoClick(video) },
         modifier = modifier
@@ -76,7 +90,7 @@ fun VideoCard(
                     contentScale = ContentScale.Crop
                 )
 
-                // Published Time Badge Top Left (compact: 3D, 2M, 1Y)
+                // Published Time Badge Top Left (compact: 6H, 1D, 2M)
                 if (hasValidTime) {
                     val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
                     if (compactTime.isNotBlank()) {
@@ -84,16 +98,16 @@ fun VideoCard(
                             modifier = Modifier
                                 .padding(4.dp)
                                 .align(Alignment.TopStart)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Color.Black.copy(alpha = 0.7f))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.75f))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = compactTime,
                                 color = Color.White,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 8.sp
+                                fontSize = 9.sp
                             )
                         }
                     }
@@ -132,7 +146,7 @@ fun VideoCard(
                             .padding(6.dp)
                             .align(Alignment.BottomEnd)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.8f))
+                            .background(Color.Black.copy(alpha = 0.85f))
                             .padding(horizontal = 5.dp, vertical = 2.dp)
                     ) {
                         Text(
@@ -170,14 +184,14 @@ fun VideoCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = video.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 13.sp, lineHeight = 16.sp),
+                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 12.5.sp, lineHeight = 15.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
@@ -186,18 +200,29 @@ fun VideoCard(
 
                     Spacer(modifier = Modifier.height(3.dp))
 
-                    val subText = listOfNotNull(
-                        video.channelName.takeIf { it.isNotBlank() },
-                        video.viewCountText.takeIf { it.isNotBlank() }
-                    ).joinToString(" • ")
-
                     Text(
-                        text = subText,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = formatDisplayChannelName(video.channelName),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = YouTubeRed,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    val timeAndViews = listOfNotNull(
+                        video.publishedTimeText.takeIf { it.isNotBlank() },
+                        video.viewCountText.takeIf { it.isNotBlank() }
+                    ).joinToString(" • ")
+
+                    if (timeAndViews.isNotBlank()) {
+                        Text(
+                            text = timeAndViews,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 Box {
