@@ -288,7 +288,7 @@ fun PlayerScreen(
                                             android.widget.Toast.makeText(context, if (isLiked) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(if (isLiked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -296,7 +296,7 @@ fun PlayerScreen(
                                             imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                             contentDescription = "Like",
                                             tint = if (isLiked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -317,7 +317,7 @@ fun PlayerScreen(
                                             }
                                         },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(if (isDisliked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -325,7 +325,7 @@ fun PlayerScreen(
                                             imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                                             contentDescription = "Dislike",
                                             tint = if (isDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -333,7 +333,7 @@ fun PlayerScreen(
                                     IconButton(
                                         onClick = { showSaveToSubjectDialog = true },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -341,7 +341,7 @@ fun PlayerScreen(
                                             imageVector = Icons.Filled.Folder,
                                             contentDescription = "Save As",
                                             tint = YouTubeRed,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -355,7 +355,7 @@ fun PlayerScreen(
                                             android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(if (isWatchLater) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -363,7 +363,7 @@ fun PlayerScreen(
                                             imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
                                             contentDescription = "Watch Later",
                                             tint = if (isWatchLater) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -378,7 +378,7 @@ fun PlayerScreen(
                                             context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
                                         },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -386,7 +386,7 @@ fun PlayerScreen(
                                             imageVector = Icons.Filled.Share,
                                             contentDescription = "Share Link",
                                             tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -394,7 +394,7 @@ fun PlayerScreen(
                                     IconButton(
                                         onClick = { showAiSummaryModal = true },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(Color(0xFF8E24AA).copy(alpha = 0.18f))
                                     ) {
@@ -402,7 +402,7 @@ fun PlayerScreen(
                                             imageVector = Icons.Filled.AutoAwesome,
                                             contentDescription = "AI Summary",
                                             tint = Color(0xFFAB47BC),
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
                                     }
 
@@ -412,7 +412,7 @@ fun PlayerScreen(
                                             if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
                                         },
                                         modifier = Modifier
-                                            .size(42.dp)
+                                            .size(35.dp)
                                             .clip(CircleShape)
                                             .background(MaterialTheme.colorScheme.surfaceVariant)
                                     ) {
@@ -421,12 +421,12 @@ fun PlayerScreen(
                                                 imageVector = Icons.Filled.CheckCircle,
                                                 contentDescription = "Downloaded",
                                                 tint = Color(0xFF4CAF50),
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         } else if (downloadProgress in 1..99) {
                                             CircularProgressIndicator(
                                                 progress = { downloadProgress / 100f },
-                                                modifier = Modifier.size(20.dp),
+                                                modifier = Modifier.size(18.dp),
                                                 color = YouTubeRed,
                                                 strokeWidth = 2.dp
                                             )
@@ -435,7 +435,7 @@ fun PlayerScreen(
                                                 imageVector = Icons.Filled.Download,
                                                 contentDescription = "Download Video",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
