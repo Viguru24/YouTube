@@ -112,87 +112,93 @@ object AiSummarizerClient {
         transcript: String,
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? {
-        try {
-            val prompt = """
-                You are an intelligent executive video summarizer.
-                Summarize the following YouTube video accurately and intelligently.
-                
-                Video Title: "$title"
-                Channel / Creator: "$channelName"
-                
-                Transcript of spoken words:
-                $transcript
-                
-                Return a valid JSON object matching EXACTLY this structure:
-                {
-                  "topicPremise": "A clear, well-written 2-3 sentence overview of what the video is about and its main thesis.",
-                  "executiveSummary": "A high-level executive summary of the entire video content.",
-                  "keyTakeaways": [
-                    "Actionable key takeaway 1",
-                    "Actionable key takeaway 2",
-                    "Actionable key takeaway 3"
-                  ],
-                  "discussionPoints": [
-                    "Detailed discussion point 1 covering specific key topic explained in the video",
-                    "Detailed discussion point 2 covering another major topic",
-                    "Detailed discussion point 3...",
-                    "Detailed discussion point 4..."
-                  ],
-                  "conclusion": "The video's final substantive conclusion or verdict (do NOT include host outro, like/subscribe plugs, or filler)."
-                }
-            """.trimIndent()
+        val models = listOf("gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro")
+        val prompt = """
+            You are an elite, highly intelligent executive video analyst and summarizer.
+            Analyze the following YouTube video and provide a comprehensive, deep, and beautifully written executive summary.
+            
+            Video Title: "$title"
+            Channel / Creator: "$channelName"
+            
+            Spoken Word Transcript:
+            $transcript
+            
+            Provide a complete, high-quality, professional executive summary in valid JSON matching this schema:
+            {
+              "topicPremise": "A clear, compelling, well-written 2-3 sentence overview of what the video is about and its central thesis.",
+              "executiveSummary": "A comprehensive executive briefing summarizing the main storyline, arguments, and facts.",
+              "keyTakeaways": [
+                "Key takeaway 1 with specific facts or metrics",
+                "Key takeaway 2 with specific facts or metrics",
+                "Key takeaway 3 with specific facts or metrics"
+              ],
+              "discussionPoints": [
+                "Detailed discussion point 1 covering the first major theme or discovery",
+                "Detailed discussion point 2 covering the technical or narrative details",
+                "Detailed discussion point 3 covering implications and broader context",
+                "Detailed discussion point 4 covering critical analysis"
+              ],
+              "conclusion": "A strong, substantive concluding summary of the creator's final takeaways and verdict (strictly excluding outro filler, like/subscribe plugs, or sponsor mentions)."
+            }
+        """.trimIndent()
 
-            val jsonBody = JSONObject().apply {
-                val contentsArray = JSONArray().apply {
-                    val contentObj = JSONObject().apply {
-                        put("role", "user")
-                        val partsArray = JSONArray().apply {
-                            put(JSONObject().put("text", prompt))
-                        }
-                        put("parts", partsArray)
+        val jsonBody = JSONObject().apply {
+            val contentsArray = JSONArray().apply {
+                val contentObj = JSONObject().apply {
+                    put("role", "user")
+                    val partsArray = JSONArray().apply {
+                        put(JSONObject().put("text", prompt))
                     }
-                    put(contentObj)
+                    put("parts", partsArray)
                 }
-                put("contents", contentsArray)
-                put("generationConfig", JSONObject().apply {
-                    put("responseMimeType", "application/json")
-                    put("temperature", 0.2)
-                })
+                put(contentObj)
             }
-
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val requestBody = jsonBody.toString().toRequestBody(mediaType)
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
-
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .header("Content-Type", "application/json")
-                .build()
-
-            val response = httpClient.newCall(request).execute()
-            val responseStr = response.body?.string().orEmpty()
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Gemini API failed (${response.code}): $responseStr")
-                return null
-            }
-
-            val respJson = JSONObject(responseStr)
-            val candidates = respJson.optJSONArray("candidates") ?: return null
-            if (candidates.length() == 0) return null
-
-            val candidate = candidates.getJSONObject(0)
-            val content = candidate.optJSONObject("content") ?: return null
-            val parts = content.optJSONArray("parts") ?: return null
-            if (parts.length() == 0) return null
-
-            val jsonText = parts.getJSONObject(0).optString("text")
-            return parseLlmJsonResponse(videoId, channelName, jsonText, spokenSegments)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error calling Gemini API", e)
-            return null
+            put("contents", contentsArray)
+            put("generationConfig", JSONObject().apply {
+                put("responseMimeType", "application/json")
+                put("temperature", 0.2)
+            })
         }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toString().toRequestBody(mediaType)
+
+        for (model in models) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val responseStr = response.body?.string().orEmpty()
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(responseStr)
+                        val candidates = respJson.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val candidate = candidates.getJSONObject(0)
+                            val content = candidate.optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                val jsonText = parts.getJSONObject(0).optString("text")
+                                val parsed = parseLlmJsonResponse(videoId, channelName, jsonText, spokenSegments)
+                                if (parsed != null) {
+                                    Log.d(TAG, "Successfully generated AI summary with Gemini ($model)")
+                                    return parsed
+                                }
+                            }
+                        }
+                    } else {
+                        Log.e(TAG, "Gemini ($model) failed with code ${response.code}: ${responseStr.take(120)}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calling Gemini ($model)", e)
+            }
+        }
+        return null
     }
 
     private fun callGroq(
@@ -203,85 +209,101 @@ object AiSummarizerClient {
         transcript: String,
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? {
-        try {
-            val systemPrompt = "You are an intelligent executive video summarizer. Output ONLY valid JSON."
-            val userPrompt = """
-                Summarize the following YouTube video accurately and intelligently.
-                
-                Video Title: "$title"
-                Channel / Creator: "$channelName"
-                
-                Transcript:
-                $transcript
-                
-                Return a valid JSON object matching EXACTLY this structure:
-                {
-                  "topicPremise": "A clear, well-written 2-3 sentence overview of what the video is about and its main thesis.",
-                  "executiveSummary": "A high-level executive summary of the entire video content.",
-                  "keyTakeaways": [
-                    "Actionable key takeaway 1",
-                    "Actionable key takeaway 2",
-                    "Actionable key takeaway 3"
-                  ],
-                  "discussionPoints": [
-                    "Detailed discussion point 1 covering specific key topic explained in the video",
-                    "Detailed discussion point 2 covering another major topic",
-                    "Detailed discussion point 3...",
-                    "Detailed discussion point 4..."
-                  ],
-                  "conclusion": "The video's final substantive conclusion or verdict (do NOT include host outro, like/subscribe plugs, or filler)."
-                }
-            """.trimIndent()
-
-            val jsonBody = JSONObject().apply {
-                put("model", "llama-3.3-70b-versatile")
-                val messagesArray = JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", systemPrompt)
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userPrompt)
-                    })
-                }
-                put("messages", messagesArray)
-                put("response_format", JSONObject().put("type", "json_object"))
-                put("temperature", 0.2)
+        val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768")
+        val systemPrompt = "You are an elite, highly intelligent executive video analyst and summarizer. Output ONLY valid JSON."
+        val userPrompt = """
+            Analyze the following YouTube video and provide a comprehensive, deep, and beautifully written executive summary.
+            
+            Video Title: "$title"
+            Channel / Creator: "$channelName"
+            
+            Spoken Word Transcript:
+            $transcript
+            
+            Provide a complete, high-quality, professional executive summary in valid JSON matching this schema:
+            {
+              "topicPremise": "A clear, compelling, well-written 2-3 sentence overview of what the video is about and its central thesis.",
+              "executiveSummary": "A comprehensive executive briefing summarizing the main storyline, arguments, and facts.",
+              "keyTakeaways": [
+                "Key takeaway 1 with specific facts or metrics",
+                "Key takeaway 2 with specific facts or metrics",
+                "Key takeaway 3 with specific facts or metrics"
+              ],
+              "discussionPoints": [
+                "Detailed discussion point 1 covering the first major theme or discovery",
+                "Detailed discussion point 2 covering the technical or narrative details",
+                "Detailed discussion point 3 covering implications and broader context",
+                "Detailed discussion point 4 covering critical analysis"
+              ],
+              "conclusion": "A strong, substantive concluding summary of the creator's final takeaways and verdict (strictly excluding outro filler, like/subscribe plugs, or sponsor mentions)."
             }
+        """.trimIndent()
 
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val requestBody = jsonBody.toString().toRequestBody(mediaType)
-            val url = "https://api.groq.com/openai/v1/chat/completions"
+        val mediaType = "application/json; charset=utf-8".toMediaType()
 
-            val request = Request.Builder()
-                .url(url)
-                .post(requestBody)
-                .header("Authorization", "Bearer $apiKey")
-                .header("Content-Type", "application/json")
-                .build()
+        for (model in models) {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("model", model)
+                    val messagesArray = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "system")
+                            put("content", systemPrompt)
+                        })
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", userPrompt)
+                        })
+                    }
+                    put("messages", messagesArray)
+                    put("response_format", JSONObject().put("type", "json_object"))
+                    put("temperature", 0.2)
+                }
 
-            val response = httpClient.newCall(request).execute()
-            val responseStr = response.body?.string().orEmpty()
+                val requestBody = jsonBody.toString().toRequestBody(mediaType)
+                val url = "https://api.groq.com/openai/v1/chat/completions"
 
-            if (!response.isSuccessful) {
-                Log.e(TAG, "Groq API failed (${response.code}): $responseStr")
-                return null
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val responseStr = response.body?.string().orEmpty()
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(responseStr)
+                        val choices = respJson.optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            val choice = choices.getJSONObject(0)
+                            val message = choice.optJSONObject("message")
+                            val jsonText = message?.optString("content").orEmpty()
+                            val parsed = parseLlmJsonResponse(videoId, channelName, jsonText, spokenSegments)
+                            if (parsed != null) {
+                                Log.d(TAG, "Successfully generated AI summary with Groq ($model)")
+                                return parsed
+                            }
+                        }
+                    } else {
+                        Log.e(TAG, "Groq ($model) failed with code ${response.code}: ${responseStr.take(120)}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error calling Groq ($model)", e)
             }
-
-            val respJson = JSONObject(responseStr)
-            val choices = respJson.optJSONArray("choices") ?: return null
-            if (choices.length() == 0) return null
-
-            val choice = choices.getJSONObject(0)
-            val message = choice.optJSONObject("message") ?: return null
-            val jsonText = message.optString("content")
-
-            return parseLlmJsonResponse(videoId, channelName, jsonText, spokenSegments)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error calling Groq API", e)
-            return null
         }
+        return null
+    }
+
+    private fun extractJsonBlock(raw: String): String {
+        val text = raw.trim()
+        val startIdx = text.indexOf('{')
+        val endIdx = text.lastIndexOf('}')
+        if (startIdx != -1 && endIdx != -1 && endIdx > startIdx) {
+            return text.substring(startIdx, endIdx + 1).trim()
+        }
+        return text
     }
 
     private fun parseLlmJsonResponse(
@@ -291,17 +313,11 @@ object AiSummarizerClient {
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? {
         try {
-            // Find JSON content inside response text (in case of markdown code fences)
-            val cleanedJson = jsonText
-                .substringAfter("```json", jsonText)
-                .substringAfter("```", jsonText)
-                .substringBeforeLast("```")
-                .trim()
-
+            val cleanedJson = extractJsonBlock(jsonText)
             val obj = JSONObject(cleanedJson)
-            val topicPremise = obj.optString("topicPremise")
-            val executiveSummary = obj.optString("executiveSummary")
-            val conclusion = obj.optString("conclusion")
+            val topicPremise = obj.optString("topicPremise").trim()
+            val executiveSummary = obj.optString("executiveSummary").trim()
+            val conclusion = obj.optString("conclusion").trim()
 
             val takeaways = mutableListOf<String>()
             val takeawaysArr = obj.optJSONArray("keyTakeaways")
@@ -321,6 +337,10 @@ object AiSummarizerClient {
                 }
             }
 
+            if (topicPremise.isBlank() && discussionPoints.isEmpty()) {
+                return null
+            }
+
             return VideoAiTranscript(
                 videoId = videoId,
                 hostName = channelName,
@@ -328,11 +348,11 @@ object AiSummarizerClient {
                 discussionPoints = if (discussionPoints.isNotEmpty()) discussionPoints else takeaways,
                 conclusion = conclusion,
                 executiveSummary = executiveSummary.ifBlank { topicPremise },
-                keyTakeaways = takeaways,
+                keyTakeaways = if (takeaways.isNotEmpty()) takeaways else discussionPoints,
                 segments = spokenSegments
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing LLM JSON: $jsonText", e)
+            Log.e(TAG, "Error parsing LLM JSON: ${jsonText.take(150)}", e)
             return null
         }
     }

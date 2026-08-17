@@ -489,6 +489,17 @@ object YouTubeCaptionService {
         "video", "youtube", "channel", "thing", "things", "stuff", "guys", "today", "show"
     )
 
+    private val DANGLING_END_WORDS = setOf(
+        "a", "an", "the", "and", "or", "but", "because", "of", "in", "to", "for", "with", "at", "by", "from",
+        "that", "this", "which", "as", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+        "having", "so", "if", "then", "than", "when", "while", "where", "into", "onto", "about", "like", "such",
+        "their", "his", "her", "its", "our", "your", "my", "we", "they", "he", "she", "it", "you", "i"
+    )
+
+    private val SPONSOR_PLUGS_REGEX = Regex(
+        "(?i)\\b(sponsored by|sponsor of today's video|use code|discount code|link in description|expressvpn|nordvpn|surfshark|betterhelp|audible|manscaped|squarespace|raycon|ag1|athletic greens|patreon\\.com)\\b"
+    )
+
     private data class ScoredSentence(
         val timestampSeconds: Int,
         val text: String,
@@ -504,9 +515,10 @@ object YouTubeCaptionService {
 
         val currentText = StringBuilder()
         var currentStartSec = 0
-        var segmentCount = 0
+        var lastSegEndSec = 0
 
-        for (seg in segments) {
+        for (i in segments.indices) {
+            val seg = segments[i]
             val raw = seg.text.trim()
             if (raw.isEmpty() || raw.contains("<") || raw.contains(">") || raw.contains("http")) continue
 
@@ -514,18 +526,24 @@ object YouTubeCaptionService {
                 currentStartSec = seg.timestampSeconds
             }
 
+            val pauseGap = if (lastSegEndSec > 0) (seg.timestampSeconds - lastSegEndSec) else 0
+            lastSegEndSec = seg.timestampSeconds
+
             if (currentText.isNotEmpty() && !currentText.endsWith(" ")) {
                 currentText.append(" ")
             }
             currentText.append(raw)
-            segmentCount++
 
-            val str = currentText.toString()
-            val hasTerminalPunctuation = str.endsWith(".") || str.endsWith("?") || str.endsWith("!")
-            val isLongEnough = str.length >= 100 || segmentCount >= 4
+            val currentStr = currentText.toString().trim()
+            val words = currentStr.split(Regex("""\s+"""))
+            val lastWord = words.lastOrNull()?.lowercase()?.replace(Regex("""[^a-z]"""), "") ?: ""
 
-            if (hasTerminalPunctuation || isLongEnough) {
-                var clean = str
+            val hasPunctuation = currentStr.endsWith(".") || currentStr.endsWith("?") || currentStr.endsWith("!")
+            val isNaturalBoundary = (pauseGap >= 2 && currentStr.length >= 70) || (hasPunctuation && currentStr.length >= 60) || currentStr.length >= 160
+            val isDangling = DANGLING_END_WORDS.contains(lastWord)
+
+            if (isNaturalBoundary && !isDangling && words.size >= 8) {
+                var clean = currentStr
                     .replace(INTRO_GREETING_REGEX, "")
                     .replace(Regex("(?i)\\b(uh|um|you know|i mean|like I said|and I mean|so basically|kind of|sort of)\\b,?\\s*"), "")
                     .replace(Regex("(?i)\\b(all right,? we're going to do a little bit of a)\\b\\s*"), "")
@@ -533,24 +551,25 @@ object YouTubeCaptionService {
                     .replace(Regex("""\s+"""), " ")
                     .trim()
 
-                if (clean.isNotEmpty()) {
-                    // Ensure capitalization
+                // Strip leading conjunctions if starting standalone sentence
+                clean = clean.replace(Regex("""^(?i)(and|but|so|because|or|also)\s+"""), "")
+
+                if (clean.isNotEmpty() && clean.length >= 40) {
                     clean = clean.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
                     if (!clean.endsWith(".") && !clean.endsWith("?") && !clean.endsWith("!")) {
                         clean += "."
                     }
 
-                    // Score sentence based on content depth & lack of boilerplate
-                    val isBoilerplate = OUTRO_BOILERPLATE_REGEX.containsMatchIn(clean)
-                    if (!isBoilerplate && clean.length >= 35) {
-                        val words = clean.lowercase().split(Regex("""\W+""")).filter { it.length > 2 }
-                        val contentWordCount = words.count { it !in STOPWORDS }
-                        val titleMatches = words.count { it in titleWords }
+                    val isBoilerplate = OUTRO_BOILERPLATE_REGEX.containsMatchIn(clean) || SPONSOR_PLUGS_REGEX.containsMatchIn(clean)
+                    if (!isBoilerplate) {
+                        val sentenceWords = clean.lowercase().split(Regex("""\W+""")).filter { it.length > 2 }
+                        val contentWordCount = sentenceWords.count { it !in STOPWORDS }
+                        val titleMatches = sentenceWords.count { it in titleWords }
 
-                        var score = (contentWordCount * 2.0f) + (titleMatches * 8.0f)
+                        var score = (contentWordCount * 2.5f) + (titleMatches * 9.0f)
 
-                        // Semantic insight markers boost
-                        if (Regex("(?i)\\b(because|explains|discovered|revealed|the reason|the truth|problem is|result of|in reality|turns out|crucial|significant|major factor|evidence shows|analysis indicates|conclusion is|important to realize|shows that|demonstrates|key point)\\b").containsMatchIn(clean)) {
+                        // Semantic significance signals
+                        if (Regex("(?i)\\b(because|explains|discovered|revealed|the reason|the truth|problem is|result of|in reality|turns out|crucial|significant|major factor|evidence shows|analysis indicates|conclusion is|important to realize|shows that|demonstrates|key point|breakthrough|announced|engineered)\\b").containsMatchIn(clean)) {
                             score += 25.0f
                         }
 
@@ -558,7 +577,6 @@ object YouTubeCaptionService {
                     }
                 }
                 currentText.clear()
-                segmentCount = 0
             }
         }
         return sentences
@@ -572,24 +590,24 @@ object YouTubeCaptionService {
         val host = video.channelName.ifBlank { "Creator / Host" }
         val scoredSentences = assembleAndScoreSentences(segments, video.title)
 
-        // 1. Topic & Premise: Highest scoring informative sentence in first 20% of video
-        val earlySentences = scoredSentences.take((scoredSentences.size * 0.25).toInt().coerceAtLeast(3))
+        // 1. Topic & Premise: Top informative sentence in first 25% of video
+        val earlySentences = scoredSentences.take((scoredSentences.size * 0.28).toInt().coerceAtLeast(3))
         val topicPremise = earlySentences.maxByOrNull { it.score }?.text
-            ?: "In this video, $host analyzes and breaks down '${video.title}' with in-depth commentary and evidence."
+            ?: "In this video, $host explores '${video.title}', analyzing key developments and technical insights."
 
-        // 2. Key Discussion Highlights (3 to 4 chronological acts across the video body)
+        // 2. Key Discussion Highlights (3 to 4 well-spaced chronological acts across the body)
         val discussionPoints = mutableListOf<String>()
         if (chapters.isNotEmpty()) {
             chapters.take(4).forEach { ch ->
                 discussionPoints.add("${ch.second} (at ${formatSeconds(ch.first)})")
             }
         } else if (scoredSentences.size >= 4) {
-            val bodySentences = scoredSentences.drop((scoredSentences.size * 0.15).toInt()).dropLast((scoredSentences.size * 0.15).toInt())
+            val bodySentences = scoredSentences.drop((scoredSentences.size * 0.12).toInt()).dropLast((scoredSentences.size * 0.12).toInt())
             if (bodySentences.isNotEmpty()) {
                 val chunkSize = (bodySentences.size / 3).coerceAtLeast(1)
                 for (chunk in bodySentences.chunked(chunkSize).take(3)) {
-                    val best = chunk.maxByOrNull { it.score }
-                    if (best != null && best.text != topicPremise) {
+                    val best = chunk.filter { it.text != topicPremise }.maxByOrNull { it.score }
+                    if (best != null && !discussionPoints.contains(best.text)) {
                         discussionPoints.add(best.text)
                     }
                 }
@@ -597,32 +615,34 @@ object YouTubeCaptionService {
         }
 
         if (discussionPoints.isEmpty()) {
-            discussionPoints.add("Background context and key facts establishing the premise of '${video.title}'.")
-            discussionPoints.add("Primary evidence, core arguments, and critical analysis presented by $host.")
+            discussionPoints.add("Background context and key facts establishing the core analysis of '${video.title}'.")
+            discussionPoints.add("Core evidence, discussion points, and critical technical insights presented by $host.")
             discussionPoints.add("Broader implications, key takeaways, and real-world impact.")
         }
 
-        // 3. Substantive Conclusion & Wrap-up: Scan substantive ending window (70% to 92%), strictly avoiding outro
+        // 3. Substantive Conclusion & Wrap-up: Ending segment window (65% to 92%), avoiding outro boilerplate
         val lateWindowStart = (scoredSentences.size * 0.65).toInt().coerceAtMost(scoredSentences.size - 1)
         val lateWindowEnd = (scoredSentences.size * 0.95).toInt().coerceAtLeast(lateWindowStart + 1)
-        val endingSentences = scoredSentences.subList(lateWindowStart.coerceAtLeast(0), lateWindowEnd.coerceAtMost(scoredSentences.size))
+        val endingSentences = if (lateWindowStart in 0 until scoredSentences.size) {
+            scoredSentences.subList(lateWindowStart, lateWindowEnd.coerceAtMost(scoredSentences.size))
+        } else emptyList()
 
         val bestConclusion = endingSentences
             .filter { it.text != topicPremise && !discussionPoints.contains(it.text) }
             .maxByOrNull { it.score }?.text
 
         val conclusion = bestConclusion
-            ?: scoredSentences.lastOrNull { !discussionPoints.contains(it.text) }?.text
+            ?: scoredSentences.lastOrNull { it.text != topicPremise && !discussionPoints.contains(it.text) }?.text
             ?: "Final analysis and concluding perspectives presented by $host on '${video.title}'."
 
         val executiveSummary = buildString {
             append("🎙️ Host: $host\n\n")
             append("🎯 Topic & Premise:\n$topicPremise\n\n")
-            append("💬 Key Discussion Points:\n")
+            append("💬 Key Discussion Highlights:\n")
             discussionPoints.distinct().forEach { pt ->
                 append("• $pt\n")
             }
-            append("\n🏁 Conclusion:\n$conclusion")
+            append("\n🏁 Conclusions & Wrap-up:\n$conclusion")
         }
 
         return VideoAiTranscript(
