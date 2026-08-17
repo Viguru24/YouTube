@@ -363,6 +363,19 @@ fun ShortsPlayerView(
                         webViewClient = object : android.webkit.WebViewClient() {
                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                                 super.onPageFinished(view, url)
+                                if (url?.contains("youtube.com") == true) {
+                                    view?.evaluateJavascript("""
+                                        (function() {
+                                            var style = document.createElement('style');
+                                            style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
+                                            document.head.appendChild(style);
+                                            var v = document.querySelector('video');
+                                            if (v) { v.muted = false; v.play(); }
+                                            var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
+                                            if (playBtn) playBtn.click();
+                                        })();
+                                    """.trimIndent(), null)
+                                }
                             }
                         }
                         val embedHtml = """
@@ -374,17 +387,45 @@ fun ShortsPlayerView(
                                     * { margin: 0; padding: 0; box-sizing: border-box; }
                                     html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
                                     .iframe-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-                                    iframe { width: 100%; height: 100%; border: none; }
+                                    iframe, #player { width: 100%; height: 100%; border: none; }
                                 </style>
                             </head>
                             <body>
                                 <div class="iframe-container">
-                                    <iframe id="player" 
-                                        src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&loop=1&playlist=$videoId&playsinline=1&controls=0&enablejsapi=1&rel=0&modestbranding=1&cc_load_policy=0&iv_load_policy=3&origin=https://www.youtube.com&widget_referrer=https://www.youtube.com" 
-                                        allow="autoplay; encrypted-media; picture-in-picture; fullscreen" 
-                                        allowfullscreen>
-                                    </iframe>
+                                    <div id="player"></div>
                                 </div>
+                                <script src="https://www.youtube.com/iframe_api"></script>
+                                <script>
+                                    var player;
+                                    function onYouTubeIframeAPIReady() {
+                                        player = new YT.Player('player', {
+                                            height: '100%',
+                                            width: '100%',
+                                            videoId: '$videoId',
+                                            playerVars: {
+                                                'autoplay': 1,
+                                                'loop': 1,
+                                                'playlist': '$videoId',
+                                                'playsinline': 1,
+                                                'controls': 0,
+                                                'enablejsapi': 1,
+                                                'rel': 0,
+                                                'modestbranding': 1,
+                                                'cc_load_policy': 0,
+                                                'iv_load_policy': 3,
+                                                'origin': 'https://www.youtube.com',
+                                                'widget_referrer': 'https://www.youtube.com'
+                                            },
+                                            events: {
+                                                'onReady': function(e) { e.target.playVideo(); },
+                                                'onError': function(e) {
+                                                    console.log('Shorts embed restricted -> Bypassing to direct watch page');
+                                                    window.location.replace('https://www.youtube.com/watch?v=$videoId');
+                                                }
+                                            }
+                                        });
+                                    }
+                                </script>
                             </body>
                             </html>
                         """.trimIndent()
