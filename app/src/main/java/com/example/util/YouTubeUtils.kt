@@ -33,14 +33,12 @@ object YouTubeUtils {
         if (video.category.equals("Shorts", ignoreCase = true)) return true
 
         val durationSec = parseFormattedTimeToSeconds(video.durationText)
-        if (durationSec > 90) return false // Long videos are never Shorts
-
         val titleLower = video.title.lowercase()
         val hasShortsTag = titleLower.contains("#shorts") ||
                            titleLower.contains("#short") ||
                            titleLower.contains("/shorts/")
 
-        return hasShortsTag || (durationSec in 1..60 && video.durationText.isNotBlank())
+        return hasShortsTag
     }
 
     /**
