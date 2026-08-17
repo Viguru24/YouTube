@@ -271,6 +271,19 @@ fun VideoCard(
                                 android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("↗️ Share Video Link") },
+                            onClick = {
+                                showMenu = false
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
+                                    val link = if (isShort) "https://youtube.com/shorts/${video.youtubeId}" else "https://youtu.be/${video.youtubeId}"
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\n$link")
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
+                            }
+                        )
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("🚫 Mute '${video.channelName}'") },

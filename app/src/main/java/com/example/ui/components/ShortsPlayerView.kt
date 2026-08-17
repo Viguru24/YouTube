@@ -809,6 +809,31 @@ fun ShortsPlayerView(
                     }
                     Text("Later", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
                 }
+
+                // 6. Share Short ↗️
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(
+                        onClick = {
+                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
+                                putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtube.com/shorts/$videoId")
+                            }
+                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Short"))
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color.Black.copy(alpha = 0.45f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Text("Share", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }

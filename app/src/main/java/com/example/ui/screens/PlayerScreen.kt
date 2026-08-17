@@ -365,7 +365,30 @@ fun PlayerScreen(
                                         )
                                     }
 
-                                    // 5. ✨ AI Summary
+                                    // 5. ↗️ Share Video Link
+                                    IconButton(
+                                        onClick = {
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
+                                                putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\nhttps://youtu.be/${video.youtubeId}")
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
+                                        },
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Share,
+                                            contentDescription = "Share Link",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // 6. ✨ AI Summary
                                     IconButton(
                                         onClick = { showAiSummaryModal = true },
                                         modifier = Modifier
@@ -381,7 +404,7 @@ fun PlayerScreen(
                                         )
                                     }
 
-                                    // 6. ⬇️ Download
+                                    // 7. ⬇️ Download
                                     IconButton(
                                         onClick = {
                                             if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
