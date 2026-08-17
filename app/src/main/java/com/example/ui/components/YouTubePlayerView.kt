@@ -498,71 +498,28 @@ fun YouTubePlayerView(
                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isFirstFrameRendered = true
-                                // If redirected to youtube.com/watch page (embed restricted videos like Stargate), clean up UI and auto-play
-                                if (url?.contains("youtube.com/watch") == true) {
-                                    view?.evaluateJavascript("""
-                                        (function() {
-                                            var style = document.createElement('style');
-                                            style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
-                                            document.head.appendChild(style);
-                                            var v = document.querySelector('video');
-                                            if (v) { v.muted = false; v.play(); }
-                                            var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
-                                            if (playBtn) playBtn.click();
-                                        })();
-                                    """.trimIndent(), null)
-                                }
+                                view?.evaluateJavascript("""
+                                    (function() {
+                                        var style = document.createElement('style');
+                                        style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay, ytd-masthead, #masthead, ytd-watch-next-secondary-results-renderer, #secondary, #comments-entry-point { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
+                                        document.head.appendChild(style);
+                                        var v = document.querySelector('video');
+                                        if (v) { v.muted = false; v.play(); }
+                                        var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
+                                        if (playBtn) playBtn.click();
+                                    })();
+                                """.trimIndent(), null)
                             }
                         }
-                        val ccPolicy = if (captionsEnabled) 1 else 0
-                        val embedHtml = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                <style>
-                                    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                                    .iframe-container { position: relative; width: 100%; height: 100%; }
-                                    iframe, #player { width: 100%; height: 100%; border: none; }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="iframe-container" id="player-wrapper">
-                                    <div id="player"></div>
-                                </div>
-                                <script src="https://www.youtube.com/iframe_api"></script>
-                                <script>
-                                    var player;
-                                    function onYouTubeIframeAPIReady() {
-                                        player = new YT.Player('player', {
-                                            height: '100%',
-                                            width: '100%',
-                                            videoId: '$videoId',
-                                            playerVars: {
-                                                'autoplay': 1,
-                                                'playsinline': 1,
-                                                'controls': 1,
-                                                'enablejsapi': 1,
-                                                'origin': 'https://www.youtube.com',
-                                                'widget_referrer': 'https://www.youtube.com',
-                                                'rel': 0,
-                                                'iv_load_policy': 3,
-                                                'cc_load_policy': $ccPolicy
-                                            },
-                                            events: {
-                                                'onReady': function(e) { e.target.playVideo(); },
-                                                'onError': function(e) {
-                                                    console.log('Embed restricted (code ' + e.data + ') -> Bypassing to first-party watch page');
-                                                    window.location.replace('https://www.youtube.com/watch?v=$videoId');
-                                                }
-                                            }
-                                        });
-                                    }
-                                </script>
-                            </body>
-                            </html>
-                        """.trimIndent()
-                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        
+                        val extraHeaders = mapOf(
+                            "Accept-Language" to "en-US,en;q=0.9",
+                            "Sec-Fetch-Site" to "none",
+                            "Sec-Fetch-Mode" to "navigate",
+                            "Sec-Fetch-User" to "?1",
+                            "Sec-Fetch-Dest" to "document"
+                        )
+                        loadUrl("https://www.youtube.com/watch?v=$videoId", extraHeaders)
                         onPlayerReady(this)
                     }
                 },
@@ -818,6 +775,17 @@ fun YouTubePlayerView(
                                         onClick = {
                                             showSettingsMenu = false
                                             onToggleDebugConsole()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Open in Browser 🌐", fontSize = 13.sp) },
+                                        leadingIcon = { Icon(Icons.Filled.OpenInBrowser, contentDescription = null) },
+                                        onClick = {
+                                            showSettingsMenu = false
+                                            try {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) { }
                                         }
                                     )
                                 } else if (showQualitySubMenu) {
