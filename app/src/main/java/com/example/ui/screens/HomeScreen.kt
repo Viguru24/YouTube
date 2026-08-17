@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -148,46 +149,29 @@ fun HomeScreen(
                                 .testTag("search_text_field")
                         )
                     } else {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                coroutineScope.launch {
-                                    gridState.scrollToItem(0)
-                                }
-                                onCategorySelected("All")
-                                onSearchQueryChanged("")
-                                onSubscribedChannelSelected("")
-                                onRefreshFeed()
-                            }
+                        // Big round orange/red play button on the left without any text
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(YouTubeRed)
+                                .clickable {
+                                    coroutineScope.launch {
+                                        gridState.scrollToItem(0)
+                                    }
+                                    onCategorySelected("All")
+                                    onSearchQueryChanged("")
+                                    onSubscribedChannelSelected("")
+                                    onRefreshFeed()
+                                },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.PlayCircle,
-                                contentDescription = "YouTube",
-                                tint = YouTubeRed,
+                                imageVector = Icons.Filled.PlayArrow,
+                                contentDescription = "Home",
+                                tint = Color.White,
                                 modifier = Modifier.size(26.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else "YouTube",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = YouTubeRed,
-                                modifier = Modifier.testTag("app_version_badge")
-                            ) {
-                                Text(
-                                    text = "v${com.example.BuildConfig.VERSION_NAME}",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
                         }
                     }
                 },
@@ -248,92 +232,83 @@ fun HomeScreen(
                             }
                         }
 
-                        // LS Profile Gear Button ⚙️ (Louis de Souza Settings & Debug Console)
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier.testTag("top_ls_gear_btn")
-                        ) {
-                            Box(contentAlignment = Alignment.BottomEnd) {
-                                Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = YouTubeRed,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "LS",
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .background(Color.Black, shape = androidx.compose.foundation.shape.CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Settings,
-                                        contentDescription = "Settings",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(10.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        // 4. Watch History Button 🕒
-                        IconButton(onClick = onOpenHistory) {
-                            Icon(imageVector = Icons.Filled.History, contentDescription = "Watch History")
-                        }
-
-                        // 5. More Actions (Sort, Add Video, Account)
-                        var showMoreActionsMenu by remember { mutableStateOf(false) }
+                        // 3. LS Profile Button (Opens Settings & Full Menu Options)
+                        var showProfileMenu by remember { mutableStateOf(false) }
                         var showSortSubMenu by remember { mutableStateOf(false) }
 
                         Box {
-                            IconButton(onClick = { showMoreActionsMenu = true }) {
-                                Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "More Actions")
-                            }
-                            DropdownMenu(
-                                expanded = showMoreActionsMenu,
-                                onDismissRequest = { showMoreActionsMenu = false }
+                            IconButton(
+                                onClick = { showProfileMenu = true },
+                                modifier = Modifier.testTag("top_ls_gear_btn")
                             ) {
+                                Box(contentAlignment = Alignment.BottomEnd) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = YouTubeRed,
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "LS",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(13.dp)
+                                            .background(Color.Black, shape = CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Settings,
+                                            contentDescription = "Menu",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showProfileMenu,
+                                onDismissRequest = { showProfileMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("⚙️ Settings & Algorithm", fontWeight = FontWeight.SemiBold) },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        onOpenSettings()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In / Account") },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        onOpenGoogleAuth()
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("➕ Add Video URL / ID") },
                                     onClick = {
-                                        showMoreActionsMenu = false
+                                        showProfileMenu = false
                                         onOpenAddVideoDialog()
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("🔀 Sort Feed (${selectedSort})") },
                                     onClick = {
-                                        showMoreActionsMenu = false
+                                        showProfileMenu = false
                                         showSortSubMenu = true
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("🏷️ Manage Topics & Creators") },
                                     onClick = {
-                                        showMoreActionsMenu = false
+                                        showProfileMenu = false
                                         onOpenManageTopicsAndCreators(0)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("⚙️ Settings & Algorithm") },
-                                    onClick = {
-                                        showMoreActionsMenu = false
-                                        onOpenSettings()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In") },
-                                    onClick = {
-                                        showMoreActionsMenu = false
-                                        onOpenGoogleAuth()
                                     }
                                 )
                             }
@@ -462,9 +437,18 @@ fun HomeScreen(
                                 onClick = { onTimeFilterSelected(filter) },
                                 label = { Text(filter, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = YouTubeRed,
+                                    selectedContainerColor = Color(0xFF2A2A2A),
                                     selectedLabelColor = Color.White,
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    containerColor = Color(0xFF141414),
+                                    labelColor = Color(0xFFCCCCCC)
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = Color(0xFF333333),
+                                    selectedBorderColor = Color.White,
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 1.5.dp
                                 ),
                                 modifier = Modifier.testTag("time_filter_chip_$filter")
                             )
@@ -478,17 +462,32 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Category Chips
+                    // Category Chips (Monochrome Black & White Styling)
                     items(allCategoryNames) { category ->
                         val isSelected = category.equals(selectedCategory, ignoreCase = true)
                         FilterChip(
                             selected = isSelected,
                             onClick = { onCategorySelected(category) },
-                            label = { Text(category, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            label = { 
+                                Text(
+                                    text = category, 
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else Color(0xFFCCCCCC)
+                                ) 
+                            },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = YouTubeRed,
+                                selectedContainerColor = Color(0xFF2A2A2A),
                                 selectedLabelColor = Color.White,
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                containerColor = Color(0xFF141414),
+                                labelColor = Color(0xFFCCCCCC)
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = Color(0xFF333333),
+                                selectedBorderColor = Color.White,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 1.5.dp
                             ),
                             modifier = Modifier.testTag("category_chip_$category")
                         )
@@ -498,9 +497,18 @@ fun HomeScreen(
                         FilterChip(
                             selected = false,
                             onClick = { onOpenManageTopicsAndCreators(1) },
-                            label = { Text("✏️ Edit Topics", fontWeight = FontWeight.SemiBold, color = YouTubeRed) },
+                            label = { Text("✏️ Edit Topics", fontWeight = FontWeight.SemiBold, color = Color.White) },
                             colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                containerColor = Color(0xFF141414),
+                                labelColor = Color.White
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = false,
+                                borderColor = Color(0xFF333333),
+                                selectedBorderColor = Color.White,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 1.dp
                             )
                         )
                     }
@@ -537,7 +545,10 @@ fun HomeScreen(
                 val searchList = if (liveSearchResults.isNotEmpty()) {
                     liveSearchResults
                 } else {
-                    com.example.util.YouTubeUtils.searchYouTubeVideos(searchQuery)
+                    candidateList.filter { 
+                        it.title.contains(searchQuery, ignoreCase = true) || 
+                        it.channelName.contains(searchQuery, ignoreCase = true) 
+                    }
                 }
                 searchList.filter { !isVideoHidden(it, allowWatched = true) }.distinctBy { it.youtubeId }
             } else if (selectedCategory == "⏰ Last 24h") {

@@ -111,7 +111,7 @@ object YouTubeLiveSearchService {
     /**
      * Searches YouTube for any query using direct channel RSS, upload-date sorted web search, and NewPipe.
      */
-    suspend fun searchRealYouTubeVideos(query: String, sortByUploadDate: Boolean = true, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
+    suspend fun searchRealYouTubeVideos(query: String, sortByUploadDate: Boolean = false, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 

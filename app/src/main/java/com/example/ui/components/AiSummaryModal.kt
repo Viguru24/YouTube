@@ -41,6 +41,44 @@ fun AiSummaryModal(
     onSeekTo: (Int) -> Unit,
     onSaveToNotes: (text: String) -> Unit
 ) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f)
+                    .clickable(enabled = false) {}, // prevent closing when clicking inside
+                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                AiSummaryContentBody(
+                    video = video,
+                    onDismiss = onDismiss,
+                    onSeekTo = onSeekTo,
+                    onSaveToNotes = onSaveToNotes
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiSummaryContentBody(
+    video: VideoEntity,
+    onDismiss: () -> Unit,
+    onSeekTo: (Int) -> Unit,
+    onSaveToNotes: (text: String) -> Unit
+) {
     val context = LocalContext.current
     var transcript by remember(video.youtubeId) { mutableStateOf<VideoAiTranscript?>(null) }
     var isLoading by remember(video.youtubeId) { mutableStateOf(true) }
@@ -64,31 +102,11 @@ fun AiSummaryModal(
         }
     }
 
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = onDismiss,
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.6f))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.85f)
-                    .clickable(enabled = false) {}, // prevent closing when clicking inside
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                ) {
             // Header: Sparkle Badge + Title + Copy / Close
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -554,7 +572,4 @@ fun AiSummaryModal(
                 }
             }
         }
-    }
-}
-}
 }

@@ -349,9 +349,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         }
 
                         // Step B: Parallel Live Network Search
-                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(trimmed, 0)
+                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = false)
                         if (realVideos.isNotEmpty()) {
-                            _liveSearchResults.value = (realVideos + _liveSearchResults.value).distinctBy { it.youtubeId }
+                            _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
                             realVideos.forEach { v -> repository.saveVideo(v) }
                         }
                     } else {
