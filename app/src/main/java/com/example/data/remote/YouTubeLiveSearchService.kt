@@ -122,60 +122,65 @@ object YouTubeLiveSearchService {
 
         val results = mutableListOf<VideoEntity>()
 
-        // 1. If query matches a creator / channel name, fetch their exact latest uploads via RSS
-        try {
-            val channelUploads = fetchChannelLatestVideos(trimmed, forceRefresh = forceRefresh)
-            if (channelUploads.isNotEmpty()) {
-                results.addAll(channelUploads)
-            }
-        } catch (e: Exception) { }
-
-        // 2. Direct YouTube Web HTML scraping with real upload-date sorting (&sp=CAI%3D)
+        // 1. Direct High-Speed YouTube Web HTML Search (200ms)
         val webResults = searchWebHtml(trimmed, sortByUploadDate).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
         results.addAll(webResults)
 
-        // 3. Fallback: NewPipe Search
+        // 2. If results are few, check if query matches a channel or use NewPipe
         if (results.size < 5) {
             try {
-                val service = org.schabi.newpipe.extractor.ServiceList.YouTube
-                val extractor = service.getSearchExtractor(trimmed)
-                extractor.fetchPage()
-                val page = extractor.initialPage
-                for (item in page.items) {
-                    if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                        val vidId = com.example.util.YouTubeUtils.extractVideoId(item.url) ?: item.url.substringAfter("v=").take(11)
-                        if (vidId.isNotBlank() && vidId.length == 11) {
-                            val durSec = item.duration
-                            val durFormatted = if (durSec > 0) {
-                                String.format("%d:%02d", durSec / 60, durSec % 60)
-                            } else "0:00"
+                val channelUploads = fetchChannelLatestVideos(trimmed, forceRefresh = forceRefresh)
+                if (channelUploads.isNotEmpty()) {
+                    results.addAll(0, channelUploads)
+                }
+            } catch (e: Exception) { }
 
-                            val title = item.name ?: "YouTube Video"
-                            val channel = item.uploaderName ?: "YouTube"
+            if (results.size < 5) {
+                try {
+                    val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+                    val extractor = service.getSearchExtractor(trimmed)
+                    extractor.fetchPage()
+                    val page = extractor.initialPage
+                    for (item in page.items) {
+                        if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                            val vidId = com.example.util.YouTubeUtils.extractVideoId(item.url) ?: item.url.substringAfter("v=").take(11)
+                            if (vidId.isNotBlank() && vidId.length == 11) {
+                                val durSec = item.duration
+                                val durFormatted = if (durSec > 0) {
+                                    String.format("%d:%02d", durSec / 60, durSec % 60)
+                                } else "0:00"
 
-                            if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
-                                results.add(
-                                    VideoEntity(
-                                        youtubeId = vidId,
-                                        title = title,
-                                        channelName = channel,
-                                        thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
-                                        durationText = durFormatted,
-                                        category = "YouTube",
-                                        publishedTimeText = item.textualUploadDate ?: "",
-                                        viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                                val title = item.name ?: "YouTube Video"
+                                val channel = item.uploaderName ?: "YouTube"
+
+                                if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                                    results.add(
+                                        VideoEntity(
+                                            youtubeId = vidId,
+                                            title = title,
+                                            channelName = channel,
+                                            thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
+                                            durationText = durFormatted,
+                                            category = "YouTube",
+                                            publishedTimeText = item.textualUploadDate ?: "",
+                                            viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
-                }
-            } catch (e: Exception) { }
+                } catch (e: Exception) { }
+            }
         }
 
-        val finalResults = results
-            .distinctBy { it.youtubeId }
-            .sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+        val finalResults = if (sortByUploadDate) {
+            results.distinctBy { it.youtubeId }
+                .sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+        } else {
+            results.distinctBy { it.youtubeId }
+        }
+
         putCache(cacheKey, finalResults)
         return@withContext finalResults
     }

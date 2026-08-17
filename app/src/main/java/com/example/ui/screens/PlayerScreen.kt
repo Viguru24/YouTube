@@ -122,11 +122,13 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
         ) {
-            val otherVideos = playlistVideos
-                .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
-                .sortedWith(compareBy<VideoEntity> {
-                    com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                })
+            val otherVideos = remember(video.youtubeId, playlistVideos) {
+                playlistVideos
+                    .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
+                    .sortedWith(compareBy<VideoEntity> {
+                        com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                    })
+            }
 
             Column(modifier = Modifier.fillMaxSize()) {
                 // Video Player Area - Single persistent ExoPlayer instance across rotation & fullscreen
