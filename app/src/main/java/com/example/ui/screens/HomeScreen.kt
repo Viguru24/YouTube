@@ -117,8 +117,20 @@ fun HomeScreen(
                             onValueChange = onSearchQueryChanged,
                             placeholder = { Text("Search videos or channels...", fontSize = 14.sp) },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { }),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                val pastedId = com.example.util.YouTubeUtils.extractVideoId(searchQuery)
+                                if (pastedId != null) {
+                                    val video = VideoEntity(
+                                        youtubeId = pastedId,
+                                        title = "YouTube Video",
+                                        channelName = "YouTube",
+                                        thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(pastedId),
+                                        durationText = "",
+                                        category = "YouTube"
+                                    )
+                                    onVideoClick(video)
+                                }
+                            }),
                             leadingIcon = {
                                 IconButton(onClick = {
                                     onSearchQueryChanged("")

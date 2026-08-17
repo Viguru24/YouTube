@@ -121,6 +121,8 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        handleIncomingIntent(intent)
+
         setContent {
             YouTubePlayerTheme {
                 MainAppContent(
@@ -129,6 +131,28 @@ class MainActivity : ComponentActivity() {
                     onEnterPip = { enterPipMode() }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: android.content.Intent?) {
+        val data = intent?.dataString ?: intent?.getStringExtra(android.content.Intent.EXTRA_TEXT) ?: return
+        val videoId = com.example.util.YouTubeUtils.extractVideoId(data)
+        if (videoId != null && videoId.length == 11) {
+            val video = com.example.data.model.VideoEntity(
+                youtubeId = videoId,
+                title = "YouTube Video",
+                channelName = "YouTube",
+                thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(videoId),
+                durationText = "",
+                category = "YouTube"
+            )
+            viewModel.playVideo(video)
         }
     }
 
