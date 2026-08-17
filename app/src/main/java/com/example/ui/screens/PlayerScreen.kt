@@ -446,6 +446,121 @@ fun PlayerScreen(
                             )
                         }
 
+                    // Saved Notes & AI Summaries Section
+                    if (notes.isNotEmpty()) {
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.AutoAwesome,
+                                                contentDescription = null,
+                                                tint = Color(0xFFAB47BC),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = "Saved Notes & AI Summaries (${notes.size})",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    notes.forEach { note ->
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.surface
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (note.timestampFormatted.isNotBlank() && note.timestampFormatted != "00:00") {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = YouTubeRed.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = note.timestampFormatted,
+                                                                color = YouTubeRed,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Text(
+                                                            text = "📝 AI Summary",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = Color(0xFFAB47BC),
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                    Row {
+                                                        IconButton(
+                                                            onClick = {
+                                                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Video Note", note.noteText))
+                                                                android.widget.Toast.makeText(context, "Copied note to clipboard 📋", android.widget.Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.ContentCopy,
+                                                                contentDescription = "Copy",
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        IconButton(
+                                                            onClick = {
+                                                                onDeleteNote(note.id)
+                                                                android.widget.Toast.makeText(context, "Deleted note", android.widget.Toast.LENGTH_SHORT).show()
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.DeleteOutline,
+                                                                contentDescription = "Delete",
+                                                                tint = Color.Gray,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = note.noteText,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    lineHeight = 20.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Up Next
                     if (otherVideos.isNotEmpty()) {
                         item {
