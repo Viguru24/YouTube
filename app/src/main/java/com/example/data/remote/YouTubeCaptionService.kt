@@ -132,14 +132,14 @@ object YouTubeCaptionService {
         // =========================================================================
         // STEP 4: Real LLM Summarizer (Gemini / Groq)
         // =========================================================================
-        if (context != null && spokenSegments.isNotEmpty()) {
+        if (context != null) {
             val fullTranscriptText = spokenSegments.joinToString(" ") { it.text }
             val llmSummary = AiSummarizerClient.generateLlmSummary(
                 context = context,
                 videoId = video.youtubeId,
                 title = video.title,
                 channelName = video.channelName,
-                rawTranscriptText = fullTranscriptText,
+                rawTranscriptText = fullTranscriptText.ifBlank { fullDescription },
                 spokenSegments = spokenSegments
             )
             if (llmSummary != null) {

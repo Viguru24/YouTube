@@ -74,30 +74,29 @@ object AiSummarizerClient {
         rawTranscriptText: String,
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? = withContext(Dispatchers.IO) {
-        if (rawTranscriptText.isBlank()) return@withContext null
-
         val geminiKey = getGeminiApiKey(context)
         val groqKey = getGroqApiKey(context)
         val provider = getAiProvider(context)
 
-        // Trim transcript if excessively long (keep up to ~25,000 characters for speed and token limits)
-        val cleanTranscript = if (rawTranscriptText.length > 25000) {
-            rawTranscriptText.take(25000) + "..."
-        } else rawTranscriptText
+        val effectiveTranscript = if (rawTranscriptText.isNotBlank()) {
+            if (rawTranscriptText.length > 25000) rawTranscriptText.take(25000) + "..." else rawTranscriptText
+        } else {
+            "YouTube speech-to-text is still processing. Analyze the subject from the video title: '$title' and creator: '$channelName'."
+        }
 
         // Try selected provider first, then fallback to other provider if configured
         if (provider == "groq" && groqKey.isNotBlank()) {
-            val result = callGroq(groqKey, videoId, title, channelName, cleanTranscript, spokenSegments)
+            val result = callGroq(groqKey, videoId, title, channelName, effectiveTranscript, spokenSegments)
             if (result != null) return@withContext result
         }
 
         if (geminiKey.isNotBlank()) {
-            val result = callGemini(geminiKey, videoId, title, channelName, cleanTranscript, spokenSegments)
+            val result = callGemini(geminiKey, videoId, title, channelName, effectiveTranscript, spokenSegments)
             if (result != null) return@withContext result
         }
 
         if (groqKey.isNotBlank()) {
-            val result = callGroq(groqKey, videoId, title, channelName, cleanTranscript, spokenSegments)
+            val result = callGroq(groqKey, videoId, title, channelName, effectiveTranscript, spokenSegments)
             if (result != null) return@withContext result
         }
 
