@@ -475,11 +475,23 @@ fun YouTubePlayerView(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        settings.databaseEnabled = true
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                        // Desktop Mode User-Agent: Bypasses mobile browser embed restrictions automatically
+                        settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+                        // Set Desktop & Consent Cookies
+                        try {
+                            val cookieManager = android.webkit.CookieManager.getInstance()
+                            cookieManager.setAcceptCookie(true)
+                            cookieManager.setCookie("https://www.youtube.com", "PREF=f6=40000000&hl=en&gl=US; path=/; domain=.youtube.com; Secure")
+                            cookieManager.setCookie("https://www.youtube-nocookie.com", "PREF=f6=40000000&hl=en&gl=US; path=/; domain=.youtube-nocookie.com; Secure")
+                        } catch (e: Exception) { }
 
                         webChromeClient = android.webkit.WebChromeClient()
                         webViewClient = object : android.webkit.WebViewClient() {
@@ -502,7 +514,7 @@ fun YouTubePlayerView(
                             </head>
                             <body>
                                 <div class="iframe-container">
-                                    <iframe id="player" src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&cc_load_policy=$ccPolicy&iv_load_policy=3" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+                                    <iframe id="player" src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&cc_load_policy=$ccPolicy&iv_load_policy=3&origin=https://www.youtube.com&widget_referrer=https://www.youtube.com" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
                                 </div>
                             </body>
                             </html>
