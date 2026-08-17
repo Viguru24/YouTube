@@ -690,6 +690,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private val _shortsQueue = MutableStateFlow<List<VideoEntity>>(emptyList())
     val shortsQueue: StateFlow<List<VideoEntity>> = _shortsQueue.asStateFlow()
 
+    // Non-repeating Shorts Session History:
+    // Tracks every Short played in session order so scroll-down NEVER repeats a short,
+    // while scroll-up steps backward through the exact history stack.
+    private val _watchedShortsHistory = mutableListOf<VideoEntity>()
+    private var _currentShortHistoryIndex = -1
+    private val _seenShortIds = mutableSetOf<String>()
+
     fun playVideo(video: VideoEntity, isShort: Boolean = false) {
         android.util.Log.d("YouTubeViewModel", "playVideo called: id=${video.youtubeId}, isShort=$isShort, title=${video.title}")
         _isPlayingAsShort.value = isShort
@@ -712,21 +719,38 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     fun playShort(video: VideoEntity) {
         android.util.Log.d("YouTubeViewModel", "playShort called: id=${video.youtubeId}, title=${video.title}")
         val shortVid = video.copy(category = "Shorts")
+
+        // Record in session history
+        if (_currentShortHistoryIndex in _watchedShortsHistory.indices && _watchedShortsHistory[_currentShortHistoryIndex].youtubeId == shortVid.youtubeId) {
+            // Already at current position in history
+        } else {
+            val existingIndex = _watchedShortsHistory.indexOfFirst { it.youtubeId == shortVid.youtubeId }
+            if (existingIndex != -1) {
+                _currentShortHistoryIndex = existingIndex
+            } else {
+                _watchedShortsHistory.add(shortVid)
+                _seenShortIds.add(shortVid.youtubeId)
+                _currentShortHistoryIndex = _watchedShortsHistory.size - 1
+            }
+        }
+
         val currentList = _shortsQueue.value
         if (!currentList.any { it.youtubeId == shortVid.youtubeId }) {
             _shortsQueue.value = (currentList + shortVid).distinctBy { it.youtubeId }
         }
         _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != video.youtubeId }
         _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != video.youtubeId }
+        
         // 1. Immediately launch video with 0ms delay
         playVideo(shortVid, isShort = true)
 
-        // 2. Pre-fetch more shorts in background asynchronously without delaying UI
+        // 2. Pre-fetch more unique shorts in background asynchronously
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            if (_shortsQueue.value.size < 8) {
+            val unplayedInQueue = _shortsQueue.value.count { it.youtubeId !in _seenShortIds && it.youtubeId !in _dislikedVideoIds.value }
+            if (unplayedInQueue < 10) {
                 try {
                     val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                    val unDisliked = freshShorts.filter { it.youtubeId !in _dislikedVideoIds.value }
+                    val unDisliked = freshShorts.filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in _seenShortIds }
                     _shortsQueue.value = (_shortsQueue.value + unDisliked).distinctBy { it.youtubeId }
                     unDisliked.forEach { repository.saveVideo(it) }
                 } catch (e: Exception) { }
@@ -769,42 +793,62 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun playNextShort(currentVideoId: String) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val disliked = _dislikedVideoIds.value
-            var currentList = _shortsQueue.value.filter { it.youtubeId !in disliked }
-            if (currentList.isEmpty()) {
-                currentList = _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in disliked }
+            // 1. If user previously scrolled UP into history, scrolling DOWN returns forward through history
+            if (_currentShortHistoryIndex >= 0 && _currentShortHistoryIndex < _watchedShortsHistory.size - 1) {
+                _currentShortHistoryIndex++
+                val nextInHistory = _watchedShortsHistory[_currentShortHistoryIndex]
+                playVideo(nextInHistory, isShort = true)
+                return@launch
             }
-            var currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
 
-            // If nearing end of queue, fetch fresh batch immediately
-            if (currentIndex >= currentList.size - 3 || currentIndex == -1 || currentList.size < 4) {
+            // 2. User is at the frontier: select a 100% BRAND NEW UNSEEN SHORT (NEVER REPEATS)
+            val disliked = _dislikedVideoIds.value
+            var candidate = _shortsQueue.value.firstOrNull { it.youtubeId !in _seenShortIds && it.youtubeId !in disliked }
+
+            // If no unplayed shorts remaining in queue, fetch fresh batch immediately
+            if (candidate == null) {
                 try {
                     val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                    val unDisliked = freshShorts.filter { it.youtubeId !in disliked }
-                    currentList = (currentList + unDisliked).distinctBy { it.youtubeId }
-                    _shortsQueue.value = currentList
+                    val unDisliked = freshShorts.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds }
+                    _shortsQueue.value = (_shortsQueue.value + unDisliked).distinctBy { it.youtubeId }
                     unDisliked.forEach { repository.saveVideo(it) }
+                    candidate = unDisliked.firstOrNull()
                 } catch (e: Exception) { }
             }
 
-            currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
-            if (currentIndex >= 0 && currentIndex < currentList.size - 1) {
-                playShort(currentList[currentIndex + 1])
-            } else if (currentList.isNotEmpty()) {
-                val next = currentList.firstOrNull { it.youtubeId != currentVideoId } ?: currentList.first()
-                playShort(next)
+            // Fallback: Check category videos for any unplayed Short
+            if (candidate == null) {
+                candidate = _categoryVideos.value.firstOrNull { 
+                    com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in _seenShortIds && it.youtubeId !in disliked 
+                }
+            }
+
+            if (candidate != null) {
+                _seenShortIds.add(candidate.youtubeId)
+                _watchedShortsHistory.add(candidate)
+                _currentShortHistoryIndex = _watchedShortsHistory.size - 1
+                playVideo(candidate, isShort = true)
+
+                // Background refill when buffer gets low
+                if (_shortsQueue.value.count { it.youtubeId !in _seenShortIds } < 8) {
+                    try {
+                        val fresh = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                        val valid = fresh.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds }
+                        _shortsQueue.value = (_shortsQueue.value + valid).distinctBy { it.youtubeId }
+                        valid.forEach { repository.saveVideo(it) }
+                    } catch (e: Exception) { }
+                }
             }
         }
     }
 
     fun playPreviousShort(currentVideoId: String) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val currentList = _shortsQueue.value.ifEmpty {
-                _categoryVideos.value.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
-            }
-            val currentIndex = currentList.indexOfFirst { it.youtubeId == currentVideoId }
-            if (currentIndex > 0) {
-                playShort(currentList[currentIndex - 1])
+            // Scrolling UP: Step backwards in chronological watched history
+            if (_currentShortHistoryIndex > 0) {
+                _currentShortHistoryIndex--
+                val prevInHistory = _watchedShortsHistory[_currentShortHistoryIndex]
+                playVideo(prevInHistory, isShort = true)
             }
         }
     }
