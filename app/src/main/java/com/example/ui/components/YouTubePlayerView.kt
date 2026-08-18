@@ -402,6 +402,9 @@ fun YouTubePlayerView(
         }
     }
 
+    var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
+    var swipeVideoFeedback by remember { mutableStateOf<String?>(null) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -417,7 +420,7 @@ fun YouTubePlayerView(
                             } else {
                                 exoPlayer.play()
                                 isPlayingState = true
-                                areControlsVisible = true // Reveal controls when playing, starts 3.5s auto-fade
+                                areControlsVisible = true // Reveal controls when playing
                             }
                         }
                     },
@@ -428,21 +431,33 @@ fun YouTubePlayerView(
                             if (offset.x < w / 2f) {
                                 val target = (exoPlayer.currentPosition - 10000L).coerceAtLeast(0L)
                                 exoPlayer.seekTo(target)
+                                forwardRewindFeedback = "-10s ⏪"
                             } else {
                                 val dur = if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE
                                 val target = (exoPlayer.currentPosition + 10000L).coerceAtMost(dur)
                                 exoPlayer.seekTo(target)
+                                forwardRewindFeedback = "+10s ⏩"
+                            }
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(750)
+                                forwardRewindFeedback = null
                             }
                         }
                     }
                 )
             }
             .pointerInput(videoId) {
-                var isLeftSide = false
+                var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
+                var middleTotalDragY = 0f
+                val swipeThresholdPx = 70f * density
+
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
-                        isLeftSide = offset.x < (size.width / 2f)
-                        if (isLeftSide) {
+                        val w = size.width.toFloat()
+                        middleTotalDragY = 0f
+                        if (offset.x < w * 0.28f) {
+                            // Far Left (Brightness)
+                            dragZone = 1
                             val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
                             gestureBrightness = if (currentLpBrightness >= 0f) {
                                 currentLpBrightness
@@ -457,38 +472,66 @@ fun YouTubePlayerView(
                             }
                             isAdjustingBrightness = true
                             isAdjustingVolume = false
-                        } else {
+                        } else if (offset.x > w * 0.72f) {
+                            // Far Right (Volume)
+                            dragZone = 2
                             val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
                             gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume
                             isAdjustingVolume = true
                             isAdjustingBrightness = false
+                        } else {
+                            // Middle (Next / Previous Video)
+                            dragZone = 3
+                            isAdjustingBrightness = false
+                            isAdjustingVolume = false
                         }
                     },
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
-                        val delta = -dragAmount / (size.height * 0.55f)
-                        if (isLeftSide) {
-                            val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
-                            gestureBrightness = newBrightness
-                            activity?.let { act ->
-                                val lp = act.window.attributes
-                                lp.screenBrightness = newBrightness
-                                act.window.attributes = lp
+                        when (dragZone) {
+                            1 -> {
+                                val delta = -dragAmount / (size.height * 0.55f)
+                                val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
+                                gestureBrightness = newBrightness
+                                activity?.let { act ->
+                                    val lp = act.window.attributes
+                                    lp.screenBrightness = newBrightness
+                                    act.window.attributes = lp
+                                }
                             }
-                        } else {
-                            val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
-                            gestureVolumeFraction = newVolFraction
-                            val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
-                            try {
-                                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
-                            } catch (e: Exception) { }
+                            2 -> {
+                                val delta = -dragAmount / (size.height * 0.55f)
+                                val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
+                                gestureVolumeFraction = newVolFraction
+                                val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
+                                try {
+                                    audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
+                                } catch (e: Exception) { }
+                            }
+                            3 -> {
+                                middleTotalDragY += dragAmount
+                            }
                         }
                     },
                     onDragEnd = {
-                        coroutineScope.launch {
-                            kotlinx.coroutines.delay(1200)
-                            isAdjustingBrightness = false
-                            isAdjustingVolume = false
+                        if (dragZone == 3) {
+                            if (middleTotalDragY < -swipeThresholdPx) {
+                                swipeVideoFeedback = "Next Video ⏭️"
+                                onNextVideo()
+                            } else if (middleTotalDragY > swipeThresholdPx) {
+                                swipeVideoFeedback = "Previous Video ⏮️"
+                                onPreviousVideo()
+                            }
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(900)
+                                swipeVideoFeedback = null
+                            }
+                        } else {
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(1200)
+                                isAdjustingBrightness = false
+                                isAdjustingVolume = false
+                            }
                         }
                     },
                     onDragCancel = {
@@ -1167,6 +1210,50 @@ fun YouTubePlayerView(
                         fontSize = 12.sp
                     )
                 }
+            }
+        }
+
+        // Center Fast-Forward / Rewind Gesture HUD Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = forwardRewindFeedback != null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.80f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+            ) {
+                Text(
+                    text = forwardRewindFeedback ?: "",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
+                )
+            }
+        }
+
+        // Center Swipe Next / Previous Video Gesture HUD Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = swipeVideoFeedback != null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = YouTubeRed.copy(alpha = 0.90f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+            ) {
+                Text(
+                    text = swipeVideoFeedback ?: "",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
+                )
             }
         }
     }

@@ -150,12 +150,30 @@ fun PlayerScreen(
                         playerCommandFlow = playerCommandFlow,
                         onPlayingStateChanged = onPlayingStateChanged,
                         onNextVideo = {
-                            val next = otherVideos.firstOrNull()
-                            if (next != null) onSelectOtherVideo(next)
+                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+                            val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
+                                playlistVideos[currentIndex + 1]
+                            } else {
+                                otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+                            }
+                            if (next != null) {
+                                onSelectOtherVideo(next)
+                            } else {
+                                android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         },
                         onPreviousVideo = {
-                            val prev = playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
-                            if (prev != null) onSelectOtherVideo(prev)
+                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+                            val prev = if (currentIndex > 0) {
+                                playlistVideos[currentIndex - 1]
+                            } else {
+                                playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
+                            }
+                            if (prev != null) {
+                                onSelectOtherVideo(prev)
+                            } else {
+                                android.widget.Toast.makeText(context, "No previous video", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         },
                         isFavorite = video.isFavorite,
                         isWatchLater = video.isWatchLater,
