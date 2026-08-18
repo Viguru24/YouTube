@@ -98,6 +98,16 @@ fun YouTubePlayerView(
     var captionSegments by remember(videoId) { mutableStateOf<List<com.example.util.TranscriptSegment>>(emptyList()) }
     var activeCaptionText by remember { mutableStateOf<String?>(null) }
     var isCaptionsLoading by remember { mutableStateOf(false) }
+    // Gestures: Brightness (Left) & Volume (Right)
+    val activity = remember(context) { context as? android.app.Activity }
+    val audioManager = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    val maxAudioVolume = remember(audioManager) { audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
+
+    var gestureBrightness by remember { mutableFloatStateOf(0.5f) }
+    var isAdjustingBrightness by remember { mutableStateOf(false) }
+
+    var gestureVolumeFraction by remember { mutableFloatStateOf(0.5f) }
+    var isAdjustingVolume by remember { mutableStateOf(false) }
 
     fun addLog(msg: String) {
         val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
@@ -423,24 +433,64 @@ fun YouTubePlayerView(
                 )
             }
             .pointerInput(videoId) {
-                var dragAccumulator = 0f
-                var swipeTriggered = false
+                var isLeftSide = false
                 detectVerticalDragGestures(
-                    onDragStart = {
-                        dragAccumulator = 0f
-                        swipeTriggered = false
+                    onDragStart = { offset ->
+                        isLeftSide = offset.x < (size.width / 2f)
+                        if (isLeftSide) {
+                            val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+                            gestureBrightness = if (currentLpBrightness >= 0f) {
+                                currentLpBrightness
+                            } else {
+                                try {
+                                    android.provider.Settings.System.getInt(
+                                        context.contentResolver,
+                                        android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                                        128
+                                    ) / 255f
+                                } catch (e: Exception) { 0.5f }
+                            }
+                            isAdjustingBrightness = true
+                            isAdjustingVolume = false
+                        } else {
+                            val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                            gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume
+                            isAdjustingVolume = true
+                            isAdjustingBrightness = false
+                        }
                     },
                     onVerticalDrag = { change, dragAmount ->
                         change.consume()
-                        dragAccumulator += dragAmount
-                        if (!swipeTriggered) {
-                            if (dragAccumulator < -40f) {
-                                swipeTriggered = true
-                                onNextVideo()
-                            } else if (dragAccumulator > 40f) {
-                                swipeTriggered = true
-                                onPreviousVideo()
+                        val delta = -dragAmount / (size.height * 0.55f)
+                        if (isLeftSide) {
+                            val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
+                            gestureBrightness = newBrightness
+                            activity?.let { act ->
+                                val lp = act.window.attributes
+                                lp.screenBrightness = newBrightness
+                                act.window.attributes = lp
                             }
+                        } else {
+                            val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
+                            gestureVolumeFraction = newVolFraction
+                            val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
+                            try {
+                                audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
+                            } catch (e: Exception) { }
+                        }
+                    },
+                    onDragEnd = {
+                        coroutineScope.launch {
+                            kotlinx.coroutines.delay(1200)
+                            isAdjustingBrightness = false
+                            isAdjustingVolume = false
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            kotlinx.coroutines.delay(800)
+                            isAdjustingBrightness = false
+                            isAdjustingVolume = false
                         }
                     }
                 )
@@ -983,6 +1033,110 @@ fun YouTubePlayerView(
                             fontFamily = FontFamily.Monospace
                         )
                     }
+                }
+            }
+        }
+
+        // Left Side Screen Brightness Gesture HUD Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isAdjustingBrightness,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 24.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Black.copy(alpha = 0.82f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
+                ) {
+                    Icon(
+                        imageVector = if (gestureBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (gestureBrightness > 0.25f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow,
+                        contentDescription = "Brightness",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(8.dp)
+                            .height(100.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(gestureBrightness.coerceIn(0f, 1f))
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "${(gestureBrightness * 100).toInt()}%",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+
+        // Right Side Device Volume Gesture HUD Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = isAdjustingVolume,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 24.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Black.copy(alpha = 0.82f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
+                ) {
+                    Icon(
+                        imageVector = if (gestureVolumeFraction > 0.5f) Icons.Filled.VolumeUp else if (gestureVolumeFraction > 0.05f) Icons.Filled.VolumeDown else Icons.Filled.VolumeMute,
+                        contentDescription = "Volume",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .width(8.dp)
+                            .height(100.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.25f)),
+                        contentAlignment = Alignment.BottomCenter
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(gestureVolumeFraction.coerceIn(0f, 1f))
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.White)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "${(gestureVolumeFraction * 100).toInt()}%",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
                 }
             }
         }
