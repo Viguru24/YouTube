@@ -64,6 +64,11 @@ fun YouTubePlayerView(
     onPlayingStateChanged: (Boolean) -> Unit = {},
     onNextVideo: () -> Unit = {},
     onPreviousVideo: () -> Unit = {},
+    isFavorite: Boolean = false,
+    isWatchLater: Boolean = false,
+    onFavoriteToggle: () -> Unit = {},
+    onWatchLaterToggle: () -> Unit = {},
+    onSaveToSubject: () -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -760,17 +765,41 @@ fun YouTubePlayerView(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        // On-Screen Direct Star (Favorite) Button
                         IconButton(
-                            onClick = {
-                                isMutedState = !isMutedState
-                                exoPlayer.volume = if (isMutedState) 0f else 1f
-                            },
-                            modifier = Modifier.size(30.dp)
+                            onClick = { onFavoriteToggle() },
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                imageVector = if (isMutedState) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                                contentDescription = "Volume",
+                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
+                                contentDescription = "Favorite",
+                                tint = if (isFavorite) com.example.ui.theme.GoldStar else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // On-Screen Direct Save to Subject Button
+                        IconButton(
+                            onClick = { onSaveToSubject() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Folder,
+                                contentDescription = "Save to Subject",
                                 tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        // On-Screen Direct Watch Later Button
+                        IconButton(
+                            onClick = { onWatchLaterToggle() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Filled.AccessTime,
+                                contentDescription = "Watch Later",
+                                tint = if (isWatchLater) YouTubeRed else Color.White,
                                 modifier = Modifier.size(19.dp)
                             )
                         }

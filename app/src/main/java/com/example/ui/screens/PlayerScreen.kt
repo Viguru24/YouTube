@@ -157,6 +157,11 @@ fun PlayerScreen(
                             val prev = playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
                             if (prev != null) onSelectOtherVideo(prev)
                         },
+                        isFavorite = video.isFavorite,
+                        isWatchLater = video.isWatchLater,
+                        onFavoriteToggle = { onFavoriteToggle(video) },
+                        onWatchLaterToggle = { onWatchLaterToggle(video) },
+                        onSaveToSubject = { showSaveToSubjectDialog = true },
                         onPlayerReady = { wv -> webViewInstance = wv },
                         modifier = Modifier.fillMaxSize()
                     )

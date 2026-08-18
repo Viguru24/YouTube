@@ -118,6 +118,42 @@ fun VideoCard(
             }
         }
 
+        // 1b. Background revealed during leftward swipe ("Delete Video" action)
+        if (offsetX.value < -10f) {
+            val swipeProgress = (-offsetX.value / thresholdPx).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (swipeProgress >= 1f) Color(0xFFD32F2F) else Color(0xFFD32F2F).copy(alpha = 0.85f))
+                    .padding(end = 16.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.graphicsLayer {
+                        alpha = swipeProgress
+                        scaleX = 0.8f + (0.2f * swipeProgress)
+                        scaleY = 0.8f + (0.2f * swipeProgress)
+                    }
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+
         // 2. Foreground Video Tile Card
         Card(
             onClick = { onVideoClick(video) },
@@ -143,6 +179,16 @@ fun VideoCard(
                                     onNotInterested(video)
                                     android.widget.Toast.makeText(context, "Marked Not Interested 🚫", android.widget.Toast.LENGTH_SHORT).show()
                                 }
+                            } else if (offsetX.value <= -thresholdPx) {
+                                coroutineScope.launch {
+                                    offsetX.animateTo(
+                                        targetValue = -600f * density,
+                                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                    )
+                                    isDismissed = true
+                                    onDeleteClick(video)
+                                    android.widget.Toast.makeText(context, "Video Deleted 🗑️", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             } else {
                                 coroutineScope.launch {
                                     offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
@@ -150,11 +196,8 @@ fun VideoCard(
                             }
                         },
                         onHorizontalDrag = { _, dragAmount ->
-                            // Only allow swiping right
-                            if (dragAmount > 0 || offsetX.value > 0) {
-                                val newOffset = (offsetX.value + dragAmount).coerceAtLeast(0f)
-                                coroutineScope.launch { offsetX.snapTo(newOffset) }
-                            }
+                            val newOffset = offsetX.value + dragAmount
+                            coroutineScope.launch { offsetX.snapTo(newOffset) }
                         }
                     )
                 }
