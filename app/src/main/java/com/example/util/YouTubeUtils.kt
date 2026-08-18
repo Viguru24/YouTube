@@ -100,7 +100,7 @@ object YouTubeUtils {
      * Returns high quality YouTube thumbnail URL for a video ID.
      */
     fun getThumbnailUrl(videoId: String): String {
-        return "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+        return "https://i.ytimg.com/vi/$videoId/hq720.jpg"
     }
 
     /**

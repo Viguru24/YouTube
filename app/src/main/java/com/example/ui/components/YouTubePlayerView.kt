@@ -332,8 +332,10 @@ fun YouTubePlayerView(
 
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
-            val isVideoOnly = streamResult?.videoOnlyQualities?.contains(selectedQuality) == true
             val audioUrl = streamResult?.audioStreamUrl
+            val isVideoOnly = (streamResult?.videoOnlyQualities?.contains(selectedQuality) == true) ||
+                    (selectedQuality == "Auto" && streamResult?.combinedMuxedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank()) ||
+                    (!url.contains(".m3u8") && streamResult?.combinedMuxedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank())
 
             val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
