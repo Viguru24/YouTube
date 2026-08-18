@@ -7,7 +7,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,9 +23,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +39,7 @@ import com.example.data.model.VideoEntity
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Composable
@@ -55,6 +59,8 @@ fun VideoCard(
     var showMenu by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current.density
+    val viewConfig = LocalViewConfiguration.current
+    val touchSlop = viewConfig.touchSlop
     val offsetX = remember(video.youtubeId) { Animatable(0f) }
     val coroutineScope = rememberCoroutineScope()
     var isDismissed by remember(video.youtubeId) { mutableStateOf(false) }
@@ -62,6 +68,7 @@ fun VideoCard(
     if (isDismissed) return
 
     val thresholdPx = 90f * density
+    val edgeThresholdPx = 55f * density
 
     fun formatDisplayChannelName(name: String): String {
         val trimmed = name.trim()
@@ -161,45 +168,82 @@ fun VideoCard(
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
                 .pointerInput(video.youtubeId) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-                            }
-                        },
-                        onDragEnd = {
-                            if (offsetX.value >= thresholdPx) {
-                                coroutineScope.launch {
-                                    offsetX.animateTo(
-                                        targetValue = 600f * density,
-                                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                                    )
-                                    isDismissed = true
-                                    onNotInterested(video)
-                                    android.widget.Toast.makeText(context, "Marked Not Interested 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startX = down.position.x
+                        val cardWidth = size.width.toFloat()
+
+                        val isLeftEdge = startX <= edgeThresholdPx
+                        val isRightEdge = startX >= (cardWidth - edgeThresholdPx)
+
+                        // If touch didn't start at the outer edges, do not intercept -> allow 100% fluid vertical scrolling
+                        if (!isLeftEdge && !isRightEdge) {
+                            return@awaitEachGesture
+                        }
+
+                        var totalDx = 0f
+                        var totalDy = 0f
+                        var isHorizontalLocked = false
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                // Gesture release
+                                if (isHorizontalLocked) {
+                                    if (offsetX.value >= thresholdPx) {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(
+                                                targetValue = 600f * density,
+                                                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                            )
+                                            isDismissed = true
+                                            onNotInterested(video)
+                                            android.widget.Toast.makeText(context, "Marked Not Interested 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else if (offsetX.value <= -thresholdPx) {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(
+                                                targetValue = -600f * density,
+                                                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                            )
+                                            isDismissed = true
+                                            onDeleteClick(video)
+                                            android.widget.Toast.makeText(context, "Video Deleted 🗑️", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                        }
+                                    }
                                 }
-                            } else if (offsetX.value <= -thresholdPx) {
-                                coroutineScope.launch {
-                                    offsetX.animateTo(
-                                        targetValue = -600f * density,
-                                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                                    )
-                                    isDismissed = true
-                                    onDeleteClick(video)
-                                    android.widget.Toast.makeText(context, "Video Deleted 🗑️", android.widget.Toast.LENGTH_SHORT).show()
+                                break
+                            }
+
+                            val drag = change.positionChange()
+                            totalDx += drag.x
+                            totalDy += drag.y
+
+                            if (!isHorizontalLocked) {
+                                // If vertical movement is dominant, cancel and let LazyGrid scroll freely
+                                if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx)) {
+                                    break
+                                } else if (abs(totalDx) > touchSlop && abs(totalDx) > abs(totalDy) * 1.4f) {
+                                    // Verify swipe direction corresponds with outer edge
+                                    if ((isLeftEdge && totalDx > 0) || (isRightEdge && totalDx < 0)) {
+                                        isHorizontalLocked = true
+                                        change.consume()
+                                    } else {
+                                        break
+                                    }
                                 }
                             } else {
-                                coroutineScope.launch {
-                                    offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-                                }
+                                change.consume()
+                                val newOffset = offsetX.value + drag.x
+                                coroutineScope.launch { offsetX.snapTo(newOffset) }
                             }
-                        },
-                        onHorizontalDrag = { _, dragAmount ->
-                            val newOffset = offsetX.value + dragAmount
-                            coroutineScope.launch { offsetX.snapTo(newOffset) }
                         }
-                    )
+                    }
                 }
                 .clip(RoundedCornerShape(12.dp))
                 .testTag("video_card_${video.youtubeId}"),
