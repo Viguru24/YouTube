@@ -1,143 +1,70 @@
-# Vixz - Privacy-First, Fast YouTube Client for Android
+<div align="center">
 
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?logo=android&logoColor=white)](https://www.android.com)
-[![Language](https://img.shields.io/badge/Kotlin-2.0.0-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![UI Toolkit](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose)
-[![Architecture](https://img.shields.io/badge/Architecture-MVI%20%2F%20MVVM%20%2B%20SWR-FF6F00)](https://developer.android.com/topic/architecture)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+# 🎬 Vixz - Premium Ad-Free YouTube Client for Android
 
-A lightweight, ad-free, high-performance YouTube client for Android built with **Jetpack Compose**, **AndroidX Media3 (ExoPlayer)**, and a **Stale-While-Revalidate (SWR) Local-First** caching architecture. 
+**Zero Commercial Ads • SponsorBlock Auto-Skip • Hardware Audio Muxing • 3-Zone Gestures • 0ms SWR Startup**
 
-Designed for speed, battery efficiency, and complete user privacy—without relying on Google Play Services or invasive cloud telemetry.
+[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.7.0-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/latest/download/YouTube-Player-v1.7.0.apk)
+[![GitHub Release](https://img.shields.io/github/v/release/Viguru24/YouTube?style=for-the-badge&color=2ea44f)](https://github.com/Viguru24/YouTube/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
----
-
-## 🌟 Key Features
-
-### ⚡ 1. Stale-While-Revalidate (SWR) Architecture
-- **Instant 0ms Startup**: Renders cached videos and subscribed feeds immediately from a local Room (SQLite) database with zero loading spinners.
-- **Silent Background Sync**: Concurrently connects to YouTube to fetch fresh uploads, seamlessly merging new videos to the top of the feed without screen jumping or disrupting scroll position.
-- **In-Memory TTL Caching**: High-speed memory caching prevents redundant network calls during rapid tab and screen navigation.
-
-### 🔴 2. Real-Time Creator Upload Tracking
-- **Bypasses RSS Lag**: Scrapes channel tabs (`/@creator/videos`) in real-time to surface uploads published minutes or hours ago (avoiding the 24–48 hour delay typical of traditional RSS feeds).
-- **Exact Duration & Metadata Parsing**: Custom JSON tree-walker extracts accurate video durations and high-resolution thumbnail badge overlays.
-
-### 🛡️ 3. 100% Private, On-Device Recommendation Engine
-- **Zero Cloud Profiling**: Your viewing habits and favorites stay strictly on your device.
-- **Transparent Relevance Scoring**: Content is ranked using client-side algorithms based on your saved favorites, creator preferences, and recency weighting.
-- **Boredom & Fatigue Detection**: Automatically detects repetitive content patterns and injects fresh exploration topics.
-
-### 🎬 4. Native Media Playback & Background Audio
-- **Ad-Free Streaming**: Clean, uninterrupted video playback powered by AndroidX Media3.
-- **Picture-in-Picture (PiP)**: Smooth PiP mode for seamless multitasking.
-- **Background Audio**: Keep listening to podcasts, music, and lectures with your screen off.
-- **Precision Controls**: Dual-slider audio controls, playback speed toggles (0.5x to 2.0x), and swipe-to-dismiss gesture deck.
-
-### 📱 5. Dedicated Shorts Experience
-- **Horizontal Shorts Carousel**: Embedded directly in the main feed for quick browsing.
-- **Vertical Reel Player**: Full-screen vertical swipe player with gesture navigation.
-- **Customizable Modes**: Choose between *Carousel*, *Separate Tab*, or *Completely Hidden* in Settings.
-
-### 💾 6. Offline Downloads & Media Management
-- **Local Storage**: Save full videos or audio tracks directly to your device.
-- **Automated Lifecycle Expiry**: Configure custom auto-delete policies (*24h*, *48h*, *7d*, *30d*, or *Watched*).
-- **Playlist & Subject Organization**: Categorize saved videos into custom subjects and playlists with one tap.
+</div>
 
 ---
 
-## 🏗️ Architecture & Technology Stack
+## ⚡ Quick 1-Minute Install Guide
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Jetpack Compose UI                  │
-│       HomeScreen  •  LibraryScreen  •  PlayerDeck       │
-└────────────────────────────┬────────────────────────────┘
-                             │ StateFlow / Events
-┌────────────────────────────▼────────────────────────────┐
-│                    YouTubeViewModel                     │
-│      Feed Buffering  •  SWR Coordination  •  Playback   │
-└──────────────┬───────────────────────────┬──────────────┘
-               │                           │
-┌──────────────▼─────────────┐ ┌───────────▼──────────────┐
-│     YouTubeRepository      │ │ YouTubeLiveSearchService │
-│  Room DB (SQLite)  • Cache │ │   OkHttp  •  Stream Engine│
-└────────────────────────────┘ └──────────────────────────┘
-```
+Getting started takes less than 60 seconds:
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Language** | Kotlin 2.0+ (Coroutines, Flow, StateFlow) |
-| **UI Framework** | Jetpack Compose (Material Design 3, Accompanist, Foundation) |
-| **Media Player** | AndroidX Media3 (ExoPlayer, HLS, DASH, Progressive Streams) |
-| **Data Persistence** | Room Database (SQLite), DataStore Preferences |
-| **Image Loading** | Coil Compose |
-| **Networking** | OkHttp 4, JSON Tree Walking Parser |
+1. **[Click here to Download the Latest APK](https://github.com/Viguru24/YouTube/releases/latest/download/YouTube-Player-v1.7.0.apk)** directly to your Android phone.
+2. Tap the downloaded file in your browser notifications.
+3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
+4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!
 
 ---
 
-## 📂 Project Structure
+## 🛡️ How Ad-Elimination Works (Two-Layer Defense)
 
-```
-app/src/main/java/com/example/
-├── MainActivity.kt               # Main entry point & bottom navigation
-├── data/
-│   ├── dao/VideoDao.kt           # Room SQLite Data Access Object
-│   ├── db/AppDatabase.kt         # Room Database Configuration & Migrations
-│   ├── model/                    # VideoEntity, GoogleAccount, Subscriptions
-│   ├── remote/                   # YouTubeLiveSearchService, Stream Extractor
-│   └── repository/               # YouTubeRepository, RecommendationEngine
-├── ui/
-│   ├── components/               # VideoCard, YouTubePlayerView, ShortsPlayer
-│   ├── screens/                  # HomeScreen, LibraryScreen, SettingsDialog
-│   ├── theme/                    # Color schemes, Typography, Shapes
-│   └── viewmodel/                # YouTubeViewModel (State holder & SWR logic)
-└── util/
-    └── YouTubeUtils.kt           # Formatting, duration, and stream helpers
-```
+Unlike web browsers with ad-block extensions that often get detected or break playback, Vixz uses a native two-layer architecture:
+
+### 1. 100% Elimination of Commercial YouTube Ads
+- **How it works:** Vixz connects directly to Google's raw media distribution networks (`.mp4`, `.m3u8`, and DASH streams) and decodes video using native Android hardware (`ExoPlayer`).
+- **Result:** YouTube's ad-serving JavaScript code and ad tracking containers **never execute**. There are **0 pre-roll ads, 0 mid-roll ads, 0 post-roll ads, and 0 banner popups**.
+
+### 2. Automatic SponsorBlock Skipping
+- **How it works:** When creators record sponsor promotions directly into their video footage (*"A quick word from our sponsor..."*), Vixz queries the crowd-sourced **SponsorBlock API**.
+- **Result:** As soon as playback hits a sponsor timestamp, the player automatically leaps over the entire promotion in milliseconds, displaying an on-screen badge: `⏭️ Skipped Sponsor (01:15 → 02:30)`.
 
 ---
 
-## 🚀 Getting Started & Building
+## 🎮 3-Zone Smart Player Gestures
 
-### Prerequisites
-- **Android Studio** Ladybug (2024.2.1) or newer
-- **JDK 17** or **JDK 21**
-- **Android SDK** API level 35 (compileSdk 35, minSdk 26)
+Control your video effortlessly without hunting for tiny sliders:
 
-### Build Instructions
-
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/Viguru24/YouTube.git
-   cd YouTube
-   ```
-
-2. **Build Debug APK**:
-   ```powershell
-   ./gradlew assembleDebug
-   ```
-
-3. **Install Directly to Connected Device via ADB**:
-   ```powershell
-   ./gradlew installDebug
-   ```
-
-4. **Launch the App**:
-   ```powershell
-   adb shell am start -n com.aistudio.youtubeplayer.vixz/com.example.MainActivity
-   ```
+| Screen Area | Gesture | Action |
+| :--- | :--- | :--- |
+| **Far Left Edge** (Outer 28%) | Vertical Drag Up / Down | ☀️ **Brightness Control** (0% – 100%) with animated HUD |
+| **Far Right Edge** (Outer 28%) | Vertical Drag Up / Down | 🔊 **Media Volume Control** (0% – 100%) with animated HUD |
+| **Middle Area** (Center) | Single Tap | ⏯️ **Play / Pause** toggle |
+| **Center Left** | Double-Tap | ⏪ **Rewind 10 Seconds** (`-10s`) |
+| **Center Right** | Double-Tap | ⏩ **Fast-Forward 10 Seconds** (`+10s`) |
+| **Middle Area** | Swipe Up | ⏭️ **Next Video in Feed Queue** |
+| **Middle Area** | Swipe Down | ⏮️ **Previous Video in Feed Queue** |
 
 ---
 
-## 🔒 Privacy & Local-First Philosophy
+## 🌟 Other Key Features
 
-- **No Remote Telemetry**: Zero analytics, crash tracking, or user telemetry.
-- **Local-Only Database**: Your favorites, watch history, subscriptions, and downloads never leave your device.
-- **Optional Account Sign-In**: Browse and watch anonymously without signing in, or connect your account via open OAuth.
+- **⚡ 0ms SWR Local-First Startup**: Instant feed loading from local Room SQLite database with silent background sync.
+- **💾 Offline Downloads with Muxed Audio**: Hardware MediaMuxer combines separate high-res video and high-bitrate audio streams into a single synchronized `.mp4` file for airplane mode.
+- **📁 One-Tap Organization**: Star favorites, save to custom subject folders, or add to Watch Later directly on the video screen.
+- **🤖 On-Device AI Summaries**: Instant video takeaways and timestamped note-taking.
+- **🔒 100% Private**: No cloud telemetry, no analytics, and no Google Play Services dependencies.
 
 ---
 
-## ⚖️ Legal Disclaimer
-
-This application is an independent, open-source third-party client built for personal fair use, accessibility, and privacy research. It is not affiliated with, endorsed by, or sponsored by YouTube, Google LLC, or Alphabet Inc. All trademarks and brand names belong to their respective owners.
+## 📱 Compatibility
+- **Android Version:** Android 8.0 (Oreo) through Android 15+
+- **Architecture:** `arm64-v8a`, `armeabi-v7a`, `x86_64`
+- **Root Required:** No (100% Standalone APK)
