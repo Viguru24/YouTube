@@ -13,6 +13,7 @@ import java.util.regex.Pattern
 data class StreamExtractionResult(
     val primaryStreamUrl: String?,
     val audioStreamUrl: String? = null,
+    val combinedMuxedUrl: String? = null,
     val availableQualities: List<String> = emptyList(),
     val qualityUrlMap: Map<String, String> = emptyMap(),
     val videoOnlyQualities: Set<String> = emptySet()
@@ -91,14 +92,13 @@ object YouTubeStreamExtractor {
             val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
 
-            // Best Audio Stream (for merging with video-only 1080p/1440p)
+            // Best Audio Stream (prioritize M4A/AAC for seamless MP4 container muxing)
             val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
-            for (a in audioStreams) {
-                if (!a.content.isNullOrBlank()) {
-                    bestAudioUrl = a.content
-                    break
-                }
+            val m4aAudio = audioStreams.firstOrNull { 
+                val fmt = it.format?.name.orEmpty()
+                fmt.contains("M4A", ignoreCase = true) || fmt.contains("AAC", ignoreCase = true) || fmt.contains("MP4", ignoreCase = true)
             }
+            bestAudioUrl = m4aAudio?.content ?: audioStreams.firstOrNull { !it.content.isNullOrBlank() }?.content
 
             // Video + Audio combined streams (Muxed - guaranteed instant audio!)
             val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
@@ -242,6 +242,7 @@ object YouTubeStreamExtractor {
         return@withContext StreamExtractionResult(
             primaryStreamUrl = bestUrl,
             audioStreamUrl = bestAudioUrl,
+            combinedMuxedUrl = bestCombinedUrl,
             availableQualities = finalQualitiesList,
             qualityUrlMap = qualityMap,
             videoOnlyQualities = videoOnlyQualities
