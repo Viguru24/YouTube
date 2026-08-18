@@ -762,10 +762,10 @@ fun YouTubePlayerView(
 
         val shouldShowControls = (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || !isPlayingState || showSettingsMenu || isDraggingScrubber)
 
-        // Top-Right Corner Tiny Sleep Timer Countdown Badge (Shows exact mm:ss countdown)
+        // Top-Right Corner Tiny Translucent Sleep Timer Countdown Badge
         if (isSleepTimerActive) {
             val countdownText = if (sleepTimerEndOfVideo) {
-                "End of Video"
+                "End"
             } else {
                 val m = sleepTimerRemainingSec / 60
                 val s = sleepTimerRemainingSec % 60
@@ -773,31 +773,30 @@ fun YouTubePlayerView(
             }
 
             Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.78f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.9f)),
-                shadowElevation = 4.dp,
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Black.copy(alpha = 0.35f),
+                border = androidx.compose.foundation.BorderStroke(0.75.dp, Color.White.copy(alpha = 0.25f)),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 10.dp, end = 10.dp)
+                    .padding(top = 8.dp, end = 8.dp)
                     .clickable { showSleepTimerDialog = true }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Bedtime,
                         contentDescription = "Sleep Countdown",
-                        tint = com.example.ui.theme.GoldStar,
-                        modifier = Modifier.size(13.dp)
+                        tint = com.example.ui.theme.GoldStar.copy(alpha = 0.85f),
+                        modifier = Modifier.size(10.dp)
                     )
                     Text(
                         text = countdownText,
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                     )
                 }
