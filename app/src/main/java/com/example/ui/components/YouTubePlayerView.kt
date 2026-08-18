@@ -114,6 +114,13 @@ fun YouTubePlayerView(
     var gestureVolumeFraction by remember { mutableFloatStateOf(0.5f) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
+    // Sleep Timer State (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 mins slider & presets)
+    var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var isSleepTimerActive by remember { mutableStateOf(false) }
+    var sleepTimerMinutes by remember { mutableIntStateOf(30) }
+    var sleepTimerRemainingSec by remember { mutableIntStateOf(0) }
+    var sleepTimerEndOfVideo by remember { mutableStateOf(false) }
+
     fun addLog(msg: String) {
         val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
         debugLogs.add(entry)
@@ -282,6 +289,37 @@ fun YouTubePlayerView(
                     // Ignore
                 }
                 delay(100)
+            }
+        }
+    }
+
+    // Sleep Timer Countdown Engine (Automatically pauses playback when countdown expires or video ends)
+    LaunchedEffect(isSleepTimerActive, sleepTimerEndOfVideo) {
+        if (isSleepTimerActive) {
+            if (sleepTimerEndOfVideo) {
+                while (isSleepTimerActive && isActive) {
+                    if (totalDurationMs > 0 && currentPosMs >= (totalDurationMs - 1500L)) {
+                        exoPlayer.pause()
+                        isPlayingState = false
+                        isSleepTimerActive = false
+                        sleepTimerEndOfVideo = false
+                        android.widget.Toast.makeText(context, "🌙 Sleep Timer: End of video reached. Playback paused.", android.widget.Toast.LENGTH_LONG).show()
+                        break
+                    }
+                    delay(500L)
+                }
+            } else {
+                while (isSleepTimerActive && sleepTimerRemainingSec > 0 && isActive) {
+                    delay(1000L)
+                    sleepTimerRemainingSec -= 1
+                    if (sleepTimerRemainingSec <= 0) {
+                        exoPlayer.pause()
+                        isPlayingState = false
+                        isSleepTimerActive = false
+                        android.widget.Toast.makeText(context, "🌙 Sleep Timer finished. Playback paused.", android.widget.Toast.LENGTH_LONG).show()
+                        break
+                    }
+                }
             }
         }
     }
@@ -877,11 +915,34 @@ fun YouTubePlayerView(
                         }
                     }
 
-                    // Right side: CC + Settings Gear
+                    // Right side: Sleep Timer + CC + Settings Gear
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        // Sleep Timer [🌙]
+                        IconButton(
+                            onClick = { showSleepTimerDialog = true },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Filled.Bedtime,
+                                    contentDescription = "Sleep Timer",
+                                    tint = if (isSleepTimerActive) com.example.ui.theme.GoldStar else Color.White,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                                if (isSleepTimerActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(12.dp)
+                                            .height(2.dp)
+                                            .background(com.example.ui.theme.GoldStar)
+                                    )
+                                }
+                            }
+                        }
+
                         // Subtitles [CC]
                         IconButton(
                             onClick = {
@@ -1255,6 +1316,207 @@ fun YouTubePlayerView(
                     modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
                 )
             }
+        }
+
+        // Sleep Timer Selection Modal Dialog
+        if (showSleepTimerDialog) {
+            var tempMinutes by remember { mutableFloatStateOf(if (sleepTimerMinutes in 5..60) sleepTimerMinutes.toFloat() else 30f) }
+            var tempEndOfVideo by remember { mutableStateOf(sleepTimerEndOfVideo) }
+
+            AlertDialog(
+                onDismissRequest = { showSleepTimerDialog = false },
+                containerColor = Color(0xFF1C1C1E),
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Bedtime,
+                            contentDescription = "Sleep Timer",
+                            tint = com.example.ui.theme.GoldStar,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Text(
+                            text = "Sleep Timer",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (isSleepTimerActive) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF2E7D32).copy(alpha = 0.25f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4CAF50)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val remainingText = if (sleepTimerEndOfVideo) {
+                                        "Stops at end of video"
+                                    } else {
+                                        val m = sleepTimerRemainingSec / 60
+                                        val s = sleepTimerRemainingSec % 60
+                                        "Active: ${m}m ${s}s remaining"
+                                    }
+                                    Text(
+                                        text = remainingText,
+                                        color = Color(0xFF81C784),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    TextButton(
+                                        onClick = {
+                                            isSleepTimerActive = false
+                                            sleepTimerRemainingSec = 0
+                                            sleepTimerEndOfVideo = false
+                                            showSleepTimerDialog = false
+                                            android.widget.Toast.makeText(context, "Sleep Timer Cancelled ⏹️", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                    ) {
+                                        Text("Turn Off", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Prominent Duration Readout
+                        val displayTimeText = if (tempEndOfVideo) {
+                            "End of Video"
+                        } else {
+                            val mins = ((tempMinutes / 5f).toInt() * 5).coerceIn(5, 60)
+                            if (mins == 60) "1 Hour" else "$mins Minutes"
+                        }
+
+                        Text(
+                            text = displayTimeText,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (tempEndOfVideo) com.example.ui.theme.GoldStar else Color.White,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+
+                        // Step Slider (5 to 60 mins in 5-minute increments: 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60)
+                        if (!tempEndOfVideo) {
+                            Slider(
+                                value = tempMinutes,
+                                onValueChange = { raw ->
+                                    val stepped = ((raw / 5f).toInt() * 5).toFloat().coerceIn(5f, 60f)
+                                    tempMinutes = stepped
+                                },
+                                valueRange = 5f..60f,
+                                steps = 10,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = com.example.ui.theme.GoldStar,
+                                    activeTrackColor = com.example.ui.theme.GoldStar,
+                                    inactiveTrackColor = Color.DarkGray
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("5m", color = Color.Gray, fontSize = 11.sp)
+                                Text("15m", color = Color.Gray, fontSize = 11.sp)
+                                Text("30m", color = Color.Gray, fontSize = 11.sp)
+                                Text("45m", color = Color.Gray, fontSize = 11.sp)
+                                Text("60m (1h)", color = Color.Gray, fontSize = 11.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Preset Chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val presets = listOf(15, 30, 45, 60)
+                            presets.forEach { p ->
+                                val isSelected = !tempEndOfVideo && (tempMinutes.toInt() == p)
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (isSelected) com.example.ui.theme.GoldStar else Color(0xFF2C2C2C),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            tempMinutes = p.toFloat()
+                                            tempEndOfVideo = false
+                                        }
+                                ) {
+                                    Text(
+                                        text = if (p == 60) "1h" else "${p}m",
+                                        color = if (isSelected) Color.Black else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 6.dp)
+                                    )
+                                }
+                            }
+                            // End of Video Chip
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (tempEndOfVideo) com.example.ui.theme.GoldStar else Color(0xFF2C2C2C),
+                                modifier = Modifier
+                                    .weight(1.4f)
+                                    .clickable { tempEndOfVideo = !tempEndOfVideo }
+                            ) {
+                                Text(
+                                    text = "End of Video",
+                                    color = if (tempEndOfVideo) Color.Black else Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val chosenMinutes = ((tempMinutes / 5f).toInt() * 5).coerceIn(5, 60)
+                            sleepTimerMinutes = chosenMinutes
+                            sleepTimerEndOfVideo = tempEndOfVideo
+                            if (tempEndOfVideo) {
+                                isSleepTimerActive = true
+                                android.widget.Toast.makeText(context, "🌙 Sleep timer set: End of Video", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                sleepTimerRemainingSec = chosenMinutes * 60
+                                isSleepTimerActive = true
+                                android.widget.Toast.makeText(context, "🌙 Sleep timer set for $chosenMinutes minutes", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                            showSleepTimerDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.GoldStar)
+                    ) {
+                        Text("Start Timer", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSleepTimerDialog = false }) {
+                        Text("Close", color = Color.LightGray)
+                    }
+                }
+            )
         }
     }
 }
