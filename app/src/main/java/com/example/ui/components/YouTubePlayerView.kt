@@ -762,6 +762,48 @@ fun YouTubePlayerView(
 
         val shouldShowControls = (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || !isPlayingState || showSettingsMenu || isDraggingScrubber)
 
+        // Top-Right Corner Tiny Sleep Timer Countdown Badge (Shows exact mm:ss countdown)
+        if (isSleepTimerActive) {
+            val countdownText = if (sleepTimerEndOfVideo) {
+                "End of Video"
+            } else {
+                val m = sleepTimerRemainingSec / 60
+                val s = sleepTimerRemainingSec % 60
+                String.format("%02d:%02d", m, s)
+            }
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.78f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.9f)),
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 10.dp, end = 10.dp)
+                    .clickable { showSleepTimerDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Bedtime,
+                        contentDescription = "Sleep Countdown",
+                        tint = com.example.ui.theme.GoldStar,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = countdownText,
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
+        }
+
         // Real-Time Closed Caption (CC) Subtitle Overlay
         if (captionsEnabled && !activeCaptionText.isNullOrBlank()) {
             Box(
@@ -1435,7 +1477,20 @@ fun YouTubePlayerView(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (isSleepTimerActive) {
+                            val remM = sleepTimerRemainingSec / 60
+                            val remS = sleepTimerRemainingSec % 60
+                            val statusText = if (sleepTimerEndOfVideo) "Active: Stops at video end" else "Active: ${remM}m ${remS}s left"
+                            Text(
+                                text = statusText,
+                                color = Color(0xFF81C784),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                        }
 
                         // Duration Readout
                         val chosenMins = ((tempMinutes / 5f).toInt() * 5).coerceIn(5, 60)
