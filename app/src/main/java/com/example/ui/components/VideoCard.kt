@@ -1,7 +1,13 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,19 +20,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.VideoEntity
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
-
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun VideoCard(
@@ -41,9 +51,17 @@ fun VideoCard(
     onNotInterested: (VideoEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+
+    val density = LocalDensity.current.density
+    val offsetX = remember(video.youtubeId) { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    var isDismissed by remember(video.youtubeId) { mutableStateOf(false) }
+
+    if (isDismissed) return
+
+    val thresholdPx = 90f * density
 
     fun formatDisplayChannelName(name: String): String {
         val trimmed = name.trim()
@@ -59,240 +77,328 @@ fun VideoCard(
         }
     }
 
-    Card(
-        onClick = { onVideoClick(video) },
+    Box(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .testTag("video_card_${video.youtubeId}"),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        val isShort = com.example.util.YouTubeUtils.isShortVideo(video)
-        val hasValidTime = video.publishedTimeText.isNotBlank() &&
-                !video.publishedTimeText.equals("Recent", ignoreCase = true) &&
-                !video.publishedTimeText.equals("Recently", ignoreCase = true)
-
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Thumbnail container with Duration Overlay
+        // 1. Background revealed during rightward swipe ("Not Interested" action)
+        if (offsetX.value > 10f) {
+            val swipeProgress = (offsetX.value / thresholdPx).coerceIn(0f, 1f)
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(if (isShort) 9f / 16f else 16f / 9f)
-                    .background(Color.Black)
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (swipeProgress >= 1f) YouTubeRed else YouTubeRed.copy(alpha = 0.85f))
+                    .padding(start = 16.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
-                AsyncImage(
-                    model = video.thumbnailUrl,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-
-                // Published Time Badge Top Left (compact: 6H, 1D, 2M)
-                if (hasValidTime) {
-                    val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
-                    if (compactTime.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .align(Alignment.TopStart)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.Black.copy(alpha = 0.75f))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = compactTime,
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp
-                            )
-                        }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.graphicsLayer {
+                        alpha = swipeProgress
+                        scaleX = 0.8f + (0.2f * swipeProgress)
+                        scaleY = 0.8f + (0.2f * swipeProgress)
                     }
-                }
-
-                // Duration Badge Bottom Right
-                val isLive = video.durationText == "0:00" || video.durationText == "00:00" || video.durationText.isBlank() || video.publishedTimeText.contains("live", ignoreCase = true)
-                if (isLive) {
-                    Box(
-                        modifier = Modifier
-                            .padding(6.dp)
-                            .align(Alignment.BottomEnd)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(YouTubeRed)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .background(Color.White, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "LIVE",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp
-                            )
-                        }
-                    }
-                } else if (video.durationText.isNotBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .padding(6.dp)
-                            .align(Alignment.BottomEnd)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.85f))
-                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = video.durationText,
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-
-                // Recommendation indicator dot — Top Right
-                if (recommendationReason.isNotBlank()) {
-                    val dotColor = when {
-                        recommendationReason.contains("Subscribed") -> Color(0xFFFF6D00) // Orange
-                        recommendationReason.contains("Fresh") || recommendationReason.contains("Exploration") -> Color(0xFF4CAF50) // Green
-                        recommendationReason.contains("Continue") -> Color(0xFF2196F3) // Blue
-                        recommendationReason.contains("Favorite") -> Color(0xFFFFD600) // Gold
-                        recommendationReason.contains("Enjoy") -> Color(0xFFFF5252) // Red
-                        else -> Color(0xFFBDBDBD) // Grey
-                    }
-                    Box(
-                        modifier = Modifier
-                            .padding(6.dp)
-                            .align(Alignment.TopEnd)
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(dotColor)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.VisibilityOff,
+                        contentDescription = "Not Interested",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = "Not Interested",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
                     )
                 }
             }
+        }
 
-            // Video Details Header & Mute Options Button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = video.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 12.5.sp, lineHeight = 15.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+        // 2. Foreground Video Tile Card
+        Card(
+            onClick = { onVideoClick(video) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .pointerInput(video.youtubeId) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { },
+                        onDragCancel = {
+                            coroutineScope.launch {
+                                offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                            }
+                        },
+                        onDragEnd = {
+                            if (offsetX.value >= thresholdPx) {
+                                coroutineScope.launch {
+                                    offsetX.animateTo(
+                                        targetValue = 600f * density,
+                                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                                    )
+                                    isDismissed = true
+                                    onNotInterested(video)
+                                    android.widget.Toast.makeText(context, "Marked Not Interested 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                coroutineScope.launch {
+                                    offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                }
+                            }
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            // Only allow swiping right
+                            if (dragAmount > 0 || offsetX.value > 0) {
+                                val newOffset = (offsetX.value + dragAmount).coerceAtLeast(0f)
+                                coroutineScope.launch { offsetX.snapTo(newOffset) }
+                            }
+                        }
+                    )
+                }
+                .clip(RoundedCornerShape(12.dp))
+                .testTag("video_card_${video.youtubeId}"),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            val isShort = com.example.util.YouTubeUtils.isShortVideo(video)
+            val hasValidTime = video.publishedTimeText.isNotBlank() &&
+                    !video.publishedTimeText.equals("Recent", ignoreCase = true) &&
+                    !video.publishedTimeText.equals("Recently", ignoreCase = true)
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Thumbnail container with Duration Overlay
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(if (isShort) 9f / 16f else 16f / 9f)
+                        .background(Color.Black)
+                ) {
+                    AsyncImage(
+                        model = video.thumbnailUrl,
+                        contentDescription = video.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
 
-                    Spacer(modifier = Modifier.height(3.dp))
+                    // Published Time Badge Top Left (compact: 6H, 1D, 2M)
+                    if (hasValidTime) {
+                        val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
+                        if (compactTime.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(4.dp)
+                                    .align(Alignment.TopStart)
+                                    .background(
+                                        Color.Black.copy(alpha = 0.75f),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = compactTime,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
 
-                    Text(
-                        text = formatDisplayChannelName(video.channelName),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        fontWeight = FontWeight.SemiBold,
-                        color = YouTubeRed,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // Duration Badge Bottom Right
+                    if (video.durationText.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(
+                                    Color.Black.copy(alpha = 0.75f),
+                                    RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = video.durationText,
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
 
-                    val timeAndViews = listOfNotNull(
-                        video.publishedTimeText.takeIf { it.isNotBlank() },
-                        video.viewCountText.takeIf { it.isNotBlank() }
-                    ).joinToString(" • ")
-
-                    if (timeAndViews.isNotBlank()) {
-                        Text(
-                            text = timeAndViews,
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    // Top Right Quick Actions (Favorite & Watch Later)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                    ) {
+                        IconButton(
+                            onClick = { onWatchLaterToggle(video) },
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(
+                                    Color.Black.copy(alpha = 0.6f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
+                                contentDescription = "Watch Later",
+                                tint = if (video.isWatchLater) YouTubeRed else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = { onFavoriteToggle(video) },
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(
+                                    Color.Black.copy(alpha = 0.6f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                contentDescription = "Favorite",
+                                tint = if (video.isFavorite) GoldStar else Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = "Options",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(16.dp)
+                // Video Meta Section
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = video.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 16.sp
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = formatDisplayChannelName(video.channelName),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            if (video.viewCountText.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = video.viewCountText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        if (recommendationReason.isNotBlank()) {
+                            Text(
+                                text = "✨ $recommendationReason",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = YouTubeRed,
+                                maxLines = 1,
+                                fontSize = 10.sp
+                            )
+                        }
                     }
 
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("📁 Save to Subject / Playlist") },
-                            onClick = {
-                                showMenu = false
-                                onSaveToSubject(video)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (video.isWatchLater) "✔ In Watch Later" else "🕒 Save to Watch Later") },
-                            onClick = {
-                                showMenu = false
-                                onWatchLaterToggle(video)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (video.isFavorite) "⭐ Favorited" else "⭐ Add to Favorites") },
-                            onClick = {
-                                showMenu = false
-                                onFavoriteToggle(video)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("👎 Not Interested") },
-                            onClick = {
-                                showMenu = false
-                                onNotInterested(video)
-                                android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("↗️ Share Video Link") },
-                            onClick = {
-                                showMenu = false
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
-                                    val link = if (isShort) "https://youtube.com/shorts/${video.youtubeId}" else "https://youtu.be/${video.youtubeId}"
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\n$link")
+                    // 3-Dots Dropdown Menu
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MoreVert,
+                                contentDescription = "More Options",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(if (video.isFavorite) "Remove from Favorites" else "Save to Favorites") },
+                                onClick = {
+                                    showMenu = false
+                                    onFavoriteToggle(video)
                                 }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
-                            }
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
-                            text = { Text("🚫 Mute '${video.channelName}'") },
-                            onClick = {
-                                showMenu = false
-                                onMuteChannel(video.channelName)
-                                android.widget.Toast.makeText(context, "Muted ${video.channelName} 🚫", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        )
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (video.isWatchLater) "Remove from Watch Later" else "Save to Watch Later") },
+                                onClick = {
+                                    showMenu = false
+                                    onWatchLaterToggle(video)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("📁 Save as...") },
+                                onClick = {
+                                    showMenu = false
+                                    onSaveToSubject(video)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("🚫 Not Interested") },
+                                onClick = {
+                                    showMenu = false
+                                    onNotInterested(video)
+                                    android.widget.Toast.makeText(context, "Marked as Not Interested 👎", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("↗️ Share Video Link") },
+                                onClick = {
+                                    showMenu = false
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
+                                        val link = if (isShort) "https://youtube.com/shorts/${video.youtubeId}" else "https://youtu.be/${video.youtubeId}"
+                                        putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\n$link")
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
+                                }
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("🚫 Mute '${video.channelName}'") },
+                                onClick = {
+                                    showMenu = false
+                                    onMuteChannel(video.channelName)
+                                    android.widget.Toast.makeText(context, "Muted ${video.channelName} 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
                 }
             }

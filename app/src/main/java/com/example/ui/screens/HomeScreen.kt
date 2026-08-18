@@ -819,7 +819,8 @@ fun HomeScreen(
                             recommendationReason = reason,
                             onMuteChannel = onMuteChannel,
                             onSaveToSubject = { v -> videoToSaveToSubject = v },
-                            onNotInterested = onDeleteVideo
+                            onNotInterested = onDeleteVideo,
+                            modifier = Modifier.animateItem()
                         )
                     }
 
