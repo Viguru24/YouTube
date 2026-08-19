@@ -116,6 +116,10 @@ fun YouTubePlayerView(
     var gestureVolumeFraction by remember { mutableFloatStateOf(0.5f) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
+    // Autoplay Next Video State (persisted across sessions)
+    val playerPrefs = remember(context) { context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE) }
+    var isAutoplayEnabled by remember { mutableStateOf(playerPrefs.getBoolean("autoplay_enabled", true)) }
+
     // Sleep Timer State (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 mins slider & presets)
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var isSleepTimerActive by remember { mutableStateOf(false) }
@@ -210,6 +214,11 @@ fun YouTubePlayerView(
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == androidx.media3.common.Player.STATE_READY) {
                     isFirstFrameRendered = true
+                } else if (state == androidx.media3.common.Player.STATE_ENDED) {
+                    if (isAutoplayEnabled) {
+                        onNextVideo()
+                        android.widget.Toast.makeText(context, "Autoplay: Playing Next Video ⏭️", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -1030,7 +1039,44 @@ fun YouTubePlayerView(
                             )
                         }
 
-                        // 3. Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
+                        // 3. Autoplay Toggle [▶️ / ⏸️] (Auto-advances next video)
+                        IconButton(
+                            onClick = {
+                                val next = !isAutoplayEnabled
+                                isAutoplayEnabled = next
+                                playerPrefs.edit().putBoolean("autoplay_enabled", next).apply()
+                                val msg = if (next) "▶️ Autoplay is ON (Auto-advance next video)" else "⏸️ Autoplay is OFF"
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(19.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isAutoplayEnabled) com.example.ui.theme.GoldStar.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (isAutoplayEnabled) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                        contentDescription = if (isAutoplayEnabled) "Autoplay is ON" else "Autoplay is OFF",
+                                        tint = if (isAutoplayEnabled) com.example.ui.theme.GoldStar else Color.LightGray,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                                if (isAutoplayEnabled) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(10.dp)
+                                            .height(2.dp)
+                                            .background(com.example.ui.theme.GoldStar)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 4. Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
                         IconButton(
                             onClick = {
                                 if (wasPausedBySleepTimer) {
