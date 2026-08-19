@@ -69,10 +69,12 @@ fun YouTubePlayerView(
     onFavoriteToggle: () -> Unit = {},
     onWatchLaterToggle: () -> Unit = {},
     onSaveToSubject: () -> Unit = {},
+    videoTitle: String = "Video",
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
@@ -122,6 +124,42 @@ fun YouTubePlayerView(
     var sleepTimerRemainingSec by remember { mutableIntStateOf(0) }
     var sleepTimerEndOfVideo by remember { mutableStateOf(false) }
     var wasPausedBySleepTimer by remember { mutableStateOf(false) }
+
+    // Screenshot & Custom Folder State
+    var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    var activeScreenshotFolder by remember { mutableStateOf(com.example.util.ScreenshotManager.getActiveFolder(context)) }
+    var showScreenshotFolderDialog by remember { mutableStateOf(false) }
+    var screenshotFlashTrigger by remember { mutableStateOf(false) }
+    var screenshotFeedbackText by remember { mutableStateOf<String?>(null) }
+
+    fun takeScreenshot() {
+        coroutineScope.launch {
+            screenshotFlashTrigger = true
+            val bmp = com.example.util.ScreenshotManager.capturePlayerFrame(playerViewRef, activity)
+            delay(100)
+            screenshotFlashTrigger = false
+            if (bmp != null) {
+                val (uri, path) = com.example.util.ScreenshotManager.saveScreenshot(
+                    context = context,
+                    bitmap = bmp,
+                    videoTitle = videoTitle ?: "Video",
+                    timestampMs = currentPosMs,
+                    targetFolder = activeScreenshotFolder
+                )
+                if (uri != null) {
+                    val folderDisplay = if (activeScreenshotFolder.equals("Default", ignoreCase = true)) "Pictures/Vixz" else "Pictures/Vixz/$activeScreenshotFolder"
+                    screenshotFeedbackText = "📸 Saved to $folderDisplay"
+                    android.widget.Toast.makeText(context, "📸 Screenshot saved to $folderDisplay", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    android.widget.Toast.makeText(context, "⚠️ Failed to save screenshot", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                android.widget.Toast.makeText(context, "⚠️ Could not capture video frame", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            delay(2500)
+            screenshotFeedbackText = null
+        }
+    }
 
     fun addLog(msg: String) {
         val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
@@ -236,7 +274,6 @@ fun YouTubePlayerView(
     var showSpeedSubMenu by remember { mutableStateOf(false) }
     var showQualitySubMenu by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-    val coroutineScope = rememberCoroutineScope()
 
     // Auto-hide bottom utility controls after 3.5 seconds of no interaction while playing
     LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSettingsMenu, showSpeedSubMenu, showQualitySubMenu) {
@@ -594,6 +631,7 @@ fun YouTubePlayerView(
                         player = exoPlayer
                         useController = false
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        playerViewRef = this
                     }
                 },
                 update = { view ->
@@ -601,6 +639,7 @@ fun YouTubePlayerView(
                         view.player = exoPlayer
                     }
                     view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    playerViewRef = view
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -960,12 +999,38 @@ fun YouTubePlayerView(
                         }
                     }
 
-                    // Right side: Sleep Timer + CC + Settings Gear
+                    // Right side: Screenshot + Folder + Sleep Timer + CC + Settings Gear
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        // Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
+                        // 1. Screenshot Button [📸]
+                        IconButton(
+                            onClick = { takeScreenshot() },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CameraAlt,
+                                contentDescription = "Screenshot",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
+                        // 2. Screenshot Folder Switcher [📁]
+                        IconButton(
+                            onClick = { showScreenshotFolderDialog = true },
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.FolderOpen,
+                                contentDescription = "Screenshot Folder",
+                                tint = com.example.ui.theme.GoldStar,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        // 3. Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
                         IconButton(
                             onClick = {
                                 if (wasPausedBySleepTimer) {
@@ -1409,6 +1474,268 @@ fun YouTubePlayerView(
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
                     )
+                }
+            }
+        }
+
+        // Camera Shutter Flash Effect (150ms white flash fade)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = screenshotFlashTrigger,
+            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(30)),
+            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.85f))
+            )
+        }
+
+        // Screenshot Saved Feedback Toast Chip
+        androidx.compose.animation.AnimatedVisibility(
+            visible = screenshotFeedbackText != null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 45.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.85f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.7f)),
+                shadowElevation = 6.dp,
+                modifier = Modifier.clickable { showScreenshotFolderDialog = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CameraAlt,
+                        contentDescription = "Screenshot",
+                        tint = com.example.ui.theme.GoldStar,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = screenshotFeedbackText ?: "",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Screenshot Folder Manager Dialog
+        if (showScreenshotFolderDialog) {
+            var newFolderInput by remember { mutableStateOf("") }
+            var isCreatingFolder by remember { mutableStateOf(false) }
+            val folders = remember(showScreenshotFolderDialog) { mutableStateListOf(*com.example.util.ScreenshotManager.getFolders(context).toTypedArray()) }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { showScreenshotFolderDialog = false },
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF18181A).copy(alpha = 0.96f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    shadowElevation = 10.dp,
+                    modifier = Modifier
+                        .width(290.dp)
+                        .clickable(enabled = false) {}
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Folder,
+                                    contentDescription = "Folder",
+                                    tint = com.example.ui.theme.GoldStar,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Screenshot Folder",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            IconButton(
+                                onClick = { showScreenshotFolderDialog = false },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Close",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Save in: Pictures/Vixz/$activeScreenshotFolder",
+                            color = Color.Gray,
+                            fontSize = 11.sp,
+                            modifier = Modifier
+                                .padding(vertical = 4.dp)
+                                .align(Alignment.Start)
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Folder List
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 160.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(folders) { fName ->
+                                val isSelected = fName == activeScreenshotFolder
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) com.example.ui.theme.GoldStar.copy(alpha = 0.2f) else Color(0xFF242426),
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar) else null,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            com.example.util.ScreenshotManager.setActiveFolder(context, fName)
+                                            activeScreenshotFolder = fName
+                                            android.widget.Toast.makeText(context, "Active folder: $fName", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.Folder,
+                                                contentDescription = null,
+                                                tint = if (isSelected) com.example.ui.theme.GoldStar else Color.LightGray,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = fName,
+                                                color = if (isSelected) Color.White else Color.LightGray,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+
+                                        if (fName != "Default" && fName != "Screenshots") {
+                                            IconButton(
+                                                onClick = {
+                                                    com.example.util.ScreenshotManager.deleteFolder(context, fName)
+                                                    folders.remove(fName)
+                                                    if (activeScreenshotFolder == fName) {
+                                                        activeScreenshotFolder = "Default"
+                                                    }
+                                                },
+                                                modifier = Modifier.size(20.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Delete,
+                                                    contentDescription = "Delete",
+                                                    tint = Color.Gray,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Add Custom Folder Section
+                        if (isCreatingFolder) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = newFolderInput,
+                                    onValueChange = { newFolderInput = it },
+                                    placeholder = { Text("Folder Name", fontSize = 12.sp, color = Color.Gray) },
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = com.example.ui.theme.GoldStar,
+                                        unfocusedBorderColor = Color.Gray,
+                                        cursorColor = com.example.ui.theme.GoldStar
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                )
+                                Button(
+                                    onClick = {
+                                        val trimmed = newFolderInput.trim()
+                                        if (trimmed.isNotBlank()) {
+                                            com.example.util.ScreenshotManager.addFolder(context, trimmed)
+                                            com.example.util.ScreenshotManager.setActiveFolder(context, trimmed)
+                                            activeScreenshotFolder = trimmed
+                                            if (!folders.contains(trimmed)) folders.add(trimmed)
+                                            newFolderInput = ""
+                                            isCreatingFolder = false
+                                            android.widget.Toast.makeText(context, "Created folder: $trimmed", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.GoldStar),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(44.dp)
+                                ) {
+                                    Text("Add", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { isCreatingFolder = true },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.GoldStar),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.6f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(Icons.Filled.Add, contentDescription = "Add", modifier = Modifier.size(14.dp))
+                                    Text("New Folder", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

@@ -180,6 +180,7 @@ fun PlayerScreen(
                         onFavoriteToggle = { onFavoriteToggle(video) },
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },
+                        videoTitle = video.title,
                         onPlayerReady = { wv -> webViewInstance = wv },
                         modifier = Modifier.fillMaxSize()
                     )
