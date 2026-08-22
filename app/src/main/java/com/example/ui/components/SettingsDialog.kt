@@ -37,6 +37,7 @@ fun SettingsDialog(
     var newBlockedKeyword by remember { mutableStateOf("") }
     var newBoostedTopic by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -281,6 +282,43 @@ fun SettingsDialog(
                                 selected = algorithmSettings.shortsMode == "Hidden",
                                 onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(shortsMode = "Hidden")) },
                                 label = { Text("Hide Shorts") }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Floating Pop-out Window (Picture-in-Picture) Setting
+                        val playerPrefs = remember(context) { context.getSharedPreferences("vixz_player_prefs", android.content.Context.MODE_PRIVATE) }
+                        var autoPipEnabled by remember { mutableStateOf(playerPrefs.getBoolean("auto_pip_enabled", false)) }
+
+                        Text(
+                            text = "Floating Pop-out Player (Picture-in-Picture):",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Pop out video to a mini-window when exiting app.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = !autoPipEnabled,
+                                onClick = {
+                                    autoPipEnabled = false
+                                    playerPrefs.edit().putBoolean("auto_pip_enabled", false).apply()
+                                },
+                                label = { Text("Disabled (Stay in App)") }
+                            )
+                            FilterChip(
+                                selected = autoPipEnabled,
+                                onClick = {
+                                    autoPipEnabled = true
+                                    playerPrefs.edit().putBoolean("auto_pip_enabled", true).apply()
+                                },
+                                label = { Text("Enabled (Pop-out)") }
                             )
                         }
 

@@ -179,7 +179,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (viewModel.activeVideo.value != null) {
+        val prefs = getSharedPreferences("vixz_player_prefs", MODE_PRIVATE)
+        val autoPipEnabled = prefs.getBoolean("auto_pip_enabled", false)
+        if (autoPipEnabled && viewModel.activeVideo.value != null) {
             enterPipMode()
         }
     }
@@ -425,8 +427,8 @@ fun MainAppContent(
                     }
                 )
             }
-        } else {
-            // Main Bottom Bar Layout Screen
+        } else if (!isInPipMode) {
+            // Main Bottom Bar Layout Screen (Only render when NOT in PiP)
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
