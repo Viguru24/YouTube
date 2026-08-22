@@ -312,6 +312,35 @@ fun SettingsDialog(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
+                        // Preferred Download Resolution Setting
+                        Text(
+                            text = "Preferred Offline Download Quality:",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            FilterChip(
+                                selected = algorithmSettings.downloadResolution == "1080p",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "1080p")) },
+                                label = { Text("1080p (Full HD)", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.downloadResolution == "720p",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "720p")) },
+                                label = { Text("720p (HD - Best)", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = algorithmSettings.downloadResolution == "480p" || algorithmSettings.downloadResolution == "360p",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "480p")) },
+                                label = { Text("480p (Data Saver)", fontSize = 11.sp) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
                         // Auto-Delete Offline Downloads Setting
                         Text(
                             text = "Auto-Delete Offline Downloads:",

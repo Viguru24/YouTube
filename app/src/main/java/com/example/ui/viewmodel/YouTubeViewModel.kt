@@ -38,13 +38,16 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             com.example.data.remote.VideoDownloadManager.downloadVideo(
                 context = getApplication(),
                 video = video,
+                targetResolution = _algorithmSettings.value.downloadResolution,
                 onSuccess = { localPath, sizeMb ->
                     viewModelScope.launch {
                         repository.updateDownloadStatus(video.youtubeId, true, localPath, sizeMb)
                         onComplete()
                     }
                 },
-                onError = onError
+                onError = { err ->
+                    viewModelScope.launch { onError(err) }
+                }
             )
         }
     }
@@ -219,6 +222,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             .putInt("min_duration", settings.minDurationMinutes)
             .putString("freshness_decay", settings.freshnessDecay)
             .putString("auto_delete", settings.autoDeleteDownloads)
+            .putString("download_resolution", settings.downloadResolution)
             .putStringSet("blocked_keywords", settings.blockedKeywords.toSet())
             .putStringSet("boosted_topics", settings.boostedTopics.toSet())
             .apply()
@@ -233,6 +237,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             minDurationMinutes = algoPrefs.getInt("min_duration", 0),
             freshnessDecay = algoPrefs.getString("freshness_decay", "Medium") ?: "Medium",
             autoDeleteDownloads = algoPrefs.getString("auto_delete", "Never") ?: "Never",
+            downloadResolution = algoPrefs.getString("download_resolution", "720p") ?: "720p",
             blockedKeywords = algoPrefs.getStringSet("blocked_keywords", emptySet())?.toList() ?: emptyList(),
             boostedTopics = algoPrefs.getStringSet("boosted_topics", emptySet())?.toList() ?: emptyList()
         )

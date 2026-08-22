@@ -10,6 +10,7 @@ data class AlgorithmSettings(
     val minDurationMinutes: Int = 0,        // 0, 3, 5, 10 minutes
     val freshnessDecay: String = "Medium",   // "Slow", "Medium", "Fast"
     val autoDeleteDownloads: String = "Never", // "Never", "24h", "48h", "7d", "30d", "Watched"
+    val downloadResolution: String = "720p",   // "1080p", "720p", "480p", "360p"
     val blockedKeywords: List<String> = emptyList(), // Custom keywords/channels permanently excluded
     val boostedTopics: List<String> = emptyList()     // Custom topics/creators prioritized at the top
 )

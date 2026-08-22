@@ -54,6 +54,7 @@ object VideoDownloadManager {
     suspend fun downloadVideo(
         context: Context,
         video: VideoEntity,
+        targetResolution: String = "720p",
         onSuccess: (localPath: String, sizeMb: Float) -> Unit,
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
@@ -75,8 +76,10 @@ object VideoDownloadManager {
             val extractionResult = YouTubeStreamExtractor.extractVideoStreams(vidId)
 
             val combinedUrl = extractionResult.combinedMuxedUrl
-            val videoOnlyUrl = extractionResult.qualityUrlMap["720p"]
+            val targetResLower = targetResolution.lowercase().trim()
+            val videoOnlyUrl = extractionResult.qualityUrlMap[targetResLower]
                 ?: extractionResult.qualityUrlMap["1080p"]
+                ?: extractionResult.qualityUrlMap["720p"]
                 ?: extractionResult.qualityUrlMap["480p"]
                 ?: extractionResult.primaryStreamUrl
             val audioUrl = extractionResult.audioStreamUrl
@@ -84,10 +87,10 @@ object VideoDownloadManager {
             val isVideoOnly = extractionResult.isVideoOnlyStream(videoOnlyUrl) ||
                     (combinedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank())
 
-            Log.d(TAG, "Download plan for $vidId: combinedUrl=${!combinedUrl.isNullOrBlank()}, videoOnly=$isVideoOnly, audioUrl=${!audioUrl.isNullOrBlank()}")
+            Log.d(TAG, "Download plan for $vidId (target $targetResolution): combinedUrl=${!combinedUrl.isNullOrBlank()}, videoOnly=$isVideoOnly, audioUrl=${!audioUrl.isNullOrBlank()}")
 
-            // Strategy A: Dedicated Combined (Muxed Video + Audio) Stream exists
-            if (!combinedUrl.isNullOrBlank()) {
+            // Strategy A: Dedicated Combined (Muxed Video + Audio) Stream exists for 720p/360p
+            if (!combinedUrl.isNullOrBlank() && (targetResLower == "720p" || targetResLower == "360p" || videoOnlyUrl == combinedUrl)) {
                 Log.d(TAG, "Downloading combined muxed stream directly for $vidId")
                 downloadToFile(
                     url = combinedUrl,
