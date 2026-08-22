@@ -3,114 +3,30 @@ package com.example.data.model
 import androidx.compose.runtime.mutableStateListOf
 
 object WillRyanProfileData {
-    val profileName = "Will Ryan"
+    val profileName = "Local Profile"
     
-    val subscribedChannels = mutableStateListOf(
-        "The Robotics State",
-        "Benny Johnson",
-        "Tousi TV",
-        "Liberal Hivemind",
-        "Tal Oran - TheTraveler",
-        "Dr. Steve Turley",
-        "Peter H. Diamandis",
-        "BestInTESLA",
-        "Matthew Berman",
-        "Warren Smith - Secret Scholar",
-        "Stephen Gardner",
-        "Two Bit da Vinci",
-        "ClashIQ",
-        "AI Revolution",
-        "The Rubin Report",
-        "The Podcast of the Lotus Eaters",
-        "JCristina",
-        "Grjngo - Western Movies",
-        "Erin Molan",
-        "FutureAzA",
-        "Ticker Symbol: YOU",
-        "Julian Goldie SEO",
-        "Jeff Taylor",
-        "Sadhguru",
-        "Anastasi In Tech",
-        "Sabine Hossenfelder",
-        "LARRY with Larry Elder",
-        "Timcast IRL",
-        "Landeur",
-        "Promethean Action",
-        "AI Samson",
-        "GBNews",
-        "What Lurks Beneath",
-        "Europe: Informed",
-        "Manolo Remiddi",
-        "OtherBarak",
-        "Tesla Jigsaw",
-        "AKSTAR ENG",
-        "Oriental Pearl",
-        "Amala Ekpunobi",
-        "Nick Ponte",
-        "Solving The Money Problem",
-        "Fox News Clips",
-        "Logically Answered",
-        "Triggernometry",
-        "Turning Point USA",
-        "News24",
-        "Brandon Lehman",
-        "Matt Wolfe",
-        "Trish Regan",
-        "Valuetainment",
-        "Nerdy Rodent",
-        "Business Basics",
-        "Latest Abraham",
-        "StephanZA",
-        "Better Stack",
-        "Pearl",
-        "Gaiea Sanskrit",
-        "House of El",
-        "AI News & Strategy",
-        "OkayRickk",
-        "Doug In Exile",
-        "Jacob H",
-        "Professor Nez",
-        "ZOE",
-        "Doctor Alekseev",
-        "iampauljames",
-        "WorldofAI",
-        "Vince Dao",
-        "Luminox Archives",
-        "Xiaomanyc 小马在",
-        "Zubair Trabzada",
-        "UnHerd",
-        "Cleo Abram",
-        "Alex Ziskind",
-        "Tina Huang",
-        "FRANCE 24 English",
-        "THEE Sama Sama",
-        "NERK NEWS",
-        "Firstpost",
-        "HeelvsBabyface",
-        "David Ondrej",
-        "Julia McCoy",
-        "metricsmule",
-        "Disturbed",
-        "lusciousgarden",
-        "GHL Wizard",
-        "Redacted",
-        "sakitech",
-        "Angela Rose",
-        "Chantress Seba",
-        "André Duqum",
-        "Right Side Broadcasting Network",
-        "El Estepario Siberiano",
-        "Melle Baby Music",
-        "Magnus Midtbø",
-        "Lauren Jumps",
-        "Tinalei",
-        "Parried"
-    )
+    // Subscriptions are loaded dynamically and stored in private local database
+    val subscribedChannels = mutableStateListOf<String>()
+
+    fun isSubscribed(channelName: String): Boolean {
+        if (channelName.isBlank()) return false
+        val trimmed = channelName.trim()
+        return subscribedChannels.any { it.equals(trimmed, ignoreCase = true) }
+    }
 
     fun addSubscribedChannel(name: String) {
         val trimmed = name.trim()
-        if (trimmed.isNotBlank() && !subscribedChannels.any { it.equals(trimmed, ignoreCase = true) }) {
+        if (trimmed.isNotBlank() && !isSubscribed(trimmed)) {
             subscribedChannels.add(0, trimmed)
         }
+    }
+
+    fun removeSubscribedChannel(name: String) {
+        val trimmed = name.trim()
+        subscribedChannels.removeAll { it.equals(trimmed, ignoreCase = true) }
+    }
+
+    fun clearAllSubscribedChannels() {
+        subscribedChannels.clear()
     }
 }

@@ -1,12 +1,20 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -66,6 +74,7 @@ fun PlayerScreen(
     onDeleteDownloadClick: () -> Unit = {},
     subscribedCreators: List<String> = emptyList(),
     onToggleSubscribe: (String) -> Unit = {},
+    onSelectChannel: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
@@ -220,7 +229,10 @@ fun PlayerScreen(
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onSelectChannel(video.channelName) }
                                     ) {
                                         Box(
                                             modifier = Modifier
@@ -335,7 +347,13 @@ fun PlayerScreen(
                                                     onFavoriteToggle(video)
                                                 }
                                                 onNotInterested(video)
-                                                android.widget.Toast.makeText(context, "Disliked 👎", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, "Disliked 👎 - Playing next", android.widget.Toast.LENGTH_SHORT).show()
+                                                val nextVideo = otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+                                                if (nextVideo != null) {
+                                                    onSelectOtherVideo(nextVideo)
+                                                } else {
+                                                    onBackClick()
+                                                }
                                             } else {
                                                 android.widget.Toast.makeText(context, "Removed Dislike", android.widget.Toast.LENGTH_SHORT).show()
                                             }
@@ -560,7 +578,10 @@ fun PlayerScreen(
                         items(otherVideos, key = { "q_${it.youtubeId}" }) { other ->
                             PlaylistQueueItem(
                                 video = other,
-                                onClick = { onSelectOtherVideo(other) }
+                                onClick = { onSelectOtherVideo(other) },
+                                onDeleteClick = { onNotInterested(it) },
+                                onNotInterested = { onNotInterested(it) },
+                                onSelectChannel = { onSelectChannel(it) }
                             )
                         }
                     }
@@ -601,101 +622,255 @@ fun PlayerScreen(
 @Composable
 private fun PlaylistQueueItem(
     video: VideoEntity,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onDeleteClick: (VideoEntity) -> Unit = {},
+    onNotInterested: (VideoEntity) -> Unit = {},
+    onSelectChannel: (String) -> Unit = {}
 ) {
-    Card(
+    val coroutineScope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val offsetX = remember { Animatable(0f) }
+    val thresholdPx = 90f * density
+    val edgeThresholdPx = 40f * density
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // 1. Background revealed during rightward swipe ("Not Interested" action)
+        if (offsetX.value > 10f) {
+            val swipeProgress = (offsetX.value / thresholdPx).coerceIn(0f, 1f)
             Box(
                 modifier = Modifier
-                    .width(110.dp)
-                    .height(65.dp)
-                    .background(Color.Black)
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (swipeProgress >= 1f) YouTubeRed else YouTubeRed.copy(alpha = 0.85f))
+                    .padding(start = 16.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
-                AsyncImage(
-                    model = video.thumbnailUrl,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.VisibilityOff,
+                        contentDescription = "Not Interested",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Not Interested",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
 
-                // Top Left Overlay Badge: Published Age
-                if (video.publishedTimeText.isNotBlank()) {
-                    val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
-                    if (compactTime.isNotBlank()) {
+        // 1b. Background revealed during leftward swipe ("Delete Video" action)
+        if (offsetX.value < -10f) {
+            val swipeProgress = (-offsetX.value / thresholdPx).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (swipeProgress >= 1f) Color(0xFFD32F2F) else Color(0xFFD32F2F).copy(alpha = 0.85f))
+                    .padding(end = 16.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Delete",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Delete Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        // 2. Foreground Card with edge-swipe handling
+        Card(
+            onClick = onClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .pointerInput(video.youtubeId) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startX = down.position.x
+                        val cardWidth = size.width.toFloat()
+                        val isLeftEdge = startX <= edgeThresholdPx
+                        val isRightEdge = startX >= (cardWidth - edgeThresholdPx)
+                        if (!isLeftEdge && !isRightEdge) return@awaitEachGesture
+
+                        var totalDx = 0f
+                        var isHorizontalLocked = false
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) {
+                                if (isHorizontalLocked) {
+                                    if (offsetX.value >= thresholdPx) {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(600f * density, tween(200))
+                                            onNotInterested(video)
+                                        }
+                                    } else if (offsetX.value <= -thresholdPx) {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(-600f * density, tween(200))
+                                            onDeleteClick(video)
+                                        }
+                                    } else {
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(0f, androidx.compose.animation.core.spring())
+                                        }
+                                    }
+                                }
+                                break
+                            }
+
+                            val dragX = change.position.x - down.position.x
+                            val dragY = change.position.y - down.position.y
+                            totalDx = dragX
+
+                            if (!isHorizontalLocked) {
+                                if (kotlin.math.abs(dragX) > 12f * density && kotlin.math.abs(dragX) > kotlin.math.abs(dragY) * 1.3f) {
+                                    isHorizontalLocked = true
+                                } else if (kotlin.math.abs(dragY) > 12f * density) {
+                                    break
+                                }
+                            }
+
+                            if (isHorizontalLocked) {
+                                change.consume()
+                                val newOffset = if (isLeftEdge) {
+                                    dragX.coerceIn(0f, 160f * density)
+                                } else {
+                                    dragX.coerceIn(-160f * density, 0f)
+                                }
+                                coroutineScope.launch { offsetX.snapTo(newOffset) }
+                            }
+                        }
+                    }
+                },
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(110.dp)
+                        .height(65.dp)
+                        .background(Color.Black)
+                ) {
+                    AsyncImage(
+                        model = video.thumbnailUrl,
+                        contentDescription = video.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+
+                    // Top Left Overlay Badge: Published Age
+                    if (video.publishedTimeText.isNotBlank()) {
+                        val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
+                        if (compactTime.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(3.dp)
+                                    .clip(RoundedCornerShape(2.dp))
+                                    .background(Color.Black.copy(alpha = 0.8f))
+                                    .padding(horizontal = 3.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = compactTime,
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    // Bottom Right Overlay Badge: Video Duration
+                    if (video.durationText.isNotBlank()) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopStart)
+                                .align(Alignment.BottomEnd)
                                 .padding(3.dp)
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(Color.Black.copy(alpha = 0.8f))
                                 .padding(horizontal = 3.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = compactTime,
+                                text = video.durationText,
                                 color = Color.White,
-                                fontSize = 8.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
 
-                // Bottom Right Overlay Badge: Video Duration
-                if (video.durationText.isNotBlank()) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.Black.copy(alpha = 0.8f))
-                            .padding(horizontal = 3.dp, vertical = 1.dp)
-                    ) {
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp)
+                ) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (video.channelName.isNotBlank()) {
                         Text(
-                            text = video.durationText,
-                            color = Color.White,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
+                            text = video.channelName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable { onSelectChannel(video.channelName) }
+                        )
+                    }
+
+                    val queueSubText = listOfNotNull(
+                        video.publishedTimeText.takeIf { it.isNotBlank() },
+                        video.viewCountText.takeIf { it.isNotBlank() }
+                    ).joinToString(" • ")
+
+                    if (queueSubText.isNotBlank()) {
+                        Text(
+                            text = queueSubText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 8.dp)
-            ) {
-                Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                val queueSubText = listOfNotNull(
-                    video.channelName.takeIf { it.isNotBlank() },
-                    video.publishedTimeText.takeIf { it.isNotBlank() }
-                ).joinToString(" • ")
-
-                Text(
-                    text = queueSubText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
             }
         }
     }

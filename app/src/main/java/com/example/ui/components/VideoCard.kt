@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.example.data.model.VideoEntity
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
@@ -53,6 +55,7 @@ fun VideoCard(
     onMuteChannel: (String) -> Unit = {},
     onSaveToSubject: (VideoEntity) -> Unit = {},
     onNotInterested: (VideoEntity) -> Unit = {},
+    onChannelClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -266,7 +269,12 @@ fun VideoCard(
                         .background(Color.Black)
                 ) {
                     AsyncImage(
-                        model = video.thumbnailUrl,
+                        model = ImageRequest.Builder(context)
+                            .data(video.thumbnailUrl)
+                            .crossfade(150)
+                            .diskCachePolicy(CachePolicy.ENABLED)
+                            .memoryCachePolicy(CachePolicy.ENABLED)
+                            .build(),
                         contentDescription = video.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -384,10 +392,15 @@ fun VideoCard(
                             Text(
                                 text = formatDisplayChannelName(video.channelName),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (onChannelClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                modifier = if (onChannelClick != null) {
+                                    Modifier.clickable { onChannelClick(video.channelName) }
+                                } else {
+                                    Modifier
+                                }
                             )
 
                             if (video.viewCountText.isNotBlank()) {

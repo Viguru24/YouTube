@@ -24,12 +24,12 @@ object YouTubeLiveSearchService {
         .build()
 
     private val SEARCH_ENDPOINTS = listOf(
-        "https://invidious.flokinet.to/api/v1/search?q=%s",
-        "https://inv.nadeko.net/api/v1/search?q=%s",
-        "https://invidious.nerdvpn.de/api/v1/search?q=%s",
-        "https://invidious.protokolla.fi/api/v1/search?q=%s",
-        "https://yewtu.be/api/v1/search?q=%s",
-        "https://pipedapi.kavin.rocks/search?q=%s&filter=all"
+        "https://invidious.flokinet.to/api/v1/search?q=%s&region=US&hl=en",
+        "https://inv.nadeko.net/api/v1/search?q=%s&region=US&hl=en",
+        "https://invidious.nerdvpn.de/api/v1/search?q=%s&region=US&hl=en",
+        "https://invidious.protokolla.fi/api/v1/search?q=%s&region=US&hl=en",
+        "https://yewtu.be/api/v1/search?q=%s&region=US&hl=en",
+        "https://pipedapi.kavin.rocks/search?q=%s&region=US&filter=all"
     )
 
     private data class CacheEntry(val data: List<VideoEntity>, val timestamp: Long)
@@ -299,12 +299,15 @@ object YouTubeLiveSearchService {
 
         // 1. Direct YouTube Channel /videos HTML fetch
         val baseTrimmed = trimmed.replace("(?i)\\b(show|tv|channel|podcast|official|media|news|network)\\b".toRegex(), "").trim()
+        val baseHandle = trimmed.replace(" ", "").lowercase()
         val handleVariations = listOf(
-            trimmed.replace(" ", "").lowercase(),
+            baseHandle,
+            "the$baseHandle",
+            "${baseHandle}show",
+            "the${baseHandle}show",
+            "${baseHandle}official",
             trimmed.replace(" ", "-").lowercase(),
-            trimmed.replace(" ", "_").lowercase(),
-            baseTrimmed.replace(" ", "").lowercase(),
-            baseTrimmed.replace(" ", "-").lowercase()
+            baseTrimmed.replace(" ", "").lowercase()
         ).filter { it.isNotBlank() }.distinct()
 
         for (handle in handleVariations) {
@@ -364,6 +367,50 @@ object YouTubeLiveSearchService {
             .sortedWith(
                 compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
             )
+        putCache(cacheKey, finalResults)
+        return@withContext finalResults
+    }
+
+    /**
+     * Intelligently discovers fresh, high-quality English videos matching the user's subscribed creator niches and topics.
+     */
+    suspend fun fetchIntelligentDiscoveryVideos(subscribedChannels: List<String>, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val cacheKey = "discovery:intelligent"
+        if (!forceRefresh) {
+            getCached(cacheKey)?.let { return@withContext it }
+        }
+
+        val results = mutableListOf<VideoEntity>()
+        val targetQueries = mutableListOf<String>()
+
+        if (subscribedChannels.isNotEmpty()) {
+            val sample = subscribedChannels.shuffled().take(3)
+            sample.forEach { creator ->
+                targetQueries.add("$creator discussion interview")
+                targetQueries.add("$creator latest guest")
+            }
+        }
+        targetQueries.addAll(listOf(
+            "AI agents breakthrough news 2026",
+            "Tucker Carlson in depth interview",
+            "Lex Fridman podcast latest episode",
+            "The Rubin Report panel discussion",
+            "World of AI latest deep dive",
+            "Veritasium scientific breakthrough",
+            "Two Bit da Vinci technology future"
+        ))
+
+        for (q in targetQueries.shuffled().take(4)) {
+            try {
+                val list = searchRealYouTubeVideos(q, sortByUploadDate = true, forceRefresh = forceRefresh)
+                results.addAll(list.take(4))
+            } catch (e: Exception) { }
+        }
+
+        val finalResults = results
+            .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+            .distinctBy { it.youtubeId }
+
         putCache(cacheKey, finalResults)
         return@withContext finalResults
     }

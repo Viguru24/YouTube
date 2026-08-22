@@ -125,62 +125,141 @@ fun SettingsDialog(
                             .padding(14.dp)
                     ) {
                         Text(
-                            text = "🤖 Algorithm Controls",
+                            text = "🤖 Feed Algorithm & Discovery Tuning",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = YouTubeRed
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Creator Loyalty Weight Slider
+                        // 1. Subscribed Creators vs New Discoveries Ratio
+                        val discoveryPercent = (algorithmSettings.discoveryRatio * 100).toInt()
+                        val subscribedPercent = 100 - discoveryPercent
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Feed Content Mix:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = YouTubeRed.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "$subscribedPercent% Subscribed / $discoveryPercent% New",
+                                    color = YouTubeRed,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                         Text(
-                            text = "Creator Loyalty Boost: ${(algorithmSettings.creatorWeight * 100).toInt()}%",
+                            text = "Controls how much of your feed comes from your subscribed creators vs. intelligent new recommendations matching your interests.",
                             style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Slider(
-                            value = algorithmSettings.creatorWeight,
-                            onValueChange = { onAlgorithmSettingsChanged(algorithmSettings.copy(creatorWeight = it)) },
-                            colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Wild Discovery / Serendipity Slider
-                        Text(
-                            text = "Wild Discovery (Break the Bubble): ${(algorithmSettings.discoveryRatio * 100).toInt()}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
                         )
                         Slider(
                             value = algorithmSettings.discoveryRatio,
                             onValueChange = { onAlgorithmSettingsChanged(algorithmSettings.copy(discoveryRatio = it)) },
+                            valueRange = 0.05f..0.60f,
+                            colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = discoveryPercent <= 15,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(discoveryRatio = 0.10f)) },
+                                label = { Text("Focused (90/10)", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = discoveryPercent in 16..34,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(discoveryRatio = 0.25f)) },
+                                label = { Text("Balanced (75/25)", fontSize = 11.sp) }
+                            )
+                            FilterChip(
+                                selected = discoveryPercent >= 35,
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(discoveryRatio = 0.45f)) },
+                                label = { Text("Discovery (55/45)", fontSize = 11.sp) }
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // 2. Subscribed Creator Pinning / Priority
+                        val creatorWeightPercent = (algorithmSettings.creatorWeight * 100).toInt()
+                        val creatorWeightLabel = when {
+                            creatorWeightPercent >= 80 -> "Maximum Priority"
+                            creatorWeightPercent >= 60 -> "High Priority"
+                            else -> "Standard"
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Subscribed Creator Priority:",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "$creatorWeightPercent% ($creatorWeightLabel)",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Determines how strongly new uploads from your subscribed creators are placed near the top of your feed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                        Slider(
+                            value = algorithmSettings.creatorWeight,
+                            onValueChange = { onAlgorithmSettingsChanged(algorithmSettings.copy(creatorWeight = it)) },
+                            valueRange = 0.3f..1.0f,
                             colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
                         )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Freshness Decay Filter
+                        // 3. Freshness / Recency
                         Text(
-                            text = "Freshness Priority (Recency):",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Video Upload Recency (Freshness):",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
                         )
+                        Text(
+                            text = "Choose whether you prefer brand new uploads from today or timeless high-quality videos.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
-                                selected = algorithmSettings.freshnessDecay == "Slow",
-                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Slow")) },
-                                label = { Text("Slow") }
+                                selected = algorithmSettings.freshnessDecay == "Fast",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Fast")) },
+                                label = { Text("⚡ Newest (Today)") }
                             )
                             FilterChip(
                                 selected = algorithmSettings.freshnessDecay == "Medium",
                                 onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Medium")) },
-                                label = { Text("Balanced") }
+                                label = { Text("⚖️ Balanced (This Week)") }
                             )
                             FilterChip(
-                                selected = algorithmSettings.freshnessDecay == "Fast",
-                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Fast")) },
-                                label = { Text("Fast (24h)") }
+                                selected = algorithmSettings.freshnessDecay == "Slow",
+                                onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(freshnessDecay = "Slow")) },
+                                label = { Text("🌟 All-Time Best") }
                             )
                         }
 

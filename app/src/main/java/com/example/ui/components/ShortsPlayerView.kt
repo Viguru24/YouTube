@@ -266,30 +266,50 @@ fun ShortsPlayerView(
             val result = kotlinx.coroutines.withTimeoutOrNull(6000L) {
                 YouTubeStreamExtractor.extractVideoStreams(videoId)
             }
-            val directUrl = result?.primaryStreamUrl ?: YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+            val directUrl = if (selectedQuality != "Auto" && result?.qualityUrlMap?.containsKey(selectedQuality) == true) {
+                result.qualityUrlMap[selectedQuality]
+            } else {
+                result?.primaryStreamUrl ?: YouTubeStreamExtractor.getDirectStreamUrl(videoId)
+            }
 
             if (!directUrl.isNullOrEmpty()) {
                 streamUrl = directUrl
                 val audioUrl = result?.audioStreamUrl
-                val isVideoOnly = result?.videoOnlyQualities?.any { directUrl.contains(it) } == true
+                val isVideoOnly = result?.isVideoOnlyStream(directUrl, selectedQuality) == true ||
+                        (!audioUrl.isNullOrBlank() && directUrl != result?.combinedMuxedUrl && !directUrl.contains(".m3u8") && !directUrl.startsWith("file://") && !directUrl.startsWith("/"))
+
+                val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    .setDefaultRequestProperties(mapOf(
+                        "Referer" to "https://www.youtube.com/",
+                        "Origin" to "https://www.youtube.com",
+                        "Sec-Fetch-Dest" to "video",
+                        "Sec-Fetch-Mode" to "cors",
+                        "Sec-Fetch-Site" to "cross-site"
+                    ))
+                    .setConnectTimeoutMs(20000)
+                    .setReadTimeoutMs(25000)
+                    .setAllowCrossProtocolRedirects(true)
+
+                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
 
                 if (isVideoOnly && !audioUrl.isNullOrBlank()) {
-                    val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
                     val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(directUrl))
                     val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(audioUrl))
-                    val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+                    val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(true, true, videoSource, audioSource)
                     exoPlayer.setMediaSource(mergingSource)
                 } else {
-                    val mediaItem = MediaItem.fromUri(directUrl)
-                    exoPlayer.setMediaItem(mediaItem)
+                    val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(directUrl))
+                    exoPlayer.setMediaSource(mediaSource)
                 }
 
                 exoPlayer.volume = 1.0f
                 exoPlayer.prepare()
                 exoPlayer.play()
-                addLog("Stream extracted & ExoPlayer prepared with audio: $directUrl")
+                addLog("Stream extracted & ExoPlayer prepared (videoOnly=$isVideoOnly, audioMerged=${isVideoOnly && !audioUrl.isNullOrBlank()}): $directUrl")
             } else {
                 addLog("⚠️ Stream extraction timed out -> activating Shorts Web Player fallback")
                 useWebPlayerFallback = true
@@ -870,19 +890,6 @@ fun ShortsPlayerView(
                                         .buildUpon()
                                         .setMaxVideoSize(Int.MAX_VALUE, maxH)
                                         .build()
-
-                                    coroutineScope.launch {
-                                        val newUrl = com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, quality)
-                                        if (!newUrl.isNullOrEmpty() && newUrl != streamUrl) {
-                                            val currentPos = exoPlayer.currentPosition
-                                            streamUrl = newUrl
-                                            val mediaItem = androidx.media3.common.MediaItem.fromUri(newUrl)
-                                            exoPlayer.setMediaItem(mediaItem)
-                                            exoPlayer.prepare()
-                                            exoPlayer.seekTo(currentPos)
-                                            exoPlayer.play()
-                                        }
-                                    }
 
                                     Toast.makeText(context, "Quality set to $quality", Toast.LENGTH_SHORT).show()
                                 }

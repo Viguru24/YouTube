@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 7
-    versionName = "1.7.0"
+    versionCode = 17
+    versionName = "1.8.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -26,7 +26,7 @@ android {
   androidComponents {
     onVariants { variant ->
       variant.outputs.forEach { output ->
-        output.outputFileName.set("youtube_v1.7.0.apk")
+        output.outputFileName.set("youtube_v1.8.0.apk")
       }
     }
   }
@@ -125,6 +125,7 @@ dependencies {
   // implementation(libs.play.services.location)
   implementation("androidx.media3:media3-exoplayer:1.3.1")
   implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+  implementation("androidx.media3:media3-datasource-okhttp:1.3.1")
   implementation("androidx.media3:media3-ui:1.3.1")
   implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.4")
   implementation("org.mozilla:rhino:1.7.15")

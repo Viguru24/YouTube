@@ -36,7 +36,7 @@ object SponsorBlockService {
         if (videoId.isBlank()) return@withContext emptyList()
 
         try {
-            val categoriesJson = """["sponsor","selfpromo","interaction","intro","outro","preview","filler"]"""
+            val categoriesJson = """["sponsor","selfpromo"]"""
             val encodedCategories = java.net.URLEncoder.encode(categoriesJson, "UTF-8")
             val url = "https://sponsor.ajay.app/api/skipSegments?videoID=$videoId&categories=$encodedCategories"
 

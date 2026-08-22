@@ -77,6 +77,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Ensure status bar icons (battery, wifi, reception, volume) are crisp white on dark background
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false // false = white/light icons for dark status bar
+            isAppearanceLightNavigationBars = false
+        }
+
         // Register PiP control broadcast receiver with RECEIVER_NOT_EXPORTED for security
         val filter = android.content.IntentFilter(ACTION_PIP_CONTROL)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -411,12 +417,18 @@ fun MainAppContent(
                         android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     subscribedCreators = subscribedCreators,
-                    onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) }
+                    onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) },
+                    onSelectChannel = { channelName ->
+                        viewModel.selectSubscribedChannel(channelName)
+                        viewModel.clearActiveVideo()
+                        selectedNavIndex = 0
+                    }
                 )
             }
         } else {
             // Main Bottom Bar Layout Screen
             Scaffold(
+                contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
@@ -488,7 +500,7 @@ fun MainAppContent(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(innerPadding)
+                        .padding(bottom = innerPadding.calculateBottomPadding())
                 ) {
                     when (selectedNavIndex) {
                         0 -> HomeScreen(
@@ -513,6 +525,7 @@ fun MainAppContent(
                             liveSearchResults = liveSearchResults,
                             categoryVideos = categoryVideos,
                             dislikedVideoIds = dislikedVideoIds,
+                            subscribedCreators = subscribedCreators,
                             onLoadMore = { viewModel.loadMoreCategoryVideos() },
                             selectedTimeFilter = selectedTimeFilter,
                             onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },

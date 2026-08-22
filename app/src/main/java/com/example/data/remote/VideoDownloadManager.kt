@@ -81,8 +81,8 @@ object VideoDownloadManager {
                 ?: extractionResult.primaryStreamUrl
             val audioUrl = extractionResult.audioStreamUrl
 
-            val isVideoOnly = videoOnlyUrl != null && extractionResult.videoOnlyQualities.any { videoOnlyUrl.contains(it) } ||
-                    (combinedUrl == null && !audioUrl.isNullOrBlank())
+            val isVideoOnly = extractionResult.isVideoOnlyStream(videoOnlyUrl) ||
+                    (combinedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank())
 
             Log.d(TAG, "Download plan for $vidId: combinedUrl=${!combinedUrl.isNullOrBlank()}, videoOnly=$isVideoOnly, audioUrl=${!audioUrl.isNullOrBlank()}")
 

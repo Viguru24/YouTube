@@ -16,8 +16,26 @@ data class StreamExtractionResult(
     val combinedMuxedUrl: String? = null,
     val availableQualities: List<String> = emptyList(),
     val qualityUrlMap: Map<String, String> = emptyMap(),
-    val videoOnlyQualities: Set<String> = emptySet()
-)
+    val videoOnlyQualities: Set<String> = emptySet(),
+    val videoOnlyUrls: Set<String> = emptySet(),
+    val muxedUrls: Set<String> = emptySet()
+) {
+    /**
+     * Determines whether the given video stream URL has no built-in audio track and requires
+     * merging with a separate audio stream.
+     */
+    fun isVideoOnlyStream(url: String?, quality: String? = null): Boolean {
+        if (url.isNullOrBlank()) return false
+        if (url.contains(".m3u8") || url.contains("manifest/hls_variant") || quality == "HLS") return false
+        if (url.startsWith("file://") || url.startsWith("/")) return false
+        if (muxedUrls.contains(url)) return false
+        if (videoOnlyUrls.contains(url)) return true
+        if (quality != null && videoOnlyQualities.contains(quality)) return true
+        if (!audioStreamUrl.isNullOrBlank() && !combinedMuxedUrl.isNullOrBlank() && url != combinedMuxedUrl) return true
+        if (!audioStreamUrl.isNullOrBlank() && combinedMuxedUrl.isNullOrBlank()) return true
+        return false
+    }
+}
 
 object YouTubeStreamExtractor {
     private val client = OkHttpClient.Builder()
@@ -82,6 +100,8 @@ object YouTubeStreamExtractor {
     suspend fun extractVideoStreams(videoId: String): StreamExtractionResult = withContext(Dispatchers.IO) {
         val qualityMap = mutableMapOf<String, String>()
         val videoOnlyQualities = mutableSetOf<String>()
+        val videoOnlyUrls = mutableSetOf<String>()
+        val muxedUrls = mutableSetOf<String>()
         var bestAudioUrl: String? = null
         var bestCombinedUrl: String? = null
 
@@ -92,13 +112,48 @@ object YouTubeStreamExtractor {
             val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
             extractor.fetchPage()
 
-            // Best Audio Stream (prioritize M4A/AAC for seamless MP4 container muxing)
+            // Best Audio Stream (intelligently prioritize English & Original tracks over foreign dubs)
             val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
-            val m4aAudio = audioStreams.firstOrNull { 
-                val fmt = it.format?.name.orEmpty()
-                fmt.contains("M4A", ignoreCase = true) || fmt.contains("AAC", ignoreCase = true) || fmt.contains("MP4", ignoreCase = true)
+            val sortedAudioStreams = audioStreams.filter { !it.content.isNullOrBlank() }.sortedWith { a, b ->
+                fun score(s: org.schabi.newpipe.extractor.stream.AudioStream): Int {
+                    var score = 100
+                    val lang = s.audioLocale?.language?.lowercase().orEmpty()
+                    val trackName = s.audioTrackName?.lowercase().orEmpty()
+                    val trackType = try { s.audioTrackType?.name?.uppercase().orEmpty() } catch (e: Throwable) { "" }
+                    val fmt = s.format?.name?.uppercase().orEmpty()
+
+                    // 1. Prioritize English explicitly
+                    if (lang == "en" || lang.startsWith("en-") || trackName.contains("english")) {
+                        score += 500
+                    }
+
+                    // 2. Prioritize Original / Default track
+                    if (trackType == "ORIGINAL" || trackName.contains("original") || trackName.contains("default") || trackName.contains("primary")) {
+                        score += 300
+                    }
+
+                    // 3. Penalize foreign languages heavily if marked
+                    val foreignLangs = setOf("es", "pt", "hi", "fr", "de", "it", "ru", "ja", "ko", "id", "tr", "ar", "vi", "zh", "th", "pl", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa")
+                    if (foreignLangs.contains(lang)) {
+                        score -= 600
+                    }
+                    if (trackType == "DUBBED" && !lang.startsWith("en") && !trackName.contains("english")) {
+                        score -= 500
+                    }
+
+                    // 4. Format bonus (M4A / AAC for clean container compatibility)
+                    if (fmt.contains("M4A") || fmt.contains("AAC") || fmt.contains("MP4")) {
+                        score += 50
+                    }
+
+                    // 5. Higher bitrate bonus
+                    score += (s.averageBitrate / 10).coerceIn(0, 30)
+
+                    return score
+                }
+                score(b).compareTo(score(a)) // Descending
             }
-            bestAudioUrl = m4aAudio?.content ?: audioStreams.firstOrNull { !it.content.isNullOrBlank() }?.content
+            bestAudioUrl = sortedAudioStreams.firstOrNull()?.content
 
             // Video + Audio combined streams (Muxed - guaranteed instant audio!)
             val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
@@ -109,6 +164,7 @@ object YouTubeStreamExtractor {
                         val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
                         if (!qualityMap.containsKey(key)) {
                             qualityMap[key] = s.content
+                            muxedUrls.add(s.content)
                             if (bestCombinedUrl == null) {
                                 bestCombinedUrl = s.content
                             }
@@ -128,6 +184,7 @@ object YouTubeStreamExtractor {
                             if (!qualityMap.containsKey(key)) {
                                 qualityMap[key] = s.content
                                 videoOnlyQualities.add(key)
+                                videoOnlyUrls.add(s.content)
                             }
                         }
                     }
@@ -168,10 +225,19 @@ object YouTubeStreamExtractor {
                                 val jsonStr = matcher.group(1)
                                 if (!jsonStr.isNullOrEmpty()) {
                                     val jsonObj = org.json.JSONObject(jsonStr)
-                                    val streamUrl = extractUrlFromPlayerResponse(jsonObj)
-                                    if (!streamUrl.isNullOrEmpty()) {
-                                        qualityMap["720p"] = streamUrl
-                                        qualityMap["Auto"] = streamUrl
+                                    val streams = extractStreamsFromPlayerResponse(jsonObj)
+                                    if (!streams.first.isNullOrEmpty()) {
+                                        qualityMap["720p"] = streams.first!!
+                                        qualityMap["Auto"] = streams.first!!
+                                        if (streams.second != null) {
+                                            bestAudioUrl = streams.second
+                                            videoOnlyUrls.add(streams.first!!)
+                                            videoOnlyQualities.add("720p")
+                                            videoOnlyQualities.add("Auto")
+                                        } else {
+                                            muxedUrls.add(streams.first!!)
+                                            bestCombinedUrl = streams.first
+                                        }
                                     }
                                 }
                             }
@@ -206,6 +272,8 @@ object YouTubeStreamExtractor {
                                     if (streamUrl.isNotBlank()) {
                                         val key = if (res.isNotBlank()) (if (res.endsWith("p", true)) res.lowercase() else "${res}p") else "720p"
                                         qualityMap[key] = streamUrl
+                                        muxedUrls.add(streamUrl)
+                                        if (bestCombinedUrl == null) bestCombinedUrl = streamUrl
                                     }
                                 }
                             }
@@ -218,11 +286,13 @@ object YouTubeStreamExtractor {
 
         val sortedQualities = qualityMap.keys
             .filter { it != "HLS" && it != "Auto" }
-            .sortedByDescending { it.replace("p", "").toIntOrNull() ?: 0 }
 
-        // Prioritize non-throttled HLS adaptive stream or stable combined muxed stream
+        // 1. Prioritize HLS adaptive master playlist (multi-threaded chunk streaming with zero YouTube rate-limiting)
+        // 2. Next prioritize combined muxed 720p/1080p stream
+        // 3. Fallback to resolution-specific streams
         val bestUrl = qualityMap["HLS"]
             ?: bestCombinedUrl
+            ?: sortedQualities.firstOrNull { it == "1080p" || it == "720p" }?.let { qualityMap[it] }
             ?: sortedQualities.firstOrNull()?.let { qualityMap[it] }
             ?: qualityMap["Auto"]
             ?: qualityMap.values.firstOrNull()
@@ -245,7 +315,9 @@ object YouTubeStreamExtractor {
             combinedMuxedUrl = bestCombinedUrl,
             availableQualities = finalQualitiesList,
             qualityUrlMap = qualityMap,
-            videoOnlyQualities = videoOnlyQualities
+            videoOnlyQualities = videoOnlyQualities,
+            videoOnlyUrls = videoOnlyUrls,
+            muxedUrls = muxedUrls
         )
     }
 
@@ -262,37 +334,59 @@ object YouTubeStreamExtractor {
         return@withContext result.primaryStreamUrl
     }
 
-    private fun extractUrlFromPlayerResponse(playerResponse: org.json.JSONObject): String? {
+    private fun extractStreamsFromPlayerResponse(playerResponse: org.json.JSONObject): Pair<String?, String?> {
+        var videoUrl: String? = null
+        var audioUrl: String? = null
         try {
-            val streamingData = playerResponse.optJSONObject("streamingData") ?: return null
+            val streamingData = playerResponse.optJSONObject("streamingData") ?: return Pair(null, null)
             val formats = streamingData.optJSONArray("formats")
             if (formats != null && formats.length() > 0) {
                 for (i in 0 until formats.length()) {
                     val f = formats.getJSONObject(i)
-                    val url = f.optString("url")
-                    if (url.isNotEmpty()) return url
+                    var url = f.optString("url")
                     val cipher = f.optString("signatureCipher", f.optString("cipher"))
-                    if (cipher.isNotEmpty()) {
-                        val parsed = parseCipher(cipher)
-                        if (parsed.isNotEmpty()) return parsed
+                    if (url.isEmpty() && cipher.isNotEmpty()) {
+                        url = parseCipher(cipher)
+                    }
+                    if (url.isNotEmpty()) {
+                        // formats has muxed video+audio
+                        return Pair(url, null)
                     }
                 }
             }
             val adaptive = streamingData.optJSONArray("adaptiveFormats")
             if (adaptive != null && adaptive.length() > 0) {
+                var bestAudioScore = -1000
                 for (i in 0 until adaptive.length()) {
                     val f = adaptive.getJSONObject(i)
                     val mime = f.optString("mimeType")
-                    if (mime.contains("video")) {
-                        val url = f.optString("url")
-                        if (url.isNotEmpty()) return url
+                    var url = f.optString("url")
+                    val cipher = f.optString("signatureCipher", f.optString("cipher"))
+                    if (url.isEmpty() && cipher.isNotEmpty()) {
+                        url = parseCipher(cipher)
+                    }
+                    if (url.isNotEmpty()) {
+                        if (mime.contains("video") && videoUrl == null) {
+                            videoUrl = url
+                        } else if (mime.contains("audio")) {
+                            val audioTrack = f.optJSONObject("audioTrack")
+                            val displayName = audioTrack?.optString("displayName", "").orEmpty().lowercase()
+                            val isDefault = audioTrack?.optBoolean("audioIsDefault", false) == true
+                            var score = 100
+                            if (displayName.contains("english") || displayName.contains("original") || isDefault) score += 500
+                            if (displayName.contains("dubbed") && !displayName.contains("english")) score -= 500
+                            if (score > bestAudioScore) {
+                                bestAudioScore = score
+                                audioUrl = url
+                            }
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
-            logD("YouTubeStreamExtractor", "extractUrlFromPlayerResponse error: ${e.message}")
+            logD("YouTubeStreamExtractor", "extractStreamsFromPlayerResponse error: ${e.message}")
         }
-        return null
+        return Pair(videoUrl, audioUrl)
     }
 
     private fun parseCipher(cipher: String): String {

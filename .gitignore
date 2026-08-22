@@ -16,3 +16,23 @@
 local.properties
 .env
 debug.keystore
+
+# Build artifacts & packages
+bin/
+obj/
+*.user
+*.suo
+*.msix
+*.lnk
+*.log
+
+# Private local databases and settings
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+settings.json
+local_settings.json
+WebView2Profile/

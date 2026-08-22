@@ -45,8 +45,8 @@ fun GoogleSignInDialog(
     var isSyncing by remember { mutableStateOf(false) }
     var isSigningIn by remember { mutableStateOf(false) }
 
-    var nameInput by remember(account) { mutableStateOf(if (account.name.isNotBlank()) account.name else "Louis de Souza") }
-    var emailInput by remember(account) { mutableStateOf(if (account.email.isNotBlank()) account.email else "louisdesouza@gmail.com") }
+    var nameInput by remember(account) { mutableStateOf(if (account.name.isNotBlank()) account.name else "Local User") }
+    var emailInput by remember(account) { mutableStateOf(if (account.email.isNotBlank()) account.email else "local@vixz.app") }
 
     fun launchSystemGoogleSignIn() {
         isSigningIn = true
@@ -70,18 +70,18 @@ fun GoogleSignInDialog(
 
                 val credential = result.credential
                 if (credential is GoogleIdTokenCredential) {
-                    val displayName = credential.displayName ?: "Louis de Souza"
+                    val displayName = credential.displayName ?: "Local User"
                     val email = credential.id
                     onSignIn(displayName, email)
                     Toast.makeText(context, "Authenticated as $displayName ($email) 🟢", Toast.LENGTH_SHORT).show()
                 } else {
-                    onSignIn(nameInput.ifBlank { "Louis de Souza" }, emailInput.ifBlank { "louisdesouza@gmail.com" })
+                    onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
                     Toast.makeText(context, "Google Account Signed In 🟢", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 // Fallback to manual entry if Google Play Services Credential Manager dialog is dismissed
-                onSignIn(nameInput.ifBlank { "Louis de Souza" }, emailInput.ifBlank { "louisdesouza@gmail.com" })
-                Toast.makeText(context, "Signed In as ${nameInput.ifBlank { "Louis de Souza" }} 🟢", Toast.LENGTH_SHORT).show()
+                onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
+                Toast.makeText(context, "Signed In as ${nameInput.ifBlank { "Local User" }} 🟢", Toast.LENGTH_SHORT).show()
             } finally {
                 isSigningIn = false
                 onDismiss()

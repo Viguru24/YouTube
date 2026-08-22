@@ -80,6 +80,7 @@ fun HomeScreen(
     onOpenHistory: () -> Unit = {},
     onOpenManageTopicsAndCreators: (initialTab: Int) -> Unit = {},
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
+    subscribedCreators: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -94,7 +95,7 @@ fun HomeScreen(
     val sortCycle = listOf("Default", "Newest", "Oldest")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
 
-    val subscribedChannelsList = com.example.data.model.WillRyanProfileData.subscribedChannels
+    val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.WillRyanProfileData.subscribedChannels
 
     // Reset scroll to top on category or channel change
     LaunchedEffect(selectedCategory, selectedSubscribedChannel) {
@@ -110,15 +111,30 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets.statusBars,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
                 title = {
                     if (isSearchExpanded) {
+                        var localSearchQuery by remember(searchQuery) { mutableStateOf(searchQuery) }
+                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
                         OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = onSearchQueryChanged,
+                            value = localSearchQuery,
+                            onValueChange = { newText ->
+                                localSearchQuery = newText
+                                onSearchQueryChanged(newText)
+                            },
                             placeholder = { Text("Search videos or channels...", fontSize = 14.sp) },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search
+                            ),
                             keyboardActions = KeyboardActions(onSearch = {
-                                val pastedId = com.example.util.YouTubeUtils.extractVideoId(searchQuery)
+                                onSearchQueryChanged(localSearchQuery)
+                                keyboardController?.hide()
+                                val pastedId = com.example.util.YouTubeUtils.extractVideoId(localSearchQuery)
                                 if (pastedId != null) {
                                     val video = VideoEntity(
                                         youtubeId = pastedId,
@@ -133,15 +149,20 @@ fun HomeScreen(
                             }),
                             leadingIcon = {
                                 IconButton(onClick = {
+                                    localSearchQuery = ""
                                     onSearchQueryChanged("")
                                     isSearchExpanded = false
+                                    keyboardController?.hide()
                                 }) {
                                     Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
                                 }
                             },
                             trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { onSearchQueryChanged("") }) {
+                                if (localSearchQuery.isNotEmpty()) {
+                                    IconButton(onClick = {
+                                        localSearchQuery = ""
+                                        onSearchQueryChanged("")
+                                    }) {
                                         Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
@@ -161,29 +182,117 @@ fun HomeScreen(
                                 .testTag("search_text_field")
                         )
                     } else {
-                        // Big round orange/red play button on the left without any text
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(YouTubeRed)
-                                .clickable {
-                                    coroutineScope.launch {
-                                        gridState.scrollToItem(0)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Big round orange/red play button on the left without any text
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(YouTubeRed)
+                                    .clickable {
+                                        coroutineScope.launch {
+                                            gridState.scrollToItem(0)
+                                        }
+                                        onCategorySelected("All")
+                                        onSearchQueryChanged("")
+                                        onSubscribedChannelSelected("")
+                                        onRefreshFeed()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.PlayArrow,
+                                    contentDescription = "Home",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Subscribed Channels Pull-Down Menu Button (Right next to the Play Button)
+                            Box {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else Color(0xFF333333)
+                                    ),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable { showSubscribedChannelsMenu = true }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 10.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Subscriptions,
+                                            contentDescription = "Subscriptions",
+                                            tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else "Subscribed",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Filled.ArrowDropDown,
+                                            contentDescription = "Open Subscriptions",
+                                            tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
-                                    onCategorySelected("All")
-                                    onSearchQueryChanged("")
-                                    onSubscribedChannelSelected("")
-                                    onRefreshFeed()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PlayArrow,
-                                contentDescription = "Home",
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp)
-                            )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showSubscribedChannelsMenu,
+                                    onDismissRequest = { showSubscribedChannelsMenu = false },
+                                    modifier = Modifier.heightIn(max = 400.dp).widthIn(min = 220.dp)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("⭐ All Feed Videos", fontWeight = FontWeight.Bold, color = YouTubeRed) },
+                                        onClick = {
+                                            showSubscribedChannelsMenu = false
+                                            onSubscribedChannelSelected("")
+                                            onCategorySelected("All")
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⚙️ Manage Creators (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                                        onClick = {
+                                            showSubscribedChannelsMenu = false
+                                            onOpenManageTopicsAndCreators(0)
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                    subscribedChannelsList.forEach { channel ->
+                                        val isCurrent = channel.equals(selectedSubscribedChannel, ignoreCase = true)
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = channel,
+                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                    fontSize = 13.sp
+                                                )
+                                            },
+                                            onClick = {
+                                                showSubscribedChannelsMenu = false
+                                                onSubscribedChannelSelected(channel)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 },
@@ -192,56 +301,6 @@ fun HomeScreen(
                         // 1. Search 🔍
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
-                        }
-
-                        // 2. Subscribed Channels Pull-Down Menu 🔔
-                        Box {
-                            IconButton(onClick = { showSubscribedChannelsMenu = true }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Subscriptions,
-                                    contentDescription = "Subscribed Channels",
-                                    tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = showSubscribedChannelsMenu,
-                                onDismissRequest = { showSubscribedChannelsMenu = false },
-                                modifier = Modifier.heightIn(max = 350.dp)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("⭐ All Feed Videos", fontWeight = FontWeight.Bold, color = YouTubeRed) },
-                                    onClick = {
-                                        showSubscribedChannelsMenu = false
-                                        onSubscribedChannelSelected("")
-                                        onCategorySelected("All")
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("⚙️ Manage Creators (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
-                                    onClick = {
-                                        showSubscribedChannelsMenu = false
-                                        onOpenManageTopicsAndCreators(0)
-                                    }
-                                )
-                                HorizontalDivider()
-                                subscribedChannelsList.forEach { channel ->
-                                    val isCurrent = channel.equals(selectedSubscribedChannel, ignoreCase = true)
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = channel,
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontSize = 13.sp
-                                            )
-                                        },
-                                        onClick = {
-                                            showSubscribedChannelsMenu = false
-                                            onSubscribedChannelSelected(channel)
-                                        }
-                                    )
-                                }
-                            }
                         }
 
                         // 3. LS Profile Button (Opens Settings & Full Menu Options)
@@ -469,7 +528,7 @@ fun HomeScreen(
                 }
             } else {
                 LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -479,7 +538,12 @@ fun HomeScreen(
                         val isSelected = category.equals(selectedCategory, ignoreCase = true)
                         FilterChip(
                             selected = isSelected,
-                            onClick = { onCategorySelected(category) },
+                            onClick = {
+                                onCategorySelected(category)
+                                if (selectedSubscribedChannel.isNotBlank()) {
+                                    onSubscribedChannelSelected("")
+                                }
+                            },
                             label = { 
                                 Text(
                                     text = category, 
@@ -546,92 +610,119 @@ fun HomeScreen(
 
             val candidateList = categoryVideos.ifEmpty { videos }
 
-            val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
-                val targetCh = selectedSubscribedChannel.lowercase().trim()
-                candidateList.filter { video ->
-                    val vCh = video.channelName.lowercase().trim()
-                    (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
-                    (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video, allowWatched = true)
-                }.distinctBy { it.youtubeId }
-            } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
-                val searchList = if (liveSearchResults.isNotEmpty()) {
-                    liveSearchResults
+            val displayList = remember(
+                candidateList,
+                liveSearchResults,
+                selectedSubscribedChannel,
+                subscribedChannelsList,
+                searchQuery,
+                extractedVideoId,
+                selectedCategory,
+                selectedTimeFilter,
+                selectedSort,
+                watchedIds,
+                dislikedVideoIds,
+                mutedChannelNames,
+                mutedChannels,
+                historyVideos,
+                algorithmSettings
+            ) {
+                val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
+                    val targetCh = selectedSubscribedChannel.lowercase().trim()
+                    candidateList.filter { video ->
+                        val vCh = video.channelName.lowercase().trim()
+                        (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
+                        (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video, allowWatched = true)
+                    }.distinctBy { it.youtubeId }
+                } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
+                    val searchList = if (liveSearchResults.isNotEmpty()) {
+                        liveSearchResults
+                    } else {
+                        candidateList.filter { 
+                            it.title.contains(searchQuery, ignoreCase = true) || 
+                            it.channelName.contains(searchQuery, ignoreCase = true) 
+                        }
+                    }
+                    searchList.filter { !isVideoHidden(it, allowWatched = true) }.distinctBy { it.youtubeId }
+                } else if (selectedCategory == "🔔 Subscriptions") {
+                    val subSet = subscribedChannelsList.map { it.lowercase().trim() }.filter { it.isNotBlank() }
+                    candidateList.filter { video ->
+                        val vCh = video.channelName.lowercase().trim()
+                        val vTitle = video.title.lowercase().trim()
+                        (subSet.any { sub -> vCh.contains(sub) || sub.contains(vCh) || vCh.replace(" ", "") == sub.replace(" ", "") } ||
+                         (vCh.contains("youtube") && subSet.any { sub -> vTitle.contains(sub) })) &&
+                        !isVideoHidden(video, allowWatched = true)
+                    }.distinctBy { it.youtubeId }
+                } else if (selectedCategory == "⏰ Last 24h") {
+                    candidateList
+                        .filter {
+                            val timeLower = it.publishedTimeText.lowercase()
+                            (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
+                            !isVideoHidden(it)
+                        }
+                        .distinctBy { it.youtubeId }
+                } else if (selectedCategory != "All") {
+                    candidateList
+                        .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
+                        .distinctBy { it.youtubeId }
                 } else {
-                    candidateList.filter { 
-                        it.title.contains(searchQuery, ignoreCase = true) || 
-                        it.channelName.contains(searchQuery, ignoreCase = true) 
+                    // Main Home Feed: filter out any video that has been watched, disliked, or muted!
+                    val filtered = candidateList
+                        .filter { !isVideoHidden(it) }
+                        .distinctBy { it.youtubeId }
+                    // If aggressive watch filtering leaves fewer than 4 items, backfill with not-disliked candidate items
+                    if (filtered.size >= 4) {
+                        filtered
+                    } else {
+                        val notDisliked = candidateList.filter { it.youtubeId !in dislikedVideoIds && it.channelName.lowercase().trim() !in mutedChannelNames }
+                        (filtered + notDisliked).distinctBy { it.youtubeId }
                     }
                 }
-                searchList.filter { !isVideoHidden(it, allowWatched = true) }.distinctBy { it.youtubeId }
-            } else if (selectedCategory == "⏰ Last 24h") {
-                candidateList
-                    .filter {
-                        val timeLower = it.publishedTimeText.lowercase()
-                        (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
-                        !isVideoHidden(it)
+
+                // Apply Upload Date Time Selector Filter to Search Results
+                val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
+                    val maxSeconds = when (selectedTimeFilter) {
+                        "Last Hour" -> 3600L
+                        "Today" -> 86400L
+                        "This Week" -> 604800L
+                        "This Month" -> 2592000L
+                        "This Year" -> 31536000L
+                        else -> Long.MAX_VALUE
                     }
-                    .distinctBy { it.youtubeId }
-            } else if (selectedCategory != "All") {
-                candidateList
-                    .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
-                    .distinctBy { it.youtubeId }
-            } else {
-                // Main Home Feed: filter out any video that has been watched, disliked, or muted!
-                val filtered = candidateList
-                    .filter { !isVideoHidden(it) }
-                    .distinctBy { it.youtubeId }
-                // If aggressive watch filtering leaves fewer than 4 items, backfill with not-disliked candidate items
-                if (filtered.size >= 4) {
-                    filtered
+                    rawDisplayList.filter { video ->
+                        val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
+                        sec <= maxSeconds
+                    }
                 } else {
-                    val notDisliked = candidateList.filter { it.youtubeId !in dislikedVideoIds && it.channelName.lowercase().trim() !in mutedChannelNames }
-                    (filtered + notDisliked).distinctBy { it.youtubeId }
+                    rawDisplayList
                 }
-            }
 
-            // Apply Upload Date Time Selector Filter to Search Results
-            val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
-                val maxSeconds = when (selectedTimeFilter) {
-                    "Last Hour" -> 3600L
-                    "Today" -> 86400L
-                    "This Week" -> 604800L
-                    "This Month" -> 2592000L
-                    "This Year" -> 31536000L
-                    else -> Long.MAX_VALUE
-                }
-                rawDisplayList.filter { video ->
-                    val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
-                    sec <= maxSeconds
-                }
-            } else {
-                rawDisplayList
-            }
-
-            val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
-                videos = timeFilteredList,
-                favorites = videos.filter { it.isFavorite },
-                watchHistory = historyVideos,
-                mutedChannels = mutedChannels,
-                dislikedVideoIds = dislikedVideoIds,
-                settings = algorithmSettings
-            )
-
-            val displayList = if (selectedSubscribedChannel.isNotBlank() || searchQuery.isNotBlank()) {
-                timeFilteredList.sortedWith(
-                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                        .thenByDescending { it.addedTimestamp }
+                val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
+                    videos = timeFilteredList,
+                    favorites = videos.filter { it.isFavorite },
+                    watchHistory = historyVideos,
+                    mutedChannels = mutedChannels,
+                    dislikedVideoIds = dislikedVideoIds,
+                    settings = algorithmSettings
                 )
-            } else when (selectedSort) {
-                "Oldest" -> rankedDisplayList.sortedWith(
-                    compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                        .thenBy { it.addedTimestamp }
-                )
-                else -> {
-                    // Default & Newest both strictly prioritize newest uploads first (minutes, hours, days ago)
-                    rankedDisplayList.sortedWith(
+
+                if (selectedSubscribedChannel.isNotBlank() || searchQuery.isNotBlank()) {
+                    timeFilteredList.sortedWith(
                         compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                             .thenByDescending { it.addedTimestamp }
                     )
+                } else when (selectedSort) {
+                    "Oldest" -> rankedDisplayList.sortedWith(
+                        compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            .thenBy { it.addedTimestamp }
+                    )
+                    else -> {
+                        // Default & Newest both strictly prioritize newest uploads first (minutes, hours, days ago)
+                        rankedDisplayList.sortedWith(
+                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                                .thenByDescending { it.addedTimestamp }
+                        )
+                    }
                 }
             }
 
@@ -685,7 +776,13 @@ fun HomeScreen(
                         displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
                     }
                 }
-                val mainVideosList = displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
+                val mainVideosList = remember(displayList) {
+                    displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
+                }
+                val recommendationReasons = remember(mainVideosList, videos, historyVideos) {
+                    val favs = videos.filter { it.isFavorite }
+                    mainVideosList.associate { it.youtubeId to com.example.data.repository.RecommendationEngine.getRecommendationReason(it, favs, historyVideos) }
+                }
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyVerticalGrid(
@@ -796,7 +893,11 @@ fun HomeScreen(
                     }
 
                     // 2. Main Videos Section (2-Column Grid)
-                    itemsIndexed(mainVideosList, key = { _, video -> video.youtubeId }) { index, video ->
+                    itemsIndexed(
+                        items = mainVideosList,
+                        key = { _, video -> video.youtubeId },
+                        contentType = { _, _ -> "video_card" }
+                    ) { index, video ->
                         // Infinite scroll trigger: prefetch when within last 4 items of current batch
                         if (index >= (mainVideosList.size - 4).coerceAtLeast(0)) {
                             LaunchedEffect(index, mainVideosList.size) {
@@ -804,11 +905,7 @@ fun HomeScreen(
                             }
                         }
 
-                        val reason = com.example.data.repository.RecommendationEngine.getRecommendationReason(
-                            video = video,
-                            favorites = videos.filter { it.isFavorite },
-                            watchHistory = historyVideos
-                        )
+                        val reason = recommendationReasons[video.youtubeId].orEmpty()
 
                         VideoCard(
                             video = video,
@@ -820,6 +917,7 @@ fun HomeScreen(
                             onMuteChannel = onMuteChannel,
                             onSaveToSubject = { v -> videoToSaveToSubject = v },
                             onNotInterested = onDeleteVideo,
+                            onChannelClick = onSubscribedChannelSelected,
                             modifier = Modifier.animateItem()
                         )
                     }

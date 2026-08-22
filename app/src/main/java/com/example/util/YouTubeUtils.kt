@@ -42,58 +42,142 @@ object YouTubeUtils {
     }
 
     /**
-     * Zero-tolerance detection for foreign scripts (Devanagari, Urdu/Arabic, Tamil, Telugu, etc.)
-     * and Pakistani/Indian regional channels and political/media keywords.
+     * Zero-tolerance detection for non-English content:
+     * 1. All non-Latin writing systems (Indic, Arabic, Cyrillic, CJK, Kana, Hangul, Greek, Hebrew, Southeast Asian, etc.)
+     * 2. Common non-English vocabulary, phrases, and media channels in Spanish, Portuguese, French, German, Italian, Turkish, Indonesian, Hindi/Urdu, Tagalog, etc.
      */
     fun isForeignLanguageContent(title: String, channelName: String): Boolean {
-        val fullText = "$title $channelName".lowercase()
+        val combined = "$title $channelName"
+        val fullText = combined.lowercase()
 
-        // 1. If ANY character belongs to a non-Latin/Indic/Arabic/Asian script, reject immediately
-        for (ch in "$title $channelName") {
+        // 1. Script Check: Reject if any letter belongs to a non-Latin / non-ASCII writing system
+        for (ch in combined) {
             if (ch.isLetter()) {
                 val code = ch.code
-                if (code in 0x0600..0x06FF || // Arabic / Urdu
-                    code in 0x0750..0x077F || // Arabic Supplement
-                    code in 0x08A0..0x08FF || // Arabic Extended
-                    code in 0x0900..0x097F || // Devanagari (Hindi, Marathi)
-                    code in 0x0980..0x09FF || // Bengali
-                    code in 0x0A00..0x0A7F || // Gurmukhi (Punjabi)
-                    code in 0x0A80..0x0AFF || // Gujarati
-                    code in 0x0B00..0x0B7F || // Oriya
-                    code in 0x0B80..0x0BFF || // Tamil
-                    code in 0x0C00..0x0C7F || // Telugu
-                    code in 0x0C80..0x0CFF || // Kannada
-                    code in 0x0D00..0x0D7F || // Malayalam
-                    code in 0x0D80..0x0DFF || // Sinhala
+                if (code in 0x0370..0x03FF || // Greek & Coptic
+                    code in 0x0400..0x052F || // Cyrillic & Cyrillic Supplement
+                    code in 0x0530..0x058F || // Armenian
+                    code in 0x0590..0x05FF || // Hebrew
+                    code in 0x0600..0x08FF || // Arabic, Urdu, Persian, Pashto, Arabic Extended
+                    code in 0x0900..0x0DFF || // Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala
                     code in 0x0E00..0x0E7F || // Thai
-                    code in 0x0400..0x04FF || // Cyrillic
-                    code in 0x4E00..0x9FFF || // CJK Chinese
-                    code in 0xAC00..0xD7AF    // Hangul Korean
+                    code in 0x0E80..0x0EFF || // Lao
+                    code in 0x0F00..0x0FFF || // Tibetan
+                    code in 0x1000..0x109F || // Myanmar / Burmese
+                    code in 0x10A0..0x10FF || // Georgian
+                    code in 0x1200..0x137F || // Ethiopic / Ge'ez
+                    code in 0x1780..0x17FF || // Khmer
+                    code in 0x1800..0x18AF || // Mongolian
+                    code in 0x1EA0..0x1EFF || // Vietnamese Latin Extended Additional
+                    code in 0x2E80..0x33FF || // CJK Radicals, Kangxi, Bopomofo, CJK Symbols, Hiragana, Katakana
+                    code in 0x3400..0x4DBF || // CJK Unified Ideographs Extension A
+                    code in 0x4E00..0x9FFF || // CJK Unified Ideographs (Chinese Hanzi, Kanji)
+                    code in 0xAC00..0xD7AF || // Hangul Syllables (Korean)
+                    code in 0x1100..0x11FF || // Hangul Jamo
+                    code in 0x3130..0x318F || // Hangul Compatibility Jamo
+                    code in 0xFF00..0xFFEF    // Halfwidth and Fullwidth Forms (Asian punctuation & Kana)
                 ) {
                     return true
                 }
             }
         }
 
-        // 2. Comprehensive blacklist of Pakistani, Indian, and regional media outlets & terms
-        val foreignKeywords = listOf(
-            "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada",
-            "marathi", "urdu", "bangla", "bengali", "gujarati", "desi", "bollywood",
-            "tollywood", "kollywood", "pakistan", "pakistani", "india", "indian", "bharat",
-            "hindustan", "ary digital", "zee tv", "t-series", "set india", "sab tv",
-            "geet", "gaana", "bhajan", "natok", "dramareview", "naat", "qawwali", "bayan",
-            "voot", "hotstar", "hum tv", "geo news", "geo tv", "aaj tak", "abp news",
-            "india tv", "ndtv", "republic bharat", "zee news", "news18", "tv9",
-            "lallantop", "dainik", "punjab kesari", "speed records", "white hill",
-            "saregama", "tips official", "shemaroo", "goldmines", "ultra movie",
-            "pen movies", "b4u", "sonotek", "haryanvi", "chanda", "khesari", "pawan singh",
-            "bol news", "samaa", "dunya", "express news", "92 news", "hum news",
-            "kapil sharma", "taarak mehta", "cid", "crime patrol", "savdhaan",
-            "babar azam", "virat kohli", "rohit sharma", "ipl 202", "psl 202", "cricket live",
-            "imran khan", "shehbaz", "nawaz sharif", "narendra modi", "bjp", "congress party",
-            "dhruv rathee", "soch by mohak", "lahore", "karachi", "islamabad", "delhi", "mumbai"
+        // 2. Exact multi-word foreign phrases (Spanish, Portuguese, French, German, Italian, Turkish, Indonesian, Hindi/Urdu, etc.)
+        val foreignPhrases = listOf(
+            // Spanish & Portuguese
+            "en vivo", "ao vivo", "capitulo completo", "capítulo completo", "pelicula completa", "película completa",
+            "filme completo", "todos los capitulos", "resumen del partido", "mejores momentos", "melhores momentos",
+            "primera vez", "primeira vez", "en directo", "ultima hora", "última hora", "noticias de hoy",
+            "notícias de hoje", "buenos dias", "buenas noches", "como hacer", "cómo hacer", "conferencia de prensa",
+            "canal oficial", "video oficial", "vídeo oficial", "letra oficial", "musica cristiana", "música cristiana",
+            "telenovela completa", "serie completa", "novela das", "futebol ao vivo", "jogo ao vivo", "gols da rodada",
+
+            // French
+            "en direct", "bande annonce", "bande-annonce", "film complet", "journal télévisé", "tous les épisodes",
+            "chanson officielle", "clip officiel", "les meilleurs moments", "pour les enfants",
+
+            // German
+            "ganzer film", "auf deutsch", "deutsche nachrichten", "live übertragung", "ganze folge",
+
+            // Italian
+            "in diretta", "film completo", "canzone ufficiale", "tutti gli episodi", "conferenza stampa",
+
+            // Turkish
+            "canlı yayın", "canli yayin", "full izle", "tek parça", "tek parca", "son dakika", "yeni bölüm", "yeni bolum",
+            "türkçe dublaj", "turkce dublaj", "türkçe altyazı", "turkce altyazi",
+
+            // Indonesian / Malay
+            "alur cerita", "film sub indo", "sub indo", "live streaming indonesia", "sinopsis film", "rekap film",
+            "berita terkini", "lagu terbaru",
+
+            // South Asian / Hindi / Urdu / Pakistani (Romanized)
+            "kaise kare", "kaise banaye", "taaza khabar", "aaj ki taaza", "pakistani drama", "indian drama",
+            "full episode", "full drama", "naat sharif", "bayan video", "tarjuma quran", "qawwali live",
+            "new song lyrical", "desi comedy", "dekhie kya hua", "kya hua jab", "dekho kya hua", "sune aur dekhe",
+            "har pal geo", "ary digital", "hum tv", "green entertainment", "express entertainment", "aaj tak",
+            "abp news", "zee news", "geo news", "bol news", "samaa tv", "dunya news", "express news",
+            "shemaroo filmi", "goldmines telefilms", "t-series", "speed records", "desh ki baat", "aaj ki badi khabar",
+            "breaking news pakistan", "breaking news india", "live news hindi", "khabrein aaj ki",
+
+            // Filipino / Tagalog
+            "buong episode", "balita ngayon", "ulat balita", "pilipinas balita"
         )
-        return foreignKeywords.any { fullText.contains(it) }
+
+        if (foreignPhrases.any { fullText.contains(it) }) return true
+
+        // 3. Foreign standalone keywords matched as whole tokens to avoid false positives in English words
+        val foreignWords = setOf(
+            // Spanish & Portuguese
+            "capitulo", "capítulo", "pelicula", "película", "noticias", "notícias", "futebol", "novela", "telenovela",
+            "desenho", "dublado", "legendado", "cancion", "canción", "jornal", "gols", "español", "espanol",
+            "português", "portugues", "episodio", "episódio", "temporada", "resumo", "estreno", "estrenos",
+            "receta", "recetas", "subtitulado", "subtitulada", "dublada", "jogos",
+
+            // French
+            "épisode", "français", "francais", "actualités", "actualites", "découverte", "émission", "emission",
+
+            // German
+            "folge", "deutsch", "nachrichten", "zusammenfassung", "höhepunkte", "spieltag", "übertragung",
+
+            // Italian
+            "puntata", "notizie", "italiano", "riassunto",
+
+            // Turkish
+            "bölüm", "bolum", "fragman", "dizi", "özet", "ozet", "türkçe", "turkce", "haberler",
+
+            // Indonesian / Malay
+            "terbaru", "berita", "lengkap", "sinopsis", "lirik", "lucu", "ngakak",
+
+            // South Asian / Hindi / Urdu / Pakistani / Tamil / Telugu / Bengali (Romanized & Media Networks)
+            "kaise", "kare", "karen", "wala", "wali", "wale", "nahin", "nhi", "nahi", "kya", "hain", "dekho",
+            "dekhie", "sunao", "batao", "sikhe", "samachar", "kahani", "dulhan", "bhabhi", "gaana",
+            "bhajan", "aarti", "chalisa", "tarjuma", "tilawat", "khutba", "qawwali", "mujra", "dhamaka",
+            "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada", "marathi", "urdu",
+            "bangla", "bengali", "gujarati", "desi", "bollywood", "tollywood", "kollywood", "mollywood",
+            "pakistan", "pakistani", "bharat", "hindustan", "ary", "geotv", "geonews", "aajtak", "abpnews",
+            "tseries", "humtv", "zeetv", "zeenews", "ndtv", "setindia", "sabtv", "shemaroo", "goldmines",
+            "sonotek", "haryanvi", "bolnews", "samaatv", "expressnews", "dunyanews", "dawnnews", "arydigital",
+            "arynews", "harpalgeo", "ptvnews", "suntv", "vijaytv", "zeetelugu", "starplus", "starbharat",
+            "sonytv", "ddnational", "rajshri", "speedrecords", "geetmp3", "whitehillmusic", "desimusicfactory",
+            "adityamusic", "adithya", "telly", "tashan", "fitoor", "aarambhi", "puli", "sanu", "oli",
+            "sholay", "ghazal", "mushaira", "manqabat", "noha", "marsiya", "majlis",
+            "khabar", "khabrain", "rishta", "tamasha", "nuskha", "ilaaj", "totkay", "wazifa", "wazaif",
+            "rohani", "kundli", "rashifal", "rashi", "dharma", "mandir", "masjid", "dargah", "satsang",
+            "pravachan", "katha", "sindh", "sindhi", "baloch", "balochi", "pashto", "kashmir", "kashmiri",
+
+            // Filipino / Tagalog
+            "teleserye", "balita", "pinoy", "pilipinas"
+        )
+
+        // Split text by punctuation, symbols, and whitespace
+        val tokens = fullText.split("[^\\p{Alnum}]+".toRegex()).filter { it.isNotBlank() }
+        for (token in tokens) {
+            if (foreignWords.contains(token)) {
+                return true
+            }
+        }
+
+        return false
     }
 
     /**

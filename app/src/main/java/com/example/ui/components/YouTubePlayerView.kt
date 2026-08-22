@@ -96,9 +96,9 @@ fun YouTubePlayerView(
     var currentPosMs by remember { mutableLongStateOf(0L) }
     var totalDurationMs by remember { mutableLongStateOf(0L) }
 
-    // SponsorBlock In-Video Sponsor Skip State
+    // SponsorBlock In-Video Sponsor Skip State (Debounced single execution to prevent infinite seek freeze)
     var sponsorSegments by remember(videoId) { mutableStateOf<List<SponsorSegment>>(emptyList()) }
-    var lastSkippedSegmentKey by remember(videoId) { mutableStateOf("") }
+    val skippedSegmentIds = remember(videoId) { mutableSetOf<String>() }
 
     // Real-Time Closed Captions (CC) State
     var captionsEnabled by remember { mutableStateOf(false) }
@@ -187,16 +187,19 @@ fun YouTubePlayerView(
 
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 30_000,
-                /* maxBufferMs = */ 120_000,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+                /* minBufferMs = */ 60_000,
+                /* maxBufferMs = */ 300_000,
+                /* bufferForPlaybackMs = */ 3_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 6_000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(60_000, true)
             .build()
 
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
+            .setSeekForwardIncrementMs(10_000)
+            .setSeekBackIncrementMs(10_000)
             .build().apply {
                 playWhenReady = true
                 setAudioAttributes(audioAttributes, true)
@@ -284,10 +287,10 @@ fun YouTubePlayerView(
     var showQualitySubMenu by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
 
-    // Auto-hide bottom utility controls after 3.5 seconds of no interaction while playing
+    // Auto-hide bottom utility controls after 2.0 seconds of no interaction (both when playing and when paused)
     LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSettingsMenu, showSpeedSubMenu, showQualitySubMenu) {
-        if (areControlsVisible && isPlayingState && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
-            delay(3500L)
+        if (areControlsVisible && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
+            delay(2000L)
             areControlsVisible = false
         }
     }
@@ -313,13 +316,17 @@ fun YouTubePlayerView(
                             activeCaptionText = null
                         }
 
-                        // Automatic SponsorBlock In-Video Segment Skip
+                        // Automatic SponsorBlock In-Video Segment Skip (Strict single execution per segment)
                         if (sponsorSegments.isNotEmpty()) {
                             val segment = sponsorSegments.firstOrNull { seg ->
-                                pos >= seg.startMs && pos < (seg.endMs - 300)
+                                val key = "${seg.startMs}_${seg.endMs}"
+                                key !in skippedSegmentIds && pos >= seg.startMs && pos < (seg.endMs - 500)
                             }
                             if (segment != null) {
-                                exoPlayer.seekTo(segment.endMs + 100)
+                                val key = "${segment.startMs}_${segment.endMs}"
+                                skippedSegmentIds.add(key)
+                                val targetSeek = (segment.endMs + 100).coerceAtMost(if (totalDurationMs > 0) totalDurationMs else (segment.endMs + 100))
+                                exoPlayer.seekTo(targetSeek)
                                 val startFormatted = formatMs(segment.startMs)
                                 val endFormatted = formatMs(segment.endMs)
                                 val message = "⏭️ Skipped ${segment.category.replaceFirstChar { it.uppercase() }} ($startFormatted → $endFormatted)"
@@ -433,15 +440,18 @@ fun YouTubePlayerView(
         }
     }
 
+    LaunchedEffect(isMutedState) {
+        exoPlayer.volume = if (isMutedState) 0f else 1.0f
+    }
+
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
             val audioUrl = streamResult?.audioStreamUrl
-            val isVideoOnly = (streamResult?.videoOnlyQualities?.contains(selectedQuality) == true) ||
-                    (selectedQuality == "Auto" && streamResult?.combinedMuxedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank()) ||
-                    (!url.contains(".m3u8") && streamResult?.combinedMuxedUrl.isNullOrBlank() && !audioUrl.isNullOrBlank())
+            val isVideoOnly = streamResult?.isVideoOnlyStream(url, selectedQuality) == true ||
+                    (!audioUrl.isNullOrBlank() && url != streamResult?.combinedMuxedUrl && !url.contains(".m3u8") && !url.startsWith("file://") && !url.startsWith("/"))
 
             val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
                 .setDefaultRequestProperties(mapOf(
                     "Referer" to "https://www.youtube.com/",
                     "Origin" to "https://www.youtube.com",
@@ -458,6 +468,7 @@ fun YouTubePlayerView(
             val isHls = url.contains(".m3u8") || url.contains("manifest/hls_variant") || selectedQuality == "HLS"
             if (isHls) {
                 val hlsSource = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory)
+                    .setAllowChunklessPreparation(true)
                     .createMediaSource(MediaItem.fromUri(url))
                 exoPlayer.setMediaSource(hlsSource)
             } else if (isVideoOnly && !audioUrl.isNullOrBlank()) {
@@ -465,7 +476,7 @@ fun YouTubePlayerView(
                     .createMediaSource(MediaItem.fromUri(url))
                 val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
-                val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+                val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(false, false, videoSource, audioSource)
                 exoPlayer.setMediaSource(mergingSource)
             } else {
                 val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -482,11 +493,12 @@ fun YouTubePlayerView(
             if (targetSeekMs > 0) {
                 exoPlayer.seekTo(targetSeekMs)
             }
+            exoPlayer.volume = if (isMutedState) 0f else 1.0f
             exoPlayer.prepare()
             exoPlayer.play()
             hasPreparedMedia = true
             onPlayerReady(exoPlayer)
-            addLog("ExoPlayer Prepared & Playing Native Stream with Audio at ${targetSeekMs / 1000}s")
+            addLog("ExoPlayer Prepared & Playing (videoOnly=$isVideoOnly, audioMerged=${isVideoOnly && !audioUrl.isNullOrBlank()}) at ${targetSeekMs / 1000}s")
         }
     }
 
@@ -808,7 +820,7 @@ fun YouTubePlayerView(
             }
         }
 
-        val shouldShowControls = (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || !isPlayingState || showSettingsMenu || isDraggingScrubber)
+        val shouldShowControls = (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || showSettingsMenu || isDraggingScrubber)
 
         // Top-Right Corner Tiny Translucent Sleep Timer Countdown Badge
         if (isSleepTimerActive) {
