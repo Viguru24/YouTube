@@ -22,8 +22,18 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
             }
         }
 
-        if (savedCookies.isNotBlank() && (url.contains("youtube.com") || url.contains("googlevideo.com"))) {
-            builder.header("Cookie", savedCookies)
+        val liveCookies = try {
+            android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
+        } catch (e: Throwable) { "" }
+
+        val cookieHeader = if (liveCookies.isNotBlank() && (liveCookies.contains("LOGIN_INFO") || liveCookies.contains("SID") || liveCookies.contains("SAPISID") || liveCookies.contains("VISITOR_INFO1_LIVE"))) {
+            liveCookies
+        } else {
+            savedCookies
+        }
+
+        if (cookieHeader.isNotBlank() && (url.contains("youtube.com") || url.contains("googlevideo.com"))) {
+            builder.header("Cookie", cookieHeader)
         }
 
         val requestBody = dataToSend?.let {

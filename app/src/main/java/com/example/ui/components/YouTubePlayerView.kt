@@ -450,7 +450,12 @@ fun YouTubePlayerView(
             val isVideoOnly = streamResult?.isVideoOnlyStream(url, selectedQuality) == true ||
                     (!audioUrl.isNullOrBlank() && url != streamResult?.combinedMuxedUrl && !url.contains(".m3u8") && !url.startsWith("file://") && !url.startsWith("/"))
 
-            val youtubeCookies = playerPrefs.getString("youtube_cookies", "") ?: ""
+            val liveCookies = try {
+                android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
+            } catch (e: Throwable) { "" }
+            val savedCookies = playerPrefs.getString("youtube_cookies", "") ?: ""
+            val effectiveCookies = if (liveCookies.isNotBlank() && (liveCookies.contains("LOGIN_INFO") || liveCookies.contains("SID") || liveCookies.contains("SAPISID"))) liveCookies else savedCookies
+
             val requestProps = mutableMapOf(
                 "Referer" to "https://www.youtube.com/",
                 "Origin" to "https://www.youtube.com",
@@ -458,9 +463,8 @@ fun YouTubePlayerView(
                 "Sec-Fetch-Mode" to "cors",
                 "Sec-Fetch-Site" to "cross-site"
             )
-            if (youtubeCookies.isNotBlank() && (youtubeCookies.contains("LOGIN_INFO") || youtubeCookies.contains("SID") || youtubeCookies.contains("SAPISID") || youtubeCookies.contains("VISITOR_INFO1_LIVE"))) {
-                requestProps["Cookie"] = youtubeCookies
-                com.example.data.remote.NPDownloader.savedCookies = youtubeCookies
+            if (effectiveCookies.isNotBlank()) {
+                requestProps["Cookie"] = effectiveCookies
             }
 
             val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
@@ -773,14 +777,27 @@ fun YouTubePlayerView(
                             }
                         }
                         
-                        val extraHeaders = mapOf(
-                            "Accept-Language" to "en-US,en;q=0.9",
-                            "Sec-Fetch-Site" to "none",
-                            "Sec-Fetch-Mode" to "navigate",
-                            "Sec-Fetch-User" to "?1",
-                            "Sec-Fetch-Dest" to "document"
-                        )
-                        loadUrl("https://www.youtube.com/watch?v=$videoId", extraHeaders)
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                <style>
+                                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                                    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+                                    iframe { width: 100%; height: 100%; border: none; }
+                                </style>
+                            </head>
+                            <body>
+                                <iframe 
+                                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&rel=0&modestbranding=1" 
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                    allowfullscreen>
+                                </iframe>
+                            </body>
+                            </html>
+                        """.trimIndent()
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
                         onPlayerReady(this)
                     }
                 },
