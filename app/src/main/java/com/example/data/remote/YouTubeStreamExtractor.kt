@@ -94,6 +94,56 @@ object YouTubeStreamExtractor {
         return null
     }
 
+    private fun fetchInnertubePlayer(videoId: String, clientName: String = "ANDROID_VR"): org.json.JSONObject? {
+        try {
+            val (clientObj, userAgent) = when (clientName) {
+                "IOS" -> Pair(
+                    """{"clientName":"IOS","clientVersion":"19.29.1","deviceModel":"iPhone16,2","hl":"en","gl":"US"}""",
+                    "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; US)"
+                )
+                "TVHTML5" -> Pair(
+                    """{"clientName":"TVHTML5","clientVersion":"7.20240820.01.00","hl":"en","gl":"US"}""",
+                    "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
+                )
+                "ANDROID" -> Pair(
+                    """{"clientName":"ANDROID","clientVersion":"19.09.37","androidSdkVersion":34,"hl":"en","gl":"US"}""",
+                    "com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip"
+                )
+                else -> Pair(
+                    """{"clientName":"ANDROID_VR","clientVersion":"1.61.48","hl":"en","gl":"US"}""",
+                    "Mozilla/5.0 (Linux; Android 12; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/34.0.0.36.41 SamsungBrowser/4.0 Chrome/124.0.6367.207 Mobile VR Safari/537.36"
+                )
+            }
+
+            val payload = """
+                {
+                  "context": {
+                    "client": $clientObj
+                  },
+                  "videoId": "$videoId"
+                }
+            """.trimIndent()
+
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val request = Request.Builder()
+                .url("https://www.youtube.com/youtubei/v1/player")
+                .post(payload.toRequestBody(mediaType))
+                .addHeader("User-Agent", userAgent)
+                .addHeader("Content-Type", "application/json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return null
+                    return org.json.JSONObject(body)
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeStreamExtractor", "fetchInnertubePlayer ($clientName) error: ${e.message}")
+        }
+        return null
+    }
+
     /**
      * Extracts all available stream resolutions and their direct URLs in a single network pass.
      */
@@ -200,51 +250,56 @@ object YouTubeStreamExtractor {
             logD("YouTubeStreamExtractor", "[NewPipe] Extraction error for $videoId: ${e.message}")
         }
 
-        // 2. SECONDARY: HTML scraping fallback if NewPipe returned no streams
+        // 2. SECONDARY: YouTube Official Innertube Player API (ANDROID_VR, IOS, TVHTML5)
         if (qualityMap.isEmpty()) {
-            val htmlPageUrls = listOf(
-                "https://www.youtube.com/watch?v=$videoId",
-                "https://www.youtube.com/shorts/$videoId"
-            )
-            for (pageUrl in htmlPageUrls) {
+            val clients = listOf("ANDROID_VR", "IOS", "TVHTML5", "ANDROID")
+            for (c in clients) {
                 try {
-                    val watchRequest = Request.Builder()
-                        .url(pageUrl)
-                        .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                        .addHeader("Accept-Language", "en-US,en;q=0.9")
-                        .addHeader("Cookie", "PREF=f6=40000000&hl=en&gl=US; SOCS=CAI")
-                        .addHeader("Sec-Ch-Ua-Mobile", "?0")
-                        .addHeader("Sec-Ch-Ua-Platform", "\"Windows\"")
-                        .build()
-                    client.newCall(watchRequest).execute().use { response ->
-                        if (response.isSuccessful) {
-                            val html = response.body?.string() ?: ""
-                            val pattern = Pattern.compile("ytInitialPlayerResponse\\s*=\\s*(\\{.+?\\});")
-                            val matcher = pattern.matcher(html)
-                            if (matcher.find()) {
-                                val jsonStr = matcher.group(1)
-                                if (!jsonStr.isNullOrEmpty()) {
-                                    val jsonObj = org.json.JSONObject(jsonStr)
-                                    val streams = extractStreamsFromPlayerResponse(jsonObj)
-                                    if (!streams.first.isNullOrEmpty()) {
-                                        qualityMap["720p"] = streams.first!!
-                                        qualityMap["Auto"] = streams.first!!
-                                        if (streams.second != null) {
-                                            bestAudioUrl = streams.second
-                                            videoOnlyUrls.add(streams.first!!)
-                                            videoOnlyQualities.add("720p")
-                                            videoOnlyQualities.add("Auto")
-                                        } else {
-                                            muxedUrls.add(streams.first!!)
-                                            bestCombinedUrl = streams.first
-                                        }
+                    val playerJson = fetchInnertubePlayer(videoId, c)
+                    if (playerJson != null) {
+                        val streams = extractStreamsFromPlayerResponse(playerJson)
+                        if (!streams.first.isNullOrEmpty()) {
+                            qualityMap["720p"] = streams.first!!
+                            qualityMap["Auto"] = streams.first!!
+                            if (streams.second != null) {
+                                bestAudioUrl = streams.second
+                                videoOnlyUrls.add(streams.first!!)
+                                videoOnlyQualities.add("720p")
+                                videoOnlyQualities.add("Auto")
+                            } else {
+                                muxedUrls.add(streams.first!!)
+                                bestCombinedUrl = streams.first
+                            }
+                            // Also parse other available adaptive formats
+                            val streamingData = playerJson.optJSONObject("streamingData")
+                            val adaptive = streamingData?.optJSONArray("adaptiveFormats")
+                            if (adaptive != null) {
+                                for (i in 0 until adaptive.length()) {
+                                    val f = adaptive.getJSONObject(i)
+                                    val mime = f.optString("mimeType", "")
+                                    val qLabel = f.optString("qualityLabel", "")
+                                    var streamUrl = f.optString("url", "")
+                                    val cipher = f.optString("signatureCipher", f.optString("cipher", ""))
+                                    if (streamUrl.isEmpty() && cipher.isNotEmpty()) {
+                                        streamUrl = parseCipher(cipher)
+                                    }
+                                    if (streamUrl.isNotEmpty() && mime.contains("video")) {
+                                        val key = if (qLabel.isNotBlank()) (if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p") else "720p"
+                                        qualityMap[key] = streamUrl
+                                        videoOnlyQualities.add(key)
+                                        videoOnlyUrls.add(streamUrl)
                                     }
                                 }
                             }
+                            if (qualityMap.isNotEmpty()) {
+                                logD("YouTubeStreamExtractor", "Extracted direct streams via Innertube ($c) for $videoId")
+                                break
+                            }
                         }
                     }
-                    if (qualityMap.isNotEmpty()) break
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    logD("YouTubeStreamExtractor", "Innertube player ($c) error: ${e.message}")
+                }
             }
         }
 

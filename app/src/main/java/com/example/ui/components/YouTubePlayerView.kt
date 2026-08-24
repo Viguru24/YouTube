@@ -732,21 +732,25 @@ fun YouTubePlayerView(
                             private fun runBypassScript(view: android.webkit.WebView?) {
                                 view?.evaluateJavascript("""
                                     (function() {
-                                        // 1. Auto-dismiss any Google / YouTube consent dialogues immediately
-                                        var consentButtons = document.querySelectorAll(
+                                        // 1. Auto-dismiss any Google / YouTube consent dialogues & channel creation prompts immediately
+                                        var dismissButtons = document.querySelectorAll(
                                             'button[aria-label*="Accept"], button[aria-label*="Agree"], button[aria-label*="Reject"], ' +
+                                            'button[aria-label*="Dismiss"], button[aria-label*="No thanks"], button[aria-label*="Cancel"], ' +
+                                            'button[aria-label*="Close"], button[aria-label*="Skip"], .yt-spec-button-shape-next--tonal, ' +
                                             'form[action*="consent"] button, ytm-consent-bump-v2-renderer button, .eom-button-row button, ' +
                                             'button.VfPpkd-LgbsSe, button.c3-material-button, ytd-consent-bump-v2-renderer button, ' +
-                                            'button[aria-label*="I agree"], button[aria-label*="accept all"], ytm-button-renderer button'
+                                            'button[aria-label*="I agree"], button[aria-label*="accept all"], ytm-button-renderer button, ' +
+                                            '#cancel-button button, yt-button-renderer#cancel-button button'
                                         );
-                                        for (var i = 0; i < consentButtons.length; i++) {
-                                            try { consentButtons[i].click(); } catch(e) {}
+                                        for (var i = 0; i < dismissButtons.length; i++) {
+                                            try { dismissButtons[i].click(); } catch(e) {}
                                         }
 
-                                        // 2. Hide consent popups, dialogs, and all YouTube web clutter
+                                        // 2. Hide channel creation forms, consent popups, dialogs, and all YouTube web clutter
                                         var style = document.createElement('style');
                                         style.innerHTML = 'ytm-consent-bump-v2-renderer, ytd-consent-bump-v2-renderer, #consent-bump, ' +
-                                            '.eom-dialog-wrapper, .upsell-dialog, #dialog, ' +
+                                            '.eom-dialog-wrapper, .upsell-dialog, #dialog, .dialog-container, ytm-channel-creation-form, ' +
+                                            '#channel-creation, ytd-channel-creation-form-renderer, tp-yt-paper-dialog, ytm-dialog-renderer, ' +
                                             'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ' +
                                             'ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, ' +
                                             '#related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, ' +
