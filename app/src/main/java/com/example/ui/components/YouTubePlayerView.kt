@@ -777,27 +777,14 @@ fun YouTubePlayerView(
                             }
                         }
                         
-                        val embedHtml = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                <style>
-                                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                                    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-                                    iframe { width: 100%; height: 100%; border: none; }
-                                </style>
-                            </head>
-                            <body>
-                                <iframe 
-                                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=1&enablejsapi=1&rel=0&modestbranding=1" 
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                    allowfullscreen>
-                                </iframe>
-                            </body>
-                            </html>
-                        """.trimIndent()
-                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        val extraHeaders = mapOf(
+                            "Accept-Language" to "en-US,en;q=0.9",
+                            "Sec-Fetch-Site" to "none",
+                            "Sec-Fetch-Mode" to "navigate",
+                            "Sec-Fetch-User" to "?1",
+                            "Sec-Fetch-Dest" to "document"
+                        )
+                        loadUrl("https://m.youtube.com/watch?v=$videoId", extraHeaders)
                         onPlayerReady(this)
                     }
                 },

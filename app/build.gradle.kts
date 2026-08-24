@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 22
-    versionName = "1.8.5"
+    versionCode = 23
+    versionName = "1.8.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -26,7 +26,7 @@ android {
   androidComponents {
     onVariants { variant ->
       variant.outputs.forEach { output ->
-        output.outputFileName.set("youtube_v1.8.5.apk")
+        output.outputFileName.set("youtube_v1.8.6.apk")
       }
     }
   }
