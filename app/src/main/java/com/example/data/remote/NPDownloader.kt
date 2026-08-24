@@ -22,6 +22,10 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
             }
         }
 
+        if (savedCookies.isNotBlank() && (url.contains("youtube.com") || url.contains("googlevideo.com"))) {
+            builder.header("Cookie", savedCookies)
+        }
+
         val requestBody = dataToSend?.let {
             okhttp3.RequestBody.create(null, it)
         }
@@ -45,6 +49,7 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
     companion object {
         @Volatile
         private var instance: NPDownloader? = null
+        var savedCookies: String = ""
 
         fun getInstance(): NPDownloader {
             return instance ?: synchronized(this) {

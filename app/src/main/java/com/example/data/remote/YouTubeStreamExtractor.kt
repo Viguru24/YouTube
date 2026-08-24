@@ -287,13 +287,11 @@ object YouTubeStreamExtractor {
         val sortedQualities = qualityMap.keys
             .filter { it != "HLS" && it != "Auto" }
 
-        // 1. Prioritize HLS adaptive master playlist (multi-threaded chunk streaming with zero YouTube rate-limiting)
-        // 2. Next prioritize combined muxed 720p/1080p stream
-        // 3. Fallback to resolution-specific streams
-        val bestUrl = qualityMap["HLS"]
+        // Prioritize reliable 1080p HD / 720p HD or combined muxed streams
+        val bestUrl = sortedQualities.firstOrNull { it == "1080p" || it == "720p" }?.let { qualityMap[it] }
             ?: bestCombinedUrl
-            ?: sortedQualities.firstOrNull { it == "1080p" || it == "720p" }?.let { qualityMap[it] }
             ?: sortedQualities.firstOrNull()?.let { qualityMap[it] }
+            ?: qualityMap["HLS"]
             ?: qualityMap["Auto"]
             ?: qualityMap.values.firstOrNull()
 

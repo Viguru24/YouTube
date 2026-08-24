@@ -41,52 +41,22 @@ fun GoogleSignInDialog(
     onSyncPlaylists: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     var isSyncing by remember { mutableStateOf(false) }
-    var isSigningIn by remember { mutableStateOf(false) }
+    var showWebSignInDialog by remember { mutableStateOf(false) }
 
     var nameInput by remember(account) { mutableStateOf(if (account.name.isNotBlank()) account.name else "Local User") }
     var emailInput by remember(account) { mutableStateOf(if (account.email.isNotBlank()) account.email else "local@vixz.app") }
 
-    fun launchSystemGoogleSignIn() {
-        isSigningIn = true
-        coroutineScope.launch {
-            try {
-                val credentialManager = CredentialManager.create(context)
-                val googleIdOption = GetGoogleIdOption.Builder()
-                    .setFilterByAuthorizedAccounts(false)
-                    .setServerClientId("465362446681-0sfu3enhj0ab66j3k1j676obimach39j.apps.googleusercontent.com")
-                    .setAutoSelectEnabled(false)
-                    .build()
-
-                val request = GetCredentialRequest.Builder()
-                    .addCredentialOption(googleIdOption)
-                    .build()
-
-                val result = credentialManager.getCredential(
-                    request = request,
-                    context = context
-                )
-
-                val credential = result.credential
-                if (credential is GoogleIdTokenCredential) {
-                    val displayName = credential.displayName ?: "Local User"
-                    val email = credential.id
-                    onSignIn(displayName, email)
-                    Toast.makeText(context, "Authenticated as $displayName ($email) 🟢", Toast.LENGTH_SHORT).show()
-                } else {
-                    onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
-                    Toast.makeText(context, "Google Account Signed In 🟢", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                // Fallback to manual entry if Google Play Services Credential Manager dialog is dismissed
-                onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
-                Toast.makeText(context, "Signed In as ${nameInput.ifBlank { "Local User" }} 🟢", Toast.LENGTH_SHORT).show()
-            } finally {
-                isSigningIn = false
+    if (showWebSignInDialog) {
+        YouTubeWebSignInDialog(
+            onDismiss = { showWebSignInDialog = false },
+            onSuccess = { name, email, cookies ->
+                com.example.data.remote.NPDownloader.savedCookies = cookies
+                onSignIn(nameInput.ifBlank { name }, emailInput.ifBlank { email })
+                showWebSignInDialog = false
                 onDismiss()
             }
-        }
+        )
     }
 
     AlertDialog(
@@ -380,30 +350,50 @@ fun GoogleSignInDialog(
                     )
 
                     Button(
-                        onClick = { launchSystemGoogleSignIn() },
+                        onClick = { showWebSignInDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp)
-                            .testTag("google_sign_in_btn")
+                            .testTag("google_web_sign_in_btn")
                     ) {
-                        if (isSigningIn) {
-                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Text(
-                                text = "G",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                color = Color.White
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Sign in with Google Account",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Filled.Language,
+                            contentDescription = "Web Browser Sign-In",
+                            tint = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Sign in via Google Web Browser",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
+                            Toast.makeText(context, "Signed In as ${nameInput.ifBlank { "Local User" }} 🟢", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("save_local_profile_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Save Profile",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Save Profile Locally",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
                     }
                 }
             }

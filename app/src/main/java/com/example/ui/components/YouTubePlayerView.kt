@@ -450,15 +450,22 @@ fun YouTubePlayerView(
             val isVideoOnly = streamResult?.isVideoOnlyStream(url, selectedQuality) == true ||
                     (!audioUrl.isNullOrBlank() && url != streamResult?.combinedMuxedUrl && !url.contains(".m3u8") && !url.startsWith("file://") && !url.startsWith("/"))
 
+            val youtubeCookies = playerPrefs.getString("youtube_cookies", "") ?: ""
+            val requestProps = mutableMapOf(
+                "Referer" to "https://www.youtube.com/",
+                "Origin" to "https://www.youtube.com",
+                "Sec-Fetch-Dest" to "video",
+                "Sec-Fetch-Mode" to "cors",
+                "Sec-Fetch-Site" to "cross-site"
+            )
+            if (youtubeCookies.isNotBlank() && (youtubeCookies.contains("LOGIN_INFO") || youtubeCookies.contains("SID") || youtubeCookies.contains("SAPISID") || youtubeCookies.contains("VISITOR_INFO1_LIVE"))) {
+                requestProps["Cookie"] = youtubeCookies
+                com.example.data.remote.NPDownloader.savedCookies = youtubeCookies
+            }
+
             val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                 .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                .setDefaultRequestProperties(mapOf(
-                    "Referer" to "https://www.youtube.com/",
-                    "Origin" to "https://www.youtube.com",
-                    "Sec-Fetch-Dest" to "video",
-                    "Sec-Fetch-Mode" to "cors",
-                    "Sec-Fetch-Site" to "cross-site"
-                ))
+                .setDefaultRequestProperties(requestProps)
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(25000)
                 .setAllowCrossProtocolRedirects(true)
