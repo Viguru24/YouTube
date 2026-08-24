@@ -85,12 +85,12 @@ fun GoogleSignInDialog(
 
                 Column {
                     Text(
-                        text = if (account.isSignedIn) "Google Account" else "Google Sign-In",
+                        text = if (account.isSignedIn) "User Profile (v1.8.9)" else "Profile Sign-In (v1.8.9)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Real YouTube Cloud History & Sync",
+                        text = "Vixz YouTube Player • Local Profile & Sync",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -102,298 +102,149 @@ fun GoogleSignInDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                if (account.isSignedIn) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(16.dp)
+                // Profile Avatar & Info Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            shape = CircleShape,
+                            color = YouTubeRed,
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = YouTubeRed,
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = account.avatarInitials,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = account.name,
+                                    text = account.avatarInitials.ifBlank { "U" },
+                                    color = Color.White,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = account.email,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    fontSize = 18.sp
                                 )
                             }
                         }
-                    }
 
-                    // Saved Accounts List (Switch Account in 1-Tap)
-                    if (savedAccounts.size > 1) {
-                        Text(
-                            text = "SWITCH ACCOUNT",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.width(12.dp))
 
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            savedAccounts.filter { it.email != account.email }.forEach { savedAcc ->
-                                Surface(
-                                    onClick = {
-                                        onSwitchAccount(savedAcc)
-                                        Toast.makeText(context, "Switched to ${savedAcc.name}", Toast.LENGTH_SHORT).show()
-                                        onDismiss()
-                                    },
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = Color(0xFF4285F4),
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Text(savedAcc.avatarInitials, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(savedAcc.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                            Text(savedAcc.email, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        Icon(Icons.Filled.SwapHoriz, contentDescription = "Switch", tint = Color(0xFF4285F4), modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = account.name.ifBlank { "Local User" },
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = account.email.ifBlank { "local@vixz.app" },
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "🟢 Local Profile Active",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4CAF50)
+                            )
                         }
                     }
+                }
 
-                    Text(
-                        text = "ACCOUNT PERMISSIONS & SYNC",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = "EDIT PROFILE DETAILS",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = nameInput,
+                    onValueChange = { nameInput = it },
+                    label = { Text("Display Name") },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Filled.Person, contentDescription = null)
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("google_name_input")
+                )
+
+                OutlinedTextField(
+                    value = emailInput,
+                    onValueChange = { emailInput = it },
+                    label = { Text("Email Address") },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Filled.Email, contentDescription = null)
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("google_email_input")
+                )
+
+                Button(
+                    onClick = {
+                        val finalName = nameInput.ifBlank { "Local User" }
+                        val finalEmail = emailInput.ifBlank { "local@vixz.app" }
+                        onSignIn(finalName, finalEmail)
+                        Toast.makeText(context, "Profile Saved as $finalName 🟢", Toast.LENGTH_SHORT).show()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("save_local_profile_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Save Profile",
+                        tint = Color.White
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "💾 Save Profile Locally",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
+                }
 
-                    // Grant Official Google OAuth2 YouTube Readonly Permission
-                    Surface(
-                        onClick = {
-                            try {
-                                // Generate PKCE code verifier + challenge
-                                val verifier = com.example.util.PkceStore.generateCodeVerifier()
-                                com.example.util.PkceStore.codeVerifier = verifier
-                                val challenge = com.example.util.PkceStore.generateCodeChallenge(verifier)
+                OutlinedButton(
+                    onClick = { showWebSignInDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .testTag("google_web_sign_in_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Language,
+                        contentDescription = "Web Browser Sign-In",
+                        tint = Color(0xFF4285F4)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "🌐 Link Google Web Session (Optional)",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = Color(0xFF4285F4)
+                    )
+                }
 
-                                android.util.Log.d("OAUTH_DEBUG", "=== PKCE VERIFIER: $verifier")
-                                android.util.Log.d("OAUTH_DEBUG", "=== PKCE CHALLENGE: $challenge")
-
-                                // Build authorization URL — response_type=code (PKCE, not deprecated implicit)
-                                val oauthUri = android.net.Uri.Builder()
-                                    .scheme("https")
-                                    .authority("accounts.google.com")
-                                    .path("/o/oauth2/v2/auth")
-                                    .appendQueryParameter("client_id", "465362446681-0sfu3enhj0ab66j3k1j676obimach39j.apps.googleusercontent.com")
-                                    .appendQueryParameter("redirect_uri", "com.googleusercontent.apps.465362446681-0sfu3enhj0ab66j3k1j676obimach39j:/oauth2redirect")
-                                    .appendQueryParameter("response_type", "code")
-                                    .appendQueryParameter("scope", "https://www.googleapis.com/auth/youtube.readonly email profile")
-                                    .appendQueryParameter("code_challenge", challenge)
-                                    .appendQueryParameter("code_challenge_method", "S256")
-                                    .appendQueryParameter("access_type", "offline")
-                                    .appendQueryParameter("prompt", "consent")
-                                    .build()
-
-                                android.util.Log.d("OAUTH_DEBUG", "=== FULL URL: $oauthUri")
-
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, oauthUri)
-                                context.startActivity(intent)
-                                onDismiss()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Could not open Google consent page: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF4285F4).copy(alpha = 0.12f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4285F4).copy(alpha = 0.4f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(
-                                    imageVector = Icons.Filled.Lock,
-                                    contentDescription = "OAuth Scope",
-                                    tint = Color(0xFF4285F4)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Grant YouTube Cloud History Permission", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF4285F4))
-                                    Text("Official Google OAuth2 Permission Consent Screen", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Icon(imageVector = Icons.Filled.OpenInNew, contentDescription = null, tint = Color(0xFF4285F4), modifier = Modifier.size(18.dp))
-                        }
-                    }
-
-                    Surface(
-                        onClick = {
-                            isSyncing = true
-                            onSyncPlaylists()
-                            Toast.makeText(context, "Playlists & Subscriptions Synced 🔄", Toast.LENGTH_SHORT).show()
-                            isSyncing = false
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.Sync,
-                                    contentDescription = "Sync",
-                                    tint = Color(0xFF4285F4)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Sync Playlists & Channels", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text("Fetch saved playlists & subscriptions", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            if (isSyncing) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(imageVector = Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-
-                    OutlinedButton(
+                if (account.name != "Local User" || account.email != "local@vixz.app") {
+                    TextButton(
                         onClick = {
                             onSignOut()
-                            onDismiss()
-                            Toast.makeText(context, "Signed Out Successfully", Toast.LENGTH_SHORT).show()
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("google_sign_out_btn")
-                    ) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.Logout, contentDescription = "Sign Out")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sign Out", fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    Text(
-                        text = "Sign in with your Google account to sync your YouTube playlists, subscriptions, and custom recommendations across your devices.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    OutlinedTextField(
-                        value = nameInput,
-                        onValueChange = { nameInput = it },
-                        label = { Text("Display Name") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Filled.Person, contentDescription = null)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("google_name_input")
-                    )
-
-                    OutlinedTextField(
-                        value = emailInput,
-                        onValueChange = { emailInput = it },
-                        label = { Text("Google Account Email") },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(imageVector = Icons.Filled.Email, contentDescription = null)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("google_email_input")
-                    )
-
-                    Button(
-                        onClick = { showWebSignInDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("google_web_sign_in_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Language,
-                            contentDescription = "Web Browser Sign-In",
-                            tint = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Sign in via Google Web Browser",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            onSignIn(nameInput.ifBlank { "Local User" }, emailInput.ifBlank { "local@vixz.app" })
-                            Toast.makeText(context, "Signed In as ${nameInput.ifBlank { "Local User" }} 🟢", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Profile Reset to Default", Toast.LENGTH_SHORT).show()
                             onDismiss()
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .testTag("save_local_profile_btn")
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Save Profile",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Save Profile Locally",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        )
+                        Text("Reset to Default Guest Profile", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
                 }
             }
