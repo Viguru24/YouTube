@@ -1,0 +1,100 @@
+<Window x:Class="VixzDesktop.SignInWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Sign in to YouTube / Google - Vixz"
+        Icon="App.ico"
+        Height="700" Width="520"
+        MinHeight="550" MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        Background="#0B0B0E">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      CornerRadius="0"/>
+    </WindowChrome.WindowChrome>
+
+    <!-- Outer Glass Container -->
+    <Border Background="{StaticResource BgDarkPrimary}"
+            BorderBrush="{StaticResource AccentGold}"
+            BorderThickness="1.5"
+            CornerRadius="14"
+            ClipToBounds="True">
+        <Grid>
+            <Grid.RowDefinitions>
+                <!-- Titlebar -->
+                <RowDefinition Height="42"/>
+                <!-- Status & Helper Banner -->
+                <RowDefinition Height="Auto"/>
+                <!-- WebView2 Login Page -->
+                <RowDefinition Height="*"/>
+                <!-- Bottom Action Bar -->
+                <RowDefinition Height="50"/>
+            </Grid.RowDefinitions>
+
+            <!-- 1. DRAGGABLE TITLE BAR -->
+            <Border Grid.Row="0"
+                    Background="{StaticResource BgDarkSecondary}"
+                    BorderBrush="{StaticResource BorderSubtle}"
+                    BorderThickness="0,0,0,1"
+                    MouseDown="TitleBar_MouseDown">
+                <Grid Margin="14,0,10,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border CornerRadius="6" ClipToBounds="True" Width="22" Height="22" Margin="0,0,8,0">
+                            <Image Source="App.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Border>
+                        <TextBlock Text="👤 Sign In with Google / YouTube" Foreground="White" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Close Button -->
+                    <Button Grid.Column="1" Content="✕" Style="{StaticResource IconActionButton}" Width="26" Height="26" ToolTip="Close" Click="CloseBtn_Click"/>
+                </Grid>
+            </Border>
+
+            <!-- 2. STATUS & INSTRUCTION BANNER -->
+            <Border Grid.Row="1" Background="#181824" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,0,1" Padding="14,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusText" Text="🔐 Enter your Google credentials to sync your YouTube account..." Foreground="{StaticResource TextSecondary}" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    <ProgressBar x:Name="LoginProgress" Grid.Column="1" IsIndeterminate="True" Width="60" Height="3" Margin="8,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                </Grid>
+            </Border>
+
+            <!-- 3. WEBVIEW2 AUTH CONTAINER -->
+            <Grid Grid.Row="2" Background="#111116">
+                <wv2:WebView2 x:Name="AuthWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+            </Grid>
+
+            <!-- 4. BOTTOM ACTION FOOTER -->
+            <Border Grid.Row="3" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="12,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Reload / Back to Login -->
+                    <Button Grid.Column="0" Content="🔄 Reload" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="ReloadBtn_Click"/>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <!-- Quick Auto-Detect & Complete -->
+                        <Button x:Name="DoneBtn" Content="✅ Done / Sync Account" Style="{StaticResource RedAccentButton}" FontSize="11" FontWeight="Bold" Padding="12,5" Margin="0,0,6,0" Click="DoneBtn_Click"/>
+                        <Button Content="Cancel" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="CloseBtn_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,25 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Backgrounds -->
+    <SolidColorBrush x:Key="BgDarkPrimary" Color="#0D0D14"/>
+    <SolidColorBrush x:Key="BgDarkSecondary" Color="#14141F"/>
+    <SolidColorBrush x:Key="BgDarkCard" Color="#1C1B26"/>
+    <SolidColorBrush x:Key="BgGlassCard" Color="#252230"/>
+
+    <!-- Vixz Ember Orange Accents -->
+    <SolidColorBrush x:Key="AccentRed" Color="#FF6B00"/>
+    <SolidColorBrush x:Key="AccentRedHover" Color="#FF8533"/>
+    <SolidColorBrush x:Key="AccentGold" Color="#FFB800"/>
+    <SolidColorBrush x:Key="AccentOrange" Color="#FF6B00"/>
+    <SolidColorBrush x:Key="AccentOrangeGlow" Color="#FF3D00"/>
+    <SolidColorBrush x:Key="AccentPurple" Color="#FF5722"/>
+
+    <!-- Text & Borders -->
+    <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#B0B0C0"/>
+    <SolidColorBrush x:Key="TextMuted" Color="#707085"/>
+    <SolidColorBrush x:Key="BorderSubtle" Color="#20FF6B00"/>
+    <SolidColorBrush x:Key="BorderHover" Color="#77FF6B00"/>
+
+</ResourceDictionary>

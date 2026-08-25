@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap rescap">
+
+  <Identity Name="Viguru.VixzYouTubeDesktop"
+            Publisher="CN=E79B034B-3211-490A-96BE-648E426FE339"
+            Version="1.0.0.0"
+            ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Vixz - YouTube Desktop</DisplayName>
+    <PublisherDisplayName>Viguru</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+    <Description>High-performance native YouTube player with zero commercial ads, SponsorBlock, Sleep Timer, and Custom Screenshots.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="VixzDesktop"
+                 Executable="VixzDesktop.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Vixz - YouTube Desktop"
+                          Description="Native YouTube player with zero commercial ads, SponsorBlock, Sleep Timer, and Custom Screenshots"
+                          BackgroundColor="#0B0B0E"
+                          Square150x150Logo="Images\Square150x150Logo.png"
+                          Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Images\Wide310x150Logo.png"
+                         Square310x310Logo="Images\Square150x150Logo.png"
+                         Square71x71Logo="Images\Square44x44Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Images\SplashScreen.png" BackgroundColor="#0B0B0E" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <Capability Name="internetClient" />
+  </Capabilities>
+</Package>
