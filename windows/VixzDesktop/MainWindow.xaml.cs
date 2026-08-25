@@ -159,7 +159,6 @@ namespace VixzDesktop
             });
         }
 
-        var _autoPlayRetries = 0;
         function onPlayerStateChange(event) {
             if (event.data === 1) { // Playing
                 applyHighQuality();
@@ -176,20 +175,6 @@ namespace VixzDesktop
             if (event.data === 0) { // Ended
                 if (window.chrome && window.chrome.webview) {
                     window.chrome.webview.postMessage('VIDEO_ENDED');
-                }
-            }
-            // Auto-resume if YouTube pauses during initial load/seek
-            if (event.data === 2 || event.data === -1) {
-                if (_autoPlayRetries < 3) {
-                    _autoPlayRetries++;
-                    setTimeout(function() {
-                        try {
-                            if (player && typeof player.playVideo === 'function' && player.getPlayerState() !== 1) {
-                                applyHighQuality();
-                                player.playVideo();
-                            }
-                        } catch(e) {}
-                    }, 300);
                 }
             }
         }
