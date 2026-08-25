@@ -155,151 +155,118 @@ object YouTubeStreamExtractor {
         var bestAudioUrl: String? = null
         var bestCombinedUrl: String? = null
 
-        // 1. PRIMARY: NewPipe Extractor
-        try {
-            logD("YouTubeStreamExtractor", "[NewPipe] Extracting streams for videoId: $videoId")
-            val service = org.schabi.newpipe.extractor.ServiceList.YouTube
-            val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
-            extractor.fetchPage()
-
-            // Best Audio Stream (intelligently prioritize English & Original tracks over foreign dubs)
-            val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
-            val sortedAudioStreams = audioStreams.filter { !it.content.isNullOrBlank() }.sortedWith { a, b ->
-                fun score(s: org.schabi.newpipe.extractor.stream.AudioStream): Int {
-                    var score = 100
-                    val lang = s.audioLocale?.language?.lowercase().orEmpty()
-                    val trackName = s.audioTrackName?.lowercase().orEmpty()
-                    val trackType = try { s.audioTrackType?.name?.uppercase().orEmpty() } catch (e: Throwable) { "" }
-                    val fmt = s.format?.name?.uppercase().orEmpty()
-
-                    // 1. Prioritize English explicitly
-                    if (lang == "en" || lang.startsWith("en-") || trackName.contains("english")) {
-                        score += 500
-                    }
-
-                    // 2. Prioritize Original / Default track
-                    if (trackType == "ORIGINAL" || trackName.contains("original") || trackName.contains("default") || trackName.contains("primary")) {
-                        score += 300
-                    }
-
-                    // 3. Penalize foreign languages heavily if marked
-                    val foreignLangs = setOf("es", "pt", "hi", "fr", "de", "it", "ru", "ja", "ko", "id", "tr", "ar", "vi", "zh", "th", "pl", "bn", "ta", "te", "mr", "gu", "kn", "ml", "pa")
-                    if (foreignLangs.contains(lang)) {
-                        score -= 600
-                    }
-                    if (trackType == "DUBBED" && !lang.startsWith("en") && !trackName.contains("english")) {
-                        score -= 500
-                    }
-
-                    // 4. Format bonus (M4A / AAC for clean container compatibility)
-                    if (fmt.contains("M4A") || fmt.contains("AAC") || fmt.contains("MP4")) {
-                        score += 50
-                    }
-
-                    // 5. Higher bitrate bonus
-                    score += (s.averageBitrate / 10).coerceIn(0, 30)
-
-                    return score
-                }
-                score(b).compareTo(score(a)) // Descending
-            }
-            bestAudioUrl = sortedAudioStreams.firstOrNull()?.content
-
-            // Video + Audio combined streams (Muxed - guaranteed instant audio!)
-            val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
-            for (s in videoStreams) {
-                if (!s.isVideoOnly && !s.content.isNullOrBlank()) {
-                    val r = s.resolution?.trim()
-                    if (!r.isNullOrBlank()) {
-                        val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
-                        if (!qualityMap.containsKey(key)) {
-                            qualityMap[key] = s.content
-                            muxedUrls.add(s.content)
-                            if (bestCombinedUrl == null) {
-                                bestCombinedUrl = s.content
+        // 1. PRIMARY: YouTube Official Innertube Player API (ANDROID_VR, IOS, TVHTML5) - Fast & Zero Rate Limiting
+        val clients = listOf("ANDROID_VR", "IOS", "TVHTML5", "ANDROID")
+        for (c in clients) {
+            try {
+                val playerJson = fetchInnertubePlayer(videoId, c)
+                if (playerJson != null) {
+                    val streams = extractStreamsFromPlayerResponse(playerJson)
+                    if (!streams.first.isNullOrEmpty()) {
+                        qualityMap["720p"] = streams.first!!
+                        qualityMap["Auto"] = streams.first!!
+                        if (streams.second != null) {
+                            bestAudioUrl = streams.second
+                            videoOnlyUrls.add(streams.first!!)
+                            videoOnlyQualities.add("720p")
+                            videoOnlyQualities.add("Auto")
+                        } else {
+                            muxedUrls.add(streams.first!!)
+                            bestCombinedUrl = streams.first
+                        }
+                        // Also parse other available adaptive formats (1080p, 480p, etc.)
+                        val streamingData = playerJson.optJSONObject("streamingData")
+                        val adaptive = streamingData?.optJSONArray("adaptiveFormats")
+                        if (adaptive != null) {
+                            for (i in 0 until adaptive.length()) {
+                                val f = adaptive.getJSONObject(i)
+                                val mime = f.optString("mimeType", "")
+                                val qLabel = f.optString("qualityLabel", "")
+                                var streamUrl = f.optString("url", "")
+                                val cipher = f.optString("signatureCipher", f.optString("cipher", ""))
+                                if (streamUrl.isEmpty() && cipher.isNotEmpty()) {
+                                    streamUrl = parseCipher(cipher)
+                                }
+                                if (streamUrl.isNotEmpty() && mime.contains("video")) {
+                                    val key = if (qLabel.isNotBlank()) (if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p") else "720p"
+                                    qualityMap[key] = streamUrl
+                                    videoOnlyQualities.add(key)
+                                    videoOnlyUrls.add(streamUrl)
+                                }
                             }
+                        }
+                        if (qualityMap.isNotEmpty()) {
+                            logD("YouTubeStreamExtractor", "Extracted direct streams via Innertube ($c) for $videoId")
+                            break
                         }
                     }
                 }
+            } catch (e: Exception) {
+                logD("YouTubeStreamExtractor", "Innertube player ($c) error: ${e.message}")
             }
+        }
 
-            // Video-only streams (e.g. 1080p, 1440p, 4K) - only include if audio stream is available for merging
-            if (!bestAudioUrl.isNullOrBlank()) {
-                val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
-                for (s in videoOnlyStreams) {
-                    if (!s.content.isNullOrBlank()) {
+        // 2. SECONDARY: NewPipe Extractor Fallback
+        if (qualityMap.isEmpty()) {
+            try {
+                logD("YouTubeStreamExtractor", "[NewPipe] Extracting streams for videoId: $videoId")
+                val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+                val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+                extractor.fetchPage()
+
+                val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
+                val sortedAudioStreams = audioStreams.filter { !it.content.isNullOrBlank() }.sortedWith { a, b ->
+                    fun score(s: org.schabi.newpipe.extractor.stream.AudioStream): Int {
+                        var score = 100
+                        val lang = s.audioLocale?.language?.lowercase().orEmpty()
+                        val trackName = s.audioTrackName?.lowercase().orEmpty()
+                        val trackType = try { s.audioTrackType?.name?.uppercase().orEmpty() } catch (e: Throwable) { "" }
+                        val fmt = s.format?.name?.uppercase().orEmpty()
+                        if (lang == "en" || lang.startsWith("en-") || trackName.contains("english")) score += 500
+                        if (trackType == "ORIGINAL" || trackName.contains("original") || trackName.contains("default")) score += 300
+                        if (fmt.contains("M4A") || fmt.contains("AAC") || fmt.contains("MP4")) score += 50
+                        score += (s.averageBitrate / 10).coerceIn(0, 30)
+                        return score
+                    }
+                    score(b).compareTo(score(a))
+                }
+                if (bestAudioUrl == null) {
+                    bestAudioUrl = sortedAudioStreams.firstOrNull()?.content
+                }
+
+                val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
+                for (s in videoStreams) {
+                    if (!s.isVideoOnly && !s.content.isNullOrBlank()) {
                         val r = s.resolution?.trim()
                         if (!r.isNullOrBlank()) {
                             val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
                             if (!qualityMap.containsKey(key)) {
                                 qualityMap[key] = s.content
-                                videoOnlyQualities.add(key)
-                                videoOnlyUrls.add(s.content)
+                                muxedUrls.add(s.content)
+                                if (bestCombinedUrl == null) bestCombinedUrl = s.content
                             }
                         }
                     }
                 }
-            }
 
-            // HLS stream
-            val hlsUrl = try { extractor.hlsUrl } catch (e: Exception) { null }
-            if (!hlsUrl.isNullOrBlank()) {
-                qualityMap["HLS"] = hlsUrl
-            }
-        } catch (e: Exception) {
-            logD("YouTubeStreamExtractor", "[NewPipe] Extraction error for $videoId: ${e.message}")
-        }
-
-        // 2. SECONDARY: YouTube Official Innertube Player API (ANDROID_VR, IOS, TVHTML5)
-        if (qualityMap.isEmpty()) {
-            val clients = listOf("ANDROID_VR", "IOS", "TVHTML5", "ANDROID")
-            for (c in clients) {
-                try {
-                    val playerJson = fetchInnertubePlayer(videoId, c)
-                    if (playerJson != null) {
-                        val streams = extractStreamsFromPlayerResponse(playerJson)
-                        if (!streams.first.isNullOrEmpty()) {
-                            qualityMap["720p"] = streams.first!!
-                            qualityMap["Auto"] = streams.first!!
-                            if (streams.second != null) {
-                                bestAudioUrl = streams.second
-                                videoOnlyUrls.add(streams.first!!)
-                                videoOnlyQualities.add("720p")
-                                videoOnlyQualities.add("Auto")
-                            } else {
-                                muxedUrls.add(streams.first!!)
-                                bestCombinedUrl = streams.first
-                            }
-                            // Also parse other available adaptive formats
-                            val streamingData = playerJson.optJSONObject("streamingData")
-                            val adaptive = streamingData?.optJSONArray("adaptiveFormats")
-                            if (adaptive != null) {
-                                for (i in 0 until adaptive.length()) {
-                                    val f = adaptive.getJSONObject(i)
-                                    val mime = f.optString("mimeType", "")
-                                    val qLabel = f.optString("qualityLabel", "")
-                                    var streamUrl = f.optString("url", "")
-                                    val cipher = f.optString("signatureCipher", f.optString("cipher", ""))
-                                    if (streamUrl.isEmpty() && cipher.isNotEmpty()) {
-                                        streamUrl = parseCipher(cipher)
-                                    }
-                                    if (streamUrl.isNotEmpty() && mime.contains("video")) {
-                                        val key = if (qLabel.isNotBlank()) (if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p") else "720p"
-                                        qualityMap[key] = streamUrl
-                                        videoOnlyQualities.add(key)
-                                        videoOnlyUrls.add(streamUrl)
-                                    }
+                if (!bestAudioUrl.isNullOrBlank()) {
+                    val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
+                    for (s in videoOnlyStreams) {
+                        if (!s.content.isNullOrBlank()) {
+                            val r = s.resolution?.trim()
+                            if (!r.isNullOrBlank()) {
+                                val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
+                                if (!qualityMap.containsKey(key)) {
+                                    qualityMap[key] = s.content
+                                    videoOnlyQualities.add(key)
+                                    videoOnlyUrls.add(s.content)
                                 }
                             }
-                            if (qualityMap.isNotEmpty()) {
-                                logD("YouTubeStreamExtractor", "Extracted direct streams via Innertube ($c) for $videoId")
-                                break
-                            }
                         }
                     }
-                } catch (e: Exception) {
-                    logD("YouTubeStreamExtractor", "Innertube player ($c) error: ${e.message}")
                 }
+            } catch (e: Exception) {
+                logD("YouTubeStreamExtractor", "[NewPipe] Extraction error for $videoId: ${e.message}")
             }
         }
 

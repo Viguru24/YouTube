@@ -187,10 +187,10 @@ fun YouTubePlayerView(
 
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 60_000,
-                /* maxBufferMs = */ 300_000,
-                /* bufferForPlaybackMs = */ 3_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 6_000
+                /* minBufferMs = */ 120_000,
+                /* maxBufferMs = */ 360_000,
+                /* bufferForPlaybackMs = */ 2_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .setBackBuffer(60_000, true)
@@ -468,10 +468,10 @@ fun YouTubePlayerView(
             }
 
             val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
                 .setDefaultRequestProperties(requestProps)
-                .setConnectTimeoutMs(20000)
-                .setReadTimeoutMs(25000)
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(30000)
                 .setAllowCrossProtocolRedirects(true)
 
             val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)

@@ -105,7 +105,20 @@ fun ShortsPlayerView(
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
 
-        ExoPlayer.Builder(context).build().apply {
+        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 90_000,
+                /* maxBufferMs = */ 240_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(30_000, true)
+            .build()
+
+        ExoPlayer.Builder(context)
+            .setLoadControl(loadControl)
+            .build().apply {
             playWhenReady = true
             setAudioAttributes(audioAttributes, true)
             setHandleAudioBecomingNoisy(true)
@@ -279,7 +292,7 @@ fun ShortsPlayerView(
                         (!audioUrl.isNullOrBlank() && directUrl != result?.combinedMuxedUrl && !directUrl.contains(".m3u8") && !directUrl.startsWith("file://") && !directUrl.startsWith("/"))
 
                 val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
                     .setDefaultRequestProperties(mapOf(
                         "Referer" to "https://www.youtube.com/",
                         "Origin" to "https://www.youtube.com",
@@ -287,8 +300,8 @@ fun ShortsPlayerView(
                         "Sec-Fetch-Mode" to "cors",
                         "Sec-Fetch-Site" to "cross-site"
                     ))
-                    .setConnectTimeoutMs(20000)
-                    .setReadTimeoutMs(25000)
+                    .setConnectTimeoutMs(15000)
+                    .setReadTimeoutMs(30000)
                     .setAllowCrossProtocolRedirects(true)
 
                 val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
