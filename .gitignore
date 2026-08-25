@@ -36,3 +36,8 @@ obj/
 settings.json
 local_settings.json
 WebView2Profile/
+
+windows/Package/Payload/
+windows/Publish/
+windows/VixzDesktop/bin/
+windows/VixzDesktop/obj/
