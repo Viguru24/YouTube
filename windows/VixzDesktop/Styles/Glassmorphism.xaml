@@ -65,6 +65,7 @@
 
     <!-- Icon Action Button (Circular Glass) -->
     <Style x:Key="IconActionButton" TargetType="Button">
+        <Setter Property="Focusable" Value="False"/>
         <Setter Property="Background" Value="#20FFFFFF"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderThickness" Value="1"/>

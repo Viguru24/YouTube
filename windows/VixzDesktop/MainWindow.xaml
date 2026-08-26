@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="#0B0B0E"
-        KeyDown="Window_KeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0"
@@ -138,31 +138,35 @@
                                 Click="AiCopilotBtn_Click"/>
 
                         <!-- Always-on-Top Pin Button -->
-                        <Button x:Name="PinButton"
-                                Content="📌"
-                                Style="{StaticResource IconActionButton}"
-                                Width="30" Height="30" Margin="0,0,6,0"
-                                ToolTip="Always on Top (T)"
-                                Click="PinButton_Click"/>
+                         <Button x:Name="PinButton"
+                                 Content="📌"
+                                 Style="{StaticResource IconActionButton}"
+                                 Focusable="False"
+                                 Width="30" Height="30" Margin="0,0,6,0"
+                                 ToolTip="Always on Top (T)"
+                                 Click="PinButton_Click"/>
 
-                        <!-- Minimize -->
-                        <Button Content="─"
-                                Style="{StaticResource IconActionButton}"
-                                Width="30" Height="30" Margin="0,0,4,0"
-                                Click="MinimizeButton_Click"/>
+                         <!-- Minimize -->
+                         <Button Content="─"
+                                 Style="{StaticResource IconActionButton}"
+                                 Focusable="False"
+                                 Width="30" Height="30" Margin="0,0,4,0"
+                                 Click="MinimizeButton_Click"/>
 
-                        <!-- Maximize -->
-                        <Button x:Name="MaximizeBtn"
-                                Content="▢"
-                                Style="{StaticResource IconActionButton}"
-                                Width="30" Height="30" Margin="0,0,4,0"
-                                Click="MaximizeButton_Click"/>
+                         <!-- Maximize -->
+                         <Button x:Name="MaximizeBtn"
+                                 Content="▢"
+                                 Style="{StaticResource IconActionButton}"
+                                 Focusable="False"
+                                 Width="30" Height="30" Margin="0,0,4,0"
+                                 Click="MaximizeButton_Click"/>
 
-                        <!-- Close -->
-                        <Button Content="✕"
-                                Style="{StaticResource IconActionButton}"
-                                Width="30" Height="30"
-                                Click="CloseButton_Click"/>
+                         <!-- Close -->
+                         <Button Content="✕"
+                                 Style="{StaticResource IconActionButton}"
+                                 Focusable="False"
+                                 Width="30" Height="30"
+                                 Click="CloseButton_Click"/>
                     </StackPanel>
                 </Grid>
             </Border>

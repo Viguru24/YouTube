@@ -402,7 +402,7 @@ namespace VixzDesktop
                 };
 
                 VideoWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-                VideoWebView.KeyDown += Window_KeyDown;
+                VideoWebView.PreviewKeyDown += Window_PreviewKeyDown;
 
                 // Intercept 'More videos' and external links so they play inside Vixz instead of opening external browsers
                 VideoWebView.CoreWebView2.NewWindowRequested += async (s, args) =>
@@ -1892,57 +1892,82 @@ namespace VixzDesktop
             }
         }
 
-        private async void Window_KeyDown(object sender, KeyEventArgs e)
+        private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (SearchBox.IsFocused) return;
+            // Do not intercept hotkeys if typing inside any input text box
+            if (Keyboard.FocusedElement is TextBox || 
+                Keyboard.FocusedElement is PasswordBox || 
+                SearchBox.IsFocused || 
+                (AiPromptBox != null && AiPromptBox.IsFocused) || 
+                (NewFolderInput != null && NewFolderInput.IsFocused))
+            {
+                return;
+            }
 
             switch (e.Key)
             {
                 case Key.Space:
+                    e.Handled = true;
+                    await VideoWebView.ExecuteScriptAsync("togglePlay();");
+                    break;
                 case Key.K:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("togglePlay();");
                     break;
                 case Key.Left:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("seek(-5);");
                     ShowToast("⏪ -5s");
                     break;
                 case Key.Right:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("seek(5);");
                     ShowToast("⏩ +5s");
                     break;
                 case Key.J:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("seek(-10);");
                     ShowToast("⏪ -10s");
                     break;
                 case Key.L:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("seek(10);");
                     ShowToast("⏩ +10s");
                     break;
                 case Key.M:
+                    e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("toggleMute();");
                     break;
                 case Key.S:
+                    e.Handled = true;
                     await CaptureScreenshotAsync();
                     break;
                 case Key.D:
+                    e.Handled = true;
                     await DownloadCurrentVideoAsync();
                     break;
                 case Key.F:
+                    e.Handled = true;
                     ToggleFullscreen();
                     break;
                 case Key.T:
+                    e.Handled = true;
                     PinButton_Click(this, new RoutedEventArgs());
                     break;
                 case Key.N:
+                    e.Handled = true;
                     PlayNextVideo();
                     break;
                 case Key.P:
+                    e.Handled = true;
                     PlayPreviousVideo();
                     break;
                 case Key.F12:
+                    e.Handled = true;
                     VideoWebView.CoreWebView2?.OpenDevToolsWindow();
                     break;
                 case Key.Escape:
+                    e.Handled = true;
                     if (SleepTimerPopup.IsOpen) SleepTimerPopup.IsOpen = false;
                     if (FolderPopup.IsOpen) FolderPopup.IsOpen = false;
                     if (_isCustomFullscreen) ToggleFullscreen();
