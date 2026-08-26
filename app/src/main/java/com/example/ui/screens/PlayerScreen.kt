@@ -89,23 +89,38 @@ fun PlayerScreen(
 
     val isFullscreen = isLandscape || isMaximized || isInPipMode
 
+    // Automatically manage immersive system bars when phone is physically rotated 90 degrees or maximized
+    LaunchedEffect(isLandscape, isMaximized, isInPipMode) {
+        val act = context as? android.app.Activity
+        if (act != null) {
+            val window = act.window
+            val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            if (isLandscape || isMaximized) {
+                insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else if (!isInPipMode) {
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val act = context as? android.app.Activity
+            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+        }
+    }
+
     val toggleFullscreen: () -> Unit = {
         val act = context as? android.app.Activity
         if (act != null) {
             val isLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             if (isLand || isMaximized) {
                 isMaximized = false
-                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                androidx.core.view.WindowCompat.getInsetsController(act.window, act.window.decorView).apply {
-                    show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                }
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
             } else {
                 isMaximized = true
                 act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                androidx.core.view.WindowCompat.getInsetsController(act.window, act.window.decorView).apply {
-                    hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                    systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
             }
         } else {
             isMaximized = !isMaximized

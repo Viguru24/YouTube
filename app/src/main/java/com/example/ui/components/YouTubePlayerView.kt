@@ -432,7 +432,7 @@ fun YouTubePlayerView(
 
         // 2. Otherwise extract online stream & all available resolutions
         addLog("Extracting direct MP4 stream URL & available qualities for videoId: $videoId")
-        val result = kotlinx.coroutines.withTimeoutOrNull(8000L) {
+        val result = kotlinx.coroutines.withTimeoutOrNull(15000L) {
             YouTubeStreamExtractor.extractVideoStreams(videoId)
         }
         if (result != null && !result.primaryStreamUrl.isNullOrEmpty()) {
@@ -446,7 +446,7 @@ fun YouTubePlayerView(
             isLoading = false
             useWebPlayerFallback = true
             statusLog = "Direct stream timed out or restricted. Activating Web Player."
-            addLog("Direct stream timeout (8.0s) -> Activating Web Player Fallback")
+            addLog("Direct stream timeout (15.0s) -> Activating Web Player Fallback")
         }
     }
 
@@ -530,7 +530,26 @@ fun YouTubePlayerView(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
+            .clipToBounds()
             .pointerInput(videoId) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    if (zoom != 1f || zoomScale > 1f) {
+                        val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                        zoomScale = newScale
+                        if (newScale > 1f) {
+                            val maxPanX = (size.width * (newScale - 1f)) / 2f
+                            val maxPanY = (size.height * (newScale - 1f)) / 2f
+                            panOffsetX = (panOffsetX + pan.x * newScale).coerceIn(-maxPanX, maxPanX)
+                            panOffsetY = (panOffsetY + pan.y * newScale).coerceIn(-maxPanY, maxPanY)
+                        } else {
+                            panOffsetX = 0f
+                            panOffsetY = 0f
+                            zoomScale = 1f
+                        }
+                    }
+                }
+            }
+            .pointerInput(videoId, zoomScale) {
                 detectTapGestures(
                     onTap = {
                         if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
@@ -546,7 +565,12 @@ fun YouTubePlayerView(
                         }
                     },
                     onDoubleTap = { offset: Offset ->
-                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                        if (zoomScale > 1.05f) {
+                            // Quick reset zoom on double tap
+                            zoomScale = 1f
+                            panOffsetX = 0f
+                            panOffsetY = 0f
+                        } else if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
                             areControlsVisible = true
                             val w = size.width
                             if (offset.x < w / 2f) {
@@ -567,128 +591,111 @@ fun YouTubePlayerView(
                     }
                 )
             }
-            .pointerInput(videoId) {
-                var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
-                var middleTotalDragY = 0f
-                val swipeThresholdPx = 70f * density
+            .pointerInput(videoId, zoomScale) {
+                if (zoomScale <= 1.05f) {
+                    var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
+                    var middleTotalDragY = 0f
+                    val swipeThresholdPx = 70f * density
 
-                detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        val w = size.width.toFloat()
-                        middleTotalDragY = 0f
-                        if (offset.x < w * 0.28f) {
-                            // Far Left (Brightness)
-                            dragZone = 1
-                            val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
-                            gestureBrightness = if (currentLpBrightness >= 0f) {
-                                currentLpBrightness
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            val w = size.width.toFloat()
+                            middleTotalDragY = 0f
+                            if (offset.x < w * 0.28f) {
+                                // Far Left (Brightness)
+                                dragZone = 1
+                                val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+                                gestureBrightness = if (currentLpBrightness >= 0f) {
+                                    currentLpBrightness
+                                } else {
+                                    try {
+                                        android.provider.Settings.System.getInt(
+                                            context.contentResolver,
+                                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                                            128
+                                        ) / 255f
+                                    } catch (e: Exception) { 0.5f }
+                                }
+                                isAdjustingBrightness = true
+                                isAdjustingVolume = false
+                            } else if (offset.x > w * 0.72f) {
+                                // Far Right (Volume)
+                                dragZone = 2
+                                val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                                gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume
+                                isAdjustingVolume = true
+                                isAdjustingBrightness = false
                             } else {
-                                try {
-                                    android.provider.Settings.System.getInt(
-                                        context.contentResolver,
-                                        android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                                        128
-                                    ) / 255f
-                                } catch (e: Exception) { 0.5f }
+                                // Middle (Next / Previous Video)
+                                dragZone = 3
+                                isAdjustingBrightness = false
+                                isAdjustingVolume = false
                             }
-                            isAdjustingBrightness = true
-                            isAdjustingVolume = false
-                        } else if (offset.x > w * 0.72f) {
-                            // Far Right (Volume)
-                            dragZone = 2
-                            val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                            gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume
-                            isAdjustingVolume = true
-                            isAdjustingBrightness = false
-                        } else {
-                            // Middle (Next / Previous Video)
-                            dragZone = 3
-                            isAdjustingBrightness = false
-                            isAdjustingVolume = false
-                        }
-                    },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        when (dragZone) {
-                            1 -> {
-                                val delta = -dragAmount / (size.height * 0.55f)
-                                val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
-                                gestureBrightness = newBrightness
-                                activity?.let { act ->
-                                    val lp = act.window.attributes
-                                    lp.screenBrightness = newBrightness
-                                    act.window.attributes = lp
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            when (dragZone) {
+                                1 -> {
+                                    val delta = -dragAmount / (size.height * 0.55f)
+                                    val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
+                                    gestureBrightness = newBrightness
+                                    activity?.let { act ->
+                                        val lp = act.window.attributes
+                                        lp.screenBrightness = newBrightness
+                                        act.window.attributes = lp
+                                    }
+                                }
+                                2 -> {
+                                    val delta = -dragAmount / (size.height * 0.55f)
+                                    val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
+                                    gestureVolumeFraction = newVolFraction
+                                    val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
+                                    try {
+                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
+                                    } catch (e: Exception) { }
+                                }
+                                3 -> {
+                                    middleTotalDragY += dragAmount
                                 }
                             }
-                            2 -> {
-                                val delta = -dragAmount / (size.height * 0.55f)
-                                val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
-                                gestureVolumeFraction = newVolFraction
-                                val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
-                                try {
-                                    audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
-                                } catch (e: Exception) { }
+                        },
+                        onDragEnd = {
+                            if (dragZone == 3) {
+                                if (middleTotalDragY < -swipeThresholdPx) {
+                                    swipeVideoFeedback = "Next Video ⏭️"
+                                    onNextVideo()
+                                } else if (middleTotalDragY > swipeThresholdPx) {
+                                    swipeVideoFeedback = "Previous Video ⏮️"
+                                    onPreviousVideo()
+                                }
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(900)
+                                    swipeVideoFeedback = null
+                                }
+                            } else {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    isAdjustingBrightness = false
+                                    isAdjustingVolume = false
+                                }
                             }
-                            3 -> {
-                                middleTotalDragY += dragAmount
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        if (dragZone == 3) {
-                            if (middleTotalDragY < -swipeThresholdPx) {
-                                swipeVideoFeedback = "Next Video ⏭️"
-                                onNextVideo()
-                            } else if (middleTotalDragY > swipeThresholdPx) {
-                                swipeVideoFeedback = "Previous Video ⏮️"
-                                onPreviousVideo()
-                            }
+                        },
+                        onDragCancel = {
                             coroutineScope.launch {
-                                kotlinx.coroutines.delay(900)
-                                swipeVideoFeedback = null
-                            }
-                        } else {
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(1200)
+                                kotlinx.coroutines.delay(800)
                                 isAdjustingBrightness = false
                                 isAdjustingVolume = false
                             }
                         }
-                    },
-                    onDragCancel = {
-                        coroutineScope.launch {
-                            kotlinx.coroutines.delay(800)
-                            isAdjustingBrightness = false
-                            isAdjustingVolume = false
-                        }
-                    }
-                )
+                    )
+                }
             },
         contentAlignment = Alignment.Center
     ) {
-        // Video Surface Container with Pinch-to-Zoom and Pan Transformation
+        // Video Surface Container with Pinch-to-Zoom and Pan Graphics Layer
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clipToBounds()
-                .pointerInput(videoId) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        if (zoom != 1f || zoomScale > 1f) {
-                            val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                            zoomScale = newScale
-                            if (newScale > 1f) {
-                                val maxPanX = (size.width * (newScale - 1f)) / 2f
-                                val maxPanY = (size.height * (newScale - 1f)) / 2f
-                                panOffsetX = (panOffsetX + pan.x * newScale).coerceIn(-maxPanX, maxPanX)
-                                panOffsetY = (panOffsetY + pan.y * newScale).coerceIn(-maxPanY, maxPanY)
-                            } else {
-                                panOffsetX = 0f
-                                panOffsetY = 0f
-                                zoomScale = 1f
-                            }
-                        }
-                    }
-                }
                 .graphicsLayer {
                     scaleX = zoomScale
                     scaleY = zoomScale

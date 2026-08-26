@@ -155,17 +155,17 @@ object YouTubeStreamExtractor {
         var bestAudioUrl: String? = null
         var bestCombinedUrl: String? = null
 
-        // 1. PRIMARY: YouTube Official Innertube Player API (ANDROID_VR, IOS, TVHTML5) - Fast & Zero Rate Limiting
-        val clients = listOf("ANDROID_VR", "IOS", "TVHTML5", "ANDROID")
+        // 1. PRIMARY: YouTube Official Innertube Player API (IOS, ANDROID_VR, ANDROID, TVHTML5) - Fast & Direct
+        val clients = listOf("IOS", "ANDROID_VR", "ANDROID", "TVHTML5")
         for (c in clients) {
             try {
                 val playerJson = fetchInnertubePlayer(videoId, c)
                 if (playerJson != null) {
                     val streams = extractStreamsFromPlayerResponse(playerJson)
-                    if (!streams.first.isNullOrEmpty()) {
+                    if (!streams.first.isNullOrEmpty() && streams.first!!.startsWith("http")) {
                         qualityMap["720p"] = streams.first!!
                         qualityMap["Auto"] = streams.first!!
-                        if (streams.second != null) {
+                        if (streams.second != null && streams.second!!.startsWith("http")) {
                             bestAudioUrl = streams.second
                             videoOnlyUrls.add(streams.first!!)
                             videoOnlyQualities.add("720p")
@@ -182,12 +182,8 @@ object YouTubeStreamExtractor {
                                 val f = adaptive.getJSONObject(i)
                                 val mime = f.optString("mimeType", "")
                                 val qLabel = f.optString("qualityLabel", "")
-                                var streamUrl = f.optString("url", "")
-                                val cipher = f.optString("signatureCipher", f.optString("cipher", ""))
-                                if (streamUrl.isEmpty() && cipher.isNotEmpty()) {
-                                    streamUrl = parseCipher(cipher)
-                                }
-                                if (streamUrl.isNotEmpty() && mime.contains("video")) {
+                                val streamUrl = f.optString("url", "")
+                                if (streamUrl.isNotEmpty() && streamUrl.startsWith("http") && mime.contains("video")) {
                                     val key = if (qLabel.isNotBlank()) (if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p") else "720p"
                                     qualityMap[key] = streamUrl
                                     videoOnlyQualities.add(key)
@@ -363,12 +359,8 @@ object YouTubeStreamExtractor {
             if (formats != null && formats.length() > 0) {
                 for (i in 0 until formats.length()) {
                     val f = formats.getJSONObject(i)
-                    var url = f.optString("url")
-                    val cipher = f.optString("signatureCipher", f.optString("cipher"))
-                    if (url.isEmpty() && cipher.isNotEmpty()) {
-                        url = parseCipher(cipher)
-                    }
-                    if (url.isNotEmpty()) {
+                    val url = f.optString("url")
+                    if (url.isNotEmpty() && url.startsWith("http")) {
                         // formats has muxed video+audio
                         return Pair(url, null)
                     }
@@ -380,12 +372,8 @@ object YouTubeStreamExtractor {
                 for (i in 0 until adaptive.length()) {
                     val f = adaptive.getJSONObject(i)
                     val mime = f.optString("mimeType")
-                    var url = f.optString("url")
-                    val cipher = f.optString("signatureCipher", f.optString("cipher"))
-                    if (url.isEmpty() && cipher.isNotEmpty()) {
-                        url = parseCipher(cipher)
-                    }
-                    if (url.isNotEmpty()) {
+                    val url = f.optString("url")
+                    if (url.isNotEmpty() && url.startsWith("http")) {
                         if (mime.contains("video") && videoUrl == null) {
                             videoUrl = url
                         } else if (mime.contains("audio")) {
