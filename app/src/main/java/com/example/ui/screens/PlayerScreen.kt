@@ -89,6 +89,29 @@ fun PlayerScreen(
 
     val isFullscreen = isLandscape || isMaximized || isInPipMode
 
+    val toggleFullscreen: () -> Unit = {
+        val act = context as? android.app.Activity
+        if (act != null) {
+            val isLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (isLand || isMaximized) {
+                isMaximized = false
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                androidx.core.view.WindowCompat.getInsetsController(act.window, act.window.decorView).apply {
+                    show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
+            } else {
+                isMaximized = true
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                androidx.core.view.WindowCompat.getInsetsController(act.window, act.window.decorView).apply {
+                    hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+            }
+        } else {
+            isMaximized = !isMaximized
+        }
+    }
+
     Scaffold(
         topBar = {
             if (!isFullscreen && !isInPipMode) {
@@ -190,6 +213,8 @@ fun PlayerScreen(
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },
                         videoTitle = video.title,
+                        isFullscreen = isFullscreen,
+                        onToggleFullscreen = toggleFullscreen,
                         onPlayerReady = { wv -> webViewInstance = wv },
                         modifier = Modifier.fillMaxSize()
                     )

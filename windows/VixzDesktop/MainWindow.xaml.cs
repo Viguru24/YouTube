@@ -1812,6 +1812,39 @@ namespace VixzDesktop
             ShowToast(_isAlwaysOnTop ? "📌 Always-on-Top Pinned" : "Unpinned");
         }
 
+        protected override void OnStateChanged(EventArgs e)
+        {
+            base.OnStateChanged(e);
+            if (MaximizeBtn != null)
+            {
+                MaximizeBtn.Content = WindowState == WindowState.Maximized ? "❐" : "▢";
+            }
+            if (WindowState == WindowState.Maximized)
+            {
+                if (MainBorder != null)
+                {
+                    MainBorder.CornerRadius = new CornerRadius(0);
+                    MainBorder.BorderThickness = new Thickness(0);
+                }
+                if (TitleBarBorder != null)
+                {
+                    TitleBarBorder.CornerRadius = new CornerRadius(0);
+                }
+            }
+            else
+            {
+                if (MainBorder != null)
+                {
+                    MainBorder.CornerRadius = new CornerRadius(14);
+                    MainBorder.BorderThickness = new Thickness(1);
+                }
+                if (TitleBarBorder != null)
+                {
+                    TitleBarBorder.CornerRadius = new CornerRadius(14, 14, 0, 0);
+                }
+            }
+        }
+
         private void MinimizeButton_Click(object sender, RoutedEventArgs e)
         {
             WindowState = WindowState.Minimized;
@@ -1825,7 +1858,6 @@ namespace VixzDesktop
         private void MaximizeToggle()
         {
             WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-            MaximizeBtn.Content = WindowState == WindowState.Maximized ? "❐" : "▢";
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
@@ -1850,11 +1882,13 @@ namespace VixzDesktop
             {
                 WindowState = WindowState.Maximized;
                 SidebarCol.Width = new GridLength(0);
+                TitleBarRow.Height = new GridLength(0);
             }
             else
             {
                 WindowState = WindowState.Normal;
                 SidebarCol.Width = new GridLength(210);
+                TitleBarRow.Height = new GridLength(46);
             }
         }
 

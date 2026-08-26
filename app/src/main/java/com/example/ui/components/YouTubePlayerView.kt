@@ -12,6 +12,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,8 +27,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -70,6 +73,8 @@ fun YouTubePlayerView(
     onWatchLaterToggle: () -> Unit = {},
     onSaveToSubject: () -> Unit = {},
     videoTitle: String = "Video",
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: () -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -81,6 +86,11 @@ fun YouTubePlayerView(
     var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
     var statusLog by remember(videoId) { mutableStateOf("Initializing Native ExoPlayer Engine...") }
     val debugLogs = remember(videoId) { mutableStateListOf<String>() }
+
+    // Pinch-to-Zoom & Pan State (1.0x to 5.0x zoom with smooth translation)
+    var zoomScale by remember(videoId) { mutableFloatStateOf(1f) }
+    var panOffsetX by remember(videoId) { mutableFloatStateOf(0f) }
+    var panOffsetY by remember(videoId) { mutableFloatStateOf(0f) }
 
     var savedPositionMs by rememberSaveable(videoId) { mutableLongStateOf(-1L) }
     var hasPreparedMedia by rememberSaveable(videoId) { mutableStateOf(false) }
@@ -656,78 +666,118 @@ fun YouTubePlayerView(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (streamUrl != null && !useWebPlayerFallback) {
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        player = exoPlayer
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        playerViewRef = this
+        // Video Surface Container with Pinch-to-Zoom and Pan Transformation
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .pointerInput(videoId) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        if (zoom != 1f || zoomScale > 1f) {
+                            val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                            zoomScale = newScale
+                            if (newScale > 1f) {
+                                val maxPanX = (size.width * (newScale - 1f)) / 2f
+                                val maxPanY = (size.height * (newScale - 1f)) / 2f
+                                panOffsetX = (panOffsetX + pan.x * newScale).coerceIn(-maxPanX, maxPanX)
+                                panOffsetY = (panOffsetY + pan.y * newScale).coerceIn(-maxPanY, maxPanY)
+                            } else {
+                                panOffsetX = 0f
+                                panOffsetY = 0f
+                                zoomScale = 1f
+                            }
+                        }
                     }
+                }
+                .graphicsLayer {
+                    scaleX = zoomScale
+                    scaleY = zoomScale
+                    translationX = panOffsetX
+                    translationY = panOffsetY
                 },
-                update = { view ->
-                    if (view.player != exoPlayer) {
-                        view.player = exoPlayer
-                    }
-                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    playerViewRef = view
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("native_exoplayer_view")
-            )
-        } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
-            // Automatic Fallback: Embedded YouTube Player WebView with WebChromeClient for HTML5 Video Playback
-            AndroidView(
-                factory = { ctx ->
-                    android.webkit.WebView(ctx).apply {
-                        layoutParams = android.view.ViewGroup.LayoutParams(
-                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                        )
-                        settings.javaScriptEnabled = true
-                        settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
-                        settings.useWideViewPort = true
-                        settings.loadWithOverviewMode = true
-                        settings.mediaPlaybackRequiresUserGesture = false
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
-                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                        // Desktop Mode User-Agent: Bypasses mobile browser embed restrictions automatically
-                        settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            contentAlignment = Alignment.Center
+        ) {
+            if (streamUrl != null && !useWebPlayerFallback) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            playerViewRef = this
+                        }
+                    },
+                    update = { view ->
+                        if (view.player != exoPlayer) {
+                            view.player = exoPlayer
+                        }
+                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        playerViewRef = view
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("native_exoplayer_view")
+                )
+            } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
+                // Automatic Fallback: Embedded YouTube Player WebView with WebChromeClient for HTML5 Video Playback
+                AndroidView(
+                    factory = { ctx ->
+                        android.webkit.WebView(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.databaseEnabled = true
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            // Desktop Mode User-Agent: Bypasses mobile browser embed restrictions automatically
+                            settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-                        // Set Comprehensive Desktop, EU/UK Consent & Privacy Bypass Cookies
-                        try {
-                            val cookieManager = android.webkit.CookieManager.getInstance()
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, true)
-                            val domains = listOf(
-                                "https://www.youtube.com",
-                                "https://m.youtube.com",
-                                "https://youtube.com",
-                                ".youtube.com",
-                                "https://consent.youtube.com",
-                                "https://consent.google.com",
-                                ".google.com"
-                            )
-                            val consentCookies = listOf(
-                                "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                "PREF=f6=40000000&hl=en&gl=GB; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.google.com; Secure; SameSite=None",
-                                "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.google.com; Secure; SameSite=None"
-                            )
-                            domains.forEach { domain ->
-                                consentCookies.forEach { cookie ->
-                                    cookieManager.setCookie(domain, cookie)
+                            // Set Comprehensive Desktop, EU/UK Consent & Privacy Bypass Cookies
+                            try {
+                                val cookieManager = android.webkit.CookieManager.getInstance()
+                                cookieManager.setAcceptCookie(true)
+                                cookieManager.setAcceptThirdPartyCookies(this, true)
+                                val domains = listOf(
+                                    "https://www.youtube.com",
+                                    "https://m.youtube.com",
+                                    "https://youtube.com",
+                                    ".youtube.com",
+                                    "https://consent.youtube.com",
+                                    "https://consent.google.com",
+                                    ".google.com"
+                                )
+                                val consentCookies = listOf(
+                                    "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.youtube.com; Secure; SameSite=None",
+                                    "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.youtube.com; Secure; SameSite=None",
+                                    "PREF=f6=40000000&hl=en&gl=GB; path=/; domain=.youtube.com; Secure; SameSite=None",
+                                    "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.google.com; Secure; SameSite=None",
+                                    "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.google.com; Secure; SameSite=None"
+                                )
+                                domains.forEach { domain ->
+                                    consentCookies.forEach { cookie ->
+                                        cookieManager.setCookie(domain, cookie)
+                                    }
+                                }
+                                cookieManager.flush()
+                            } catch (e: Exception) { }
+
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
+                                    super.onShowCustomView(view, callback)
+                                    onToggleFullscreen()
+                                }
+                                override fun onHideCustomView() {
+                                    super.onHideCustomView()
+                                    onToggleFullscreen()
                                 }
                             }
-                            cookieManager.flush()
-                        } catch (e: Exception) { }
-
-                        webChromeClient = android.webkit.WebChromeClient()
                         webViewClient = object : android.webkit.WebViewClient() {
                             private fun runBypassScript(view: android.webkit.WebView?) {
                                 view?.evaluateJavascript("""
@@ -799,6 +849,7 @@ fun YouTubePlayerView(
                     .fillMaxSize()
                     .testTag("fallback_webview_player")
             )
+        }
         }
 
         // Preview thumbnail poster while buffering / preparing (prevents initial black screen)
@@ -1304,11 +1355,59 @@ fun YouTubePlayerView(
                                 }
                             }
                         }
+
+                        // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
+                        IconButton(
+                            onClick = { onToggleFullscreen() },
+                            modifier = Modifier.size(30.dp).testTag("fullscreen_toggle_btn")
+                        ) {
+                            Icon(
+                                imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                                contentDescription = if (isFullscreen) "Exit Fullscreen" else "Maximize / Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
         }
 
+        // Floating Zoom Level & Quick Reset Badge
+        if (zoomScale > 1.05f) {
+            Surface(
+                onClick = {
+                    zoomScale = 1f
+                    panOffsetX = 0f
+                    panOffsetY = 0f
+                },
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.8f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🔍 ${(zoomScale * 10).toInt() / 10f}x Zoom",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "• Tap to Reset",
+                        color = YouTubeRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
 
         // Overlay Debug Logs Overlay Panel
         AnimatedVisibility(

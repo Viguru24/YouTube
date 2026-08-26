@@ -19,7 +19,8 @@
     </WindowChrome.WindowChrome>
 
     <!-- Outer Glass Window Container -->
-    <Border Background="{StaticResource BgDarkPrimary}"
+    <Border x:Name="MainBorder"
+            Background="{StaticResource BgDarkPrimary}"
             BorderBrush="{StaticResource BorderSubtle}"
             BorderThickness="1"
             CornerRadius="14">
@@ -27,13 +28,14 @@
         <Grid>
             <Grid.RowDefinitions>
                 <!-- Title Bar -->
-                <RowDefinition Height="46"/>
+                <RowDefinition x:Name="TitleBarRow" Height="46"/>
                 <!-- Main Content Area -->
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
             <!-- 1. CUSTOM FRAMELESS TITLE BAR -->
-            <Border Grid.Row="0"
+            <Border x:Name="TitleBarBorder"
+                    Grid.Row="0"
                     Background="{StaticResource BgDarkSecondary}"
                     BorderBrush="{StaticResource BorderSubtle}"
                     BorderThickness="0,0,0,1"
