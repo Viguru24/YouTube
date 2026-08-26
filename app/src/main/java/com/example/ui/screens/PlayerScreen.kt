@@ -86,8 +86,15 @@ fun PlayerScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isMaximized by remember { mutableStateOf(false) }
-
     val isFullscreen = isLandscape || isMaximized || isInPipMode
+
+    val otherVideos = remember(video.youtubeId, playlistVideos) {
+        playlistVideos
+            .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
+            .sortedWith(compareBy<VideoEntity> {
+                com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+            })
+    }
 
     // Automatically manage immersive system bars when phone is physically rotated 90 degrees or maximized
     LaunchedEffect(isLandscape, isMaximized, isInPipMode) {
@@ -127,121 +134,122 @@ fun PlayerScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (!isFullscreen && !isInPipMode) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = "Now Playing",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBackClick) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { showDebugConsole = !showDebugConsole }) {
-                            Icon(
-                                imageVector = Icons.Filled.BugReport,
-                                contentDescription = "Debug Logs",
-                                tint = if (showDebugConsole) YouTubeRed else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
-                    )
-                )
-            }
-        },
-        modifier = modifier
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
-        ) {
-            val otherVideos = remember(video.youtubeId, playlistVideos) {
-                playlistVideos
-                    .filter { it.youtubeId != video.youtubeId && it.lastPositionSeconds == 0 && it.lastWatchedTimestamp == 0L }
-                    .sortedWith(compareBy<VideoEntity> {
-                        com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                    })
-            }
+    val playerContent = @Composable {
+        YouTubePlayerView(
+            videoId = video.youtubeId,
+            startSeconds = video.lastPositionSeconds,
+            areAdvertsEnabled = areAdvertsEnabled,
+            showDebugConsole = showDebugConsole && !isInPipMode,
+            onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
+            playerCommandFlow = playerCommandFlow,
+            onPlayingStateChanged = onPlayingStateChanged,
+            onNextVideo = {
+                val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+                val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
+                    playlistVideos[currentIndex + 1]
+                } else {
+                    otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+                }
+                if (next != null) {
+                    onSelectOtherVideo(next)
+                } else {
+                    android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onPreviousVideo = {
+                val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+                val prev = if (currentIndex > 0) {
+                    playlistVideos[currentIndex - 1]
+                } else {
+                    playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
+                }
+                if (prev != null) {
+                    onSelectOtherVideo(prev)
+                } else {
+                    android.widget.Toast.makeText(context, "No previous video", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            isFavorite = video.isFavorite,
+            isWatchLater = video.isWatchLater,
+            onFavoriteToggle = { onFavoriteToggle(video) },
+            onWatchLaterToggle = { onWatchLaterToggle(video) },
+            onSaveToSubject = { showSaveToSubjectDialog = true },
+            videoTitle = video.title,
+            isFullscreen = isFullscreen,
+            onToggleFullscreen = toggleFullscreen,
+            onPlayerReady = { wv -> webViewInstance = wv },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Video Player Area - Single persistent ExoPlayer instance across rotation & fullscreen
-                Box(
-                    modifier = (if (isFullscreen) {
-                        Modifier.fillMaxSize()
-                    } else {
-                        Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                    }).background(Color.Black)
-                ) {
-                    YouTubePlayerView(
-                        videoId = video.youtubeId,
-                        startSeconds = video.lastPositionSeconds,
-                        areAdvertsEnabled = areAdvertsEnabled,
-                        showDebugConsole = showDebugConsole && !isInPipMode,
-                        onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
-                        playerCommandFlow = playerCommandFlow,
-                        onPlayingStateChanged = onPlayingStateChanged,
-                        onNextVideo = {
-                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-                            val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
-                                playlistVideos[currentIndex + 1]
-                            } else {
-                                otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
-                            }
-                            if (next != null) {
-                                onSelectOtherVideo(next)
-                            } else {
-                                android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
+    if (isFullscreen) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            playerContent()
+        }
+    } else {
+        Scaffold(
+            topBar = {
+                if (!isInPipMode) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "Now Playing",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBackClick) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         },
-                        onPreviousVideo = {
-                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-                            val prev = if (currentIndex > 0) {
-                                playlistVideos[currentIndex - 1]
-                            } else {
-                                playlistVideos.takeWhile { it.youtubeId != video.youtubeId }.lastOrNull()
-                            }
-                            if (prev != null) {
-                                onSelectOtherVideo(prev)
-                            } else {
-                                android.widget.Toast.makeText(context, "No previous video", android.widget.Toast.LENGTH_SHORT).show()
+                        actions = {
+                            IconButton(onClick = { showDebugConsole = !showDebugConsole }) {
+                                Icon(
+                                    imageVector = Icons.Filled.BugReport,
+                                    contentDescription = "Debug Logs",
+                                    tint = if (showDebugConsole) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         },
-                        isFavorite = video.isFavorite,
-                        isWatchLater = video.isWatchLater,
-                        onFavoriteToggle = { onFavoriteToggle(video) },
-                        onWatchLaterToggle = { onWatchLaterToggle(video) },
-                        onSaveToSubject = { showSaveToSubjectDialog = true },
-                        videoTitle = video.title,
-                        isFullscreen = isFullscreen,
-                        onToggleFullscreen = toggleFullscreen,
-                        onPlayerReady = { wv -> webViewInstance = wv },
-                        modifier = Modifier.fillMaxSize()
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
                     )
                 }
-
-                // Below-video content (portrait non-PiP only)
-                if (!isFullscreen && !isInPipMode) {
-
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 32.dp)
+            },
+            modifier = modifier
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Video Player Area
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f)
+                            .background(Color.Black)
                     ) {
+                        playerContent()
+                    }
+
+                    // Below-video content (portrait non-PiP only)
+                    if (!isInPipMode) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 32.dp)
+                        ) {
                         // Title + Channel + Below-Video Action Buttons
                         item {
                             Column(
@@ -619,11 +627,12 @@ fun PlayerScreen(
                             PlaylistQueueItem(
                                 video = other,
                                 onClick = { onSelectOtherVideo(other) },
-                                onDeleteClick = { onNotInterested(it) },
-                                onNotInterested = { onNotInterested(it) },
-                                onSelectChannel = { onSelectChannel(it) }
+                                onDeleteClick = { onNotInterested(other) },
+                                onNotInterested = { onNotInterested(other) },
+                                onSelectChannel = { onSelectChannel(other.channelName) }
                             )
                         }
+                    }
                     }
                 }
             }

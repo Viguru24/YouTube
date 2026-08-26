@@ -707,10 +707,12 @@ fun YouTubePlayerView(
             if (streamUrl != null && !useWebPlayerFallback) {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
+                        val inflater = android.view.LayoutInflater.from(ctx)
+                        (inflater.inflate(com.example.R.layout.exo_texture_player_view, null) as PlayerView).apply {
                             player = exoPlayer
                             useController = false
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            setOnTouchListener { _, _ -> false }
                             playerViewRef = this
                         }
                     },
