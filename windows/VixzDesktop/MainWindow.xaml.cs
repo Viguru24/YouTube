@@ -103,6 +103,7 @@ namespace VixzDesktop
 <head>
     <meta charset=""utf-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <link rel=""icon"" href=""data:,"">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100vw; height: 100vh; background: #000; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
@@ -413,6 +414,7 @@ namespace VixzDesktop
                             }
                         }
                     }
+                }
                 return fullText.trim();
             } catch (e) {
                 return '';
