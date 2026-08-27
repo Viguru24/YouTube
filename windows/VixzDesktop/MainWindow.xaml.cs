@@ -61,8 +61,21 @@ namespace VixzDesktop
             {
                 var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop");
                 var userDataFolder = Path.Combine(appData, "WebView2Profile");
+                var chromiumFlags = "--autoplay-policy=no-user-gesture-required " +
+                                    "--force_high_performance_gpu " +
+                                    "--enable-gpu-rasterization " +
+                                    "--enable-zero-copy " +
+                                    "--enable-hardware-overlays " +
+                                    "--use-angle=d3d11 " +
+                                    "--enable-accelerated-video-decode " +
+                                    "--enable-accelerated-mjpeg-decode " +
+                                    "--enable-accelerated-2d-canvas " +
+                                    "--enable-features=VaapiVideoDecoder,D3D11VideoDecoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays,MediaFoundationVideoCapture,NvidiaVsr,NvidiaVideoUpscaling " +
+                                    "--disable-features=PreloadMediaEngagementData,TrackingPrevention " +
+                                    "--disable-web-security " +
+                                    "--allow-running-insecure-content";
 
-                var options = new CoreWebView2EnvironmentOptions("--autoplay-policy=no-user-gesture-required --disable-features=PreloadMediaEngagementData,TrackingPrevention --disable-web-security --allow-running-insecure-content");
+                var options = new CoreWebView2EnvironmentOptions(chromiumFlags);
                 var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
                 SharedWebView2Environment = env; // expose for reuse by PopOutPlayerWindow
                 await VideoWebView.EnsureCoreWebView2Async(env);
