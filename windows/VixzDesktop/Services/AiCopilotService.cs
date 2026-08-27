@@ -693,11 +693,10 @@ namespace VixzDesktop.Services
 
         private static async Task GenerateStructuredPointsAsync(string transcriptText, string descriptionText, VideoItem video, VideoSummaryResult summary)
         {
-            // Clean both transcript and description
+            // 1. Clean transcript sentences
             var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
-            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
 
-            // 1. If we have real spoken transcript sentences, use them directly
+            // If we have real spoken transcript sentences, use them directly
             if (cleanTranscriptSentences.Count >= 3)
             {
                 summary.Tldr = string.Join(". ", cleanTranscriptSentences.Take(3)) + ".";
@@ -705,58 +704,55 @@ namespace VixzDesktop.Services
                 return;
             }
 
-            // 2. If description has legitimate content (after purging all donations/copyright disclaimers)
-            if (cleanDescSentences.Count >= 2)
+            // 2. High-Intelligence Live Web Intelligence (Always preferred over noisy YouTube descriptions)
+            var topicQuery = CleanTopicQuery(video.Title);
+            var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
+
+            if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage) && webResult.ResponseMessage.Length > 30)
+            {
+                summary.Tldr = $"**{video.Title}** ({video.ChannelTitle})\n\n{webResult.ResponseMessage}";
+                var takeaways = new List<string>();
+
+                foreach (var fact in webResult.WebFacts.Take(4))
+                {
+                    if (!string.IsNullOrWhiteSpace(fact) && fact.Length > 25 && !takeaways.Contains(fact))
+                    {
+                        takeaways.Add(fact);
+                    }
+                }
+
+                if (takeaways.Count >= 2)
+                {
+                    summary.KeyTakeaways = takeaways;
+                    return;
+                }
+            }
+
+            // 3. Clean description sentences only if substantive (> 4 long sentences)
+            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
+            if (cleanDescSentences.Count >= 4)
             {
                 summary.Tldr = string.Join(". ", cleanDescSentences.Take(2)) + ".";
                 summary.KeyTakeaways = DistributeKeyPoints(cleanDescSentences, 4);
                 return;
             }
 
-            // 3. High-Intelligence Fallback: Query Live Web Intelligence for the topic of the video!
-            // Clean clickbait words like "BREAKING:", "🚨", "EXCLUSIVE", etc.
-            var topicQuery = CleanTopicQuery(video.Title);
-            var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
-
-            if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage))
-            {
-                summary.Tldr = $"**{video.Title}** — {webResult.ResponseMessage}";
-                var takeaways = new List<string>();
-
-                foreach (var fact in webResult.WebFacts.Take(4))
-                {
-                    if (!string.IsNullOrWhiteSpace(fact) && !takeaways.Contains(fact))
-                    {
-                        takeaways.Add(fact);
-                    }
-                }
-
-                if (takeaways.Count == 0)
-                {
-                    takeaways.Add($"Topic Coverage: In-depth report by {video.ChannelTitle}.");
-                    takeaways.Add($"Key Focus: {video.Title}");
-                    takeaways.Add($"Broadcast Date: {video.UploadDateText}");
-                }
-
-                summary.KeyTakeaways = takeaways;
-                return;
-            }
-
-            // 4. Default clean fallback (Never output boilerplate!)
-            summary.Tldr = $"In-depth video report titled **{video.Title}** presented by **{video.ChannelTitle}**.";
+            // 4. Default clean editorial fallback (Never output raw boilerplate!)
+            summary.Tldr = $"**{video.Title}** — In-depth political & news briefing presented by **{video.ChannelTitle}**.";
             summary.KeyTakeaways = new List<string>
             {
-                $"Comprehensive news and commentary covering: {video.Title}",
-                $"Channel & Creator: {video.ChannelTitle}",
-                $"Video Duration: {video.DurationText} • Uploaded: {video.UploadDateText}"
+                $"Comprehensive commentary and analysis: {video.Title}",
+                $"Channel: {video.ChannelTitle}",
+                $"Published: {video.UploadDateText} • Length: {video.DurationText}",
+                $"Video stream currently active on Vixz Desktop."
             };
         }
 
         private static string CleanTopicQuery(string title)
         {
-            var cleaned = Regex.Replace(title, @"(?i)\b(breaking|alert|exclusive|must watch|live|update|warning|shocking|urgent)\b", " ");
+            var cleaned = Regex.Replace(title, @"(?i)\b(breaking|alert|exclusive|must watch|live|update|warning|shocking|urgent|dc rocked|watch|official)\b", " ");
             cleaned = Regex.Replace(cleaned, @"[🚨🔥💥⚠️📢🎬🔴]+", " ");
-            cleaned = Regex.Replace(cleaned, @"[-—:|]+", " ");
+            cleaned = Regex.Replace(cleaned, @"[-—:|.]+", " ");
             cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
             return cleaned.Length > 5 ? cleaned : title;
         }
@@ -765,13 +761,13 @@ namespace VixzDesktop.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return new List<string>();
 
-            // 1. Blacklist Regex: Exclude Cashapp, Venmo, PayPal, Copyright disclaimers, Fair use boilerplate, promo codes, subscribe plugs
+            // Blacklist Regex: Exclude Cashapp, Venmo, PayPal, Copyright disclaimers, Fair use boilerplate, promo codes, subscribe plugs
             var blacklistRegex = new Regex(
                 @"(?i)\b(cashapp|\$|venmo|paypal|donate|donations|patreon|gofundme|crypto|bitcoin|btc|eth|wallet|zelle|" +
                 @"copyright disclaimer|section 107|copyright act|fair use|criticism|commentary|news reporting|scholarship|research|" +
-                @"non-profit|personal use|no copyright infringement|all rights reserved|disclaimer:|the views and opinions|" +
-                @"support the channel|subscribe to|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
-                @"see you next time|follow me on|follow us on|social media|discount code|promo code|sponsored by|" +
+                @"non-profit|personal use|no copyright infringement|all rights belong|all rights reserved|respective owners|disclaimer:|the views and opinions|" +
+                @"support the channel|road to|subscribers?|sub count|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
+                @"see you next time|follow me on|follow us on|social media|instagram|twitter|tiktok|facebook|discord|telegram|discount code|promo code|sponsored by|" +
                 @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp)\b"
             );
 
@@ -790,8 +786,11 @@ namespace VixzDesktop.Services
                 if (blacklistRegex.IsMatch(s)) continue;
 
                 var cleaned = Regex.Replace(s, @"\s+", " ").Trim();
-                if (cleaned.Length < 20) continue;
+                if (cleaned.Length < 25) continue;
                 if (cleaned.Equals(video.Title, StringComparison.OrdinalIgnoreCase)) continue;
+
+                // Check for ALL CAPS spam line
+                if (cleaned.Length > 15 && cleaned.ToUpperInvariant() == cleaned && !cleaned.Contains(" ")) continue;
 
                 // Capitalize first letter
                 if (char.IsLower(cleaned[0]))
