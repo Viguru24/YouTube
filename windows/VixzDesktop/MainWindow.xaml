@@ -338,6 +338,9 @@
                                                     <Separator Background="{StaticResource BorderSubtle}"/>
                                                     <MenuItem Header="⭐ Toggle Favorite" Click="ContextMenuFavorite_Click"/>
                                                     <MenuItem Header="🕒 Toggle Watch Later" Click="ContextMenuWatchLater_Click"/>
+                                                    <Separator Background="{StaticResource BorderSubtle}"/>
+                                                    <MenuItem Header="↗️ Share Video (WhatsApp, Link...)" Click="ContextMenuShare_Click"/>
+                                                    <MenuItem Header="📋 Copy Video URL" Click="ContextMenuCopyLink_Click"/>
                                                 </ContextMenu>
                                             </Border.ContextMenu>
                                             <Border.Style>
@@ -521,13 +524,16 @@
                                     <!-- 11. ✨ AI Summarize & Copilot -->
                                     <Button x:Name="PlayerAiBtn" Content="✨" Style="{StaticResource IconActionButton}" ToolTip="AI Video Summarizer &amp; Assistant" Margin="0,0,5,0" Click="AiCopilotBtn_Click"/>
 
-                                    <!-- 9. ⧉ POP-OUT FLOATING PLAYER -->
+                                    <!-- 12. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
+                                    <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
+
+                                    <!-- 13. ⧉ POP-OUT FLOATING PLAYER -->
                                     <Button x:Name="PopOutBtn" Content="⧉" Style="{StaticResource IconActionButton}" ToolTip="Pop-out Floating Mini Player (Always on Top)" Margin="0,0,5,0" Click="PopOutPlayer_Click"/>
 
-                                    <!-- 10. 🛠️ F12 DevTools -->
+                                    <!-- 14. 🛠️ F12 DevTools -->
                                     <Button Content="🛠️" Style="{StaticResource IconActionButton}" ToolTip="Developer Tools (F12)" Margin="0,0,5,0" Click="DevToolsBtn_Click"/>
 
-                                    <!-- 11. ⛶ Fullscreen -->
+                                    <!-- 15. ⛶ Fullscreen -->
                                     <Button Content="⛶" Style="{StaticResource IconActionButton}" ToolTip="Fullscreen (F)" Click="FullscreenBtn_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -647,6 +653,102 @@
                                 <Button Content="🔐 Sign In / Switch Google Account" Style="{StaticResource RedAccentButton}" Margin="0,0,0,8" Click="OpenSignInWindow_Click"/>
                                 <Button Content="🔄 Sync Subscriptions &amp; Recommendations" Style="{StaticResource GlassButton}" Margin="0,0,0,8" Click="SyncAccountSubscriptions_Click"/>
                                 <Button Content="🚪 Sign Out" Style="{StaticResource GlassButton}" Click="SignOutAccount_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- G. SHARE VIDEO POPUP (HWnd Layered, floats above WebView2) -->
+                    <Popup x:Name="SharePopup" AllowsTransparency="True" StaysOpen="False" Placement="Top" PlacementTarget="{Binding ElementName=ShareBtn}">
+                        <Border Width="380" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="18">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="25" ShadowDepth="0" Opacity="0.85" Color="Black"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- Header -->
+                                <Grid Margin="0,0,0,12">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="↗️" FontSize="16" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Share Video" Foreground="White" FontSize="16" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" HorizontalAlignment="Right" Click="CloseShareModal_Click"/>
+                                </Grid>
+
+                                <!-- Video Info Preview Card -->
+                                <Border Background="#14141A" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10,8" Margin="0,0,0,14">
+                                    <StackPanel>
+                                        <TextBlock x:Name="SharePopupVideoTitle" Text="Video Title" Foreground="White" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="340"/>
+                                        <TextBlock x:Name="SharePopupVideoChannel" Text="Channel Name" Foreground="{StaticResource AccentGold}" FontSize="11" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Quick Messaging & Social Apps Grid -->
+                                <TextBlock Text="SHARE TO APPS" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold" Margin="2,0,0,8"/>
+                                <UniformGrid Columns="3" Margin="0,0,0,14">
+                                    <!-- 1. WhatsApp -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Share to WhatsApp" Click="ShareWhatsApp_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="💬" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="WhatsApp" Foreground="#25D366" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 2. Telegram -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Share to Telegram" Click="ShareTelegram_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="✈️" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Telegram" Foreground="#229ED9" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 3. X / Twitter -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Share to X (Twitter)" Click="ShareTwitter_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="🐦" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="X (Twitter)" Foreground="#1DA1F2" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 4. Facebook -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Share to Facebook" Click="ShareFacebook_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="📘" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Facebook" Foreground="#1877F2" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 5. Email -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Send via Email" Click="ShareEmail_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="✉️" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Email" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- 6. Web Browser -->
+                                    <Button Style="{StaticResource GlassButton}" Margin="3" Padding="6,8" ToolTip="Open in Web Browser" Click="ShareMore_Click">
+                                        <StackPanel HorizontalAlignment="Center">
+                                            <TextBlock Text="🌐" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Browser" Foreground="White" FontSize="11" FontWeight="Bold" Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </UniformGrid>
+
+                                <!-- Direct URL Link Box with Copy Button -->
+                                <TextBlock Text="DIRECT VIDEO LINK" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold" Margin="2,0,0,6"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="ShareUrlTextBox" Background="#14141A" Foreground="{StaticResource AccentGold}" BorderBrush="{StaticResource BorderSubtle}" Padding="8,7" FontSize="11.5" IsReadOnly="True" VerticalAlignment="Center"/>
+                                    <Button x:Name="CopyShareLinkBtn" Grid.Column="1" Content="📋 Copy" Style="{StaticResource RedAccentButton}" Padding="12,6" Margin="6,0,0,0" FontSize="12" Click="CopyShareLink_Click"/>
+                                </Grid>
+
+                                <!-- Checkbox: Start at current time -->
+                                <CheckBox x:Name="ShareAtCurrentTimeCheckBox" Content="Start at current time (0:00)" Foreground="White" FontSize="11.5" Margin="2,2,0,12" Checked="ShareTimestamp_Changed" Unchecked="ShareTimestamp_Changed"/>
+
+                                <!-- Secondary Utility: Copy Embed Code -->
+                                <Button Content="‹/› Copy HTML Embed Code" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,5" HorizontalAlignment="Stretch" Click="CopyEmbedCode_Click"/>
                             </StackPanel>
                         </Border>
                     </Popup>

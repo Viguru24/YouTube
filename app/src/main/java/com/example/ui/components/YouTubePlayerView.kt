@@ -1225,6 +1225,26 @@ fun YouTubePlayerView(
                             }
                         }
 
+                        // Share Button [↗️] (WhatsApp, Socials, Copy Link)
+                        IconButton(
+                            onClick = {
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
+                            },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Share,
+                                contentDescription = "Share Video",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+
                         // Settings Gear [⚙️]
                         Box {
                             IconButton(
@@ -1266,6 +1286,21 @@ fun YouTubePlayerView(
                                         onClick = {
                                             showSettingsMenu = false
                                             onToggleDebugConsole()
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Share Video ↗️", fontSize = 13.sp) },
+                                        leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = Color.White) },
+                                        onClick = {
+                                            showSettingsMenu = false
+                                            try {
+                                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/plain"
+                                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
+                                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
+                                                }
+                                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
+                                            } catch (e: Exception) { }
                                         }
                                     )
                                     DropdownMenuItem(
