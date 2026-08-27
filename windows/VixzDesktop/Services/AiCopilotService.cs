@@ -264,8 +264,11 @@ namespace VixzDesktop.Services
                 {
                     var raw = snippetMatches[i].Groups[1].Value;
                     var clean = Regex.Replace(raw, @"<[^>]+>", " ");
-                    clean = WebUtility.HtmlDecode(clean).Trim();
-                    clean = Regex.Replace(clean, @"\s+", " ");
+                    clean = WebUtility.HtmlDecode(WebUtility.HtmlDecode(clean)).Trim();
+                    clean = Regex.Replace(clean, @"&#(?:39|x27);", "'", RegexOptions.IgnoreCase);
+                    clean = Regex.Replace(clean, @"&#(?:34|x22);", "\"", RegexOptions.IgnoreCase);
+                    clean = Regex.Replace(clean, @"&#(?:38|x26);", "&", RegexOptions.IgnoreCase);
+                    clean = Regex.Replace(clean, @"\s+", " ").Trim();
                     if (clean.Length > 25 && !cleanSnippets.Contains(clean))
                     {
                         cleanSnippets.Add(clean);
