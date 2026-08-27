@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="Sign in to YouTube / Google - Vixz"
-        Icon="App.ico"
+        Icon="App.png"
         Height="700" Width="520"
         MinHeight="550" MinWidth="440"
         WindowStartupLocation="CenterOwner"
