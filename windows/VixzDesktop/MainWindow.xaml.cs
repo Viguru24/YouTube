@@ -104,13 +104,60 @@ namespace VixzDesktop
     <meta charset=""utf-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; background: #000; overflow: hidden; }
-        html, body { width: 100vw; height: 100vh; background: #000; }
-        #player { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; border: none; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100vw; height: 100vh; background: #000; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+        
+        #ambient-glow-container {
+            position: absolute;
+            top: -12%;
+            left: -12%;
+            width: 124%;
+            height: 124%;
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0.9;
+            transition: opacity 0.5s ease;
+            filter: blur(60px) saturate(2.5) brightness(1.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .ambient-orb {
+            position: absolute;
+            width: 75%;
+            height: 75%;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--glow-color, #FF0055) 0%, rgba(255, 120, 0, 0.45) 45%, transparent 75%);
+            animation: pulseGlow 5s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(0.92); opacity: 0.75; }
+            100% { transform: scale(1.10); opacity: 1.0; }
+        }
+
+        #player-wrapper {
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 60px rgba(0,0,0,0.85);
+        }
+
+        #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
     </style>
 </head>
 <body>
-    <div id=""player""></div>
+    <div id=""ambient-glow-container"">
+        <div class=""ambient-orb""></div>
+    </div>
+    <div id=""player-wrapper"">
+        <div id=""player""></div>
+    </div>
     <script>
         var tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
@@ -224,6 +271,21 @@ namespace VixzDesktop
             if (window.chrome && window.chrome.webview) {
                 window.chrome.webview.postMessage('QUALITY:' + preferredQuality);
             }
+        }
+
+        function setAmbientGlow(isEnabled, colorHex) {
+            try {
+                var container = document.getElementById('ambient-glow-container');
+                if (!container) return;
+                if (isEnabled) {
+                    container.style.opacity = '0.9';
+                    if (colorHex) {
+                        document.documentElement.style.setProperty('--glow-color', colorHex);
+                    }
+                } else {
+                    container.style.opacity = '0.0';
+                }
+            } catch(e) {}
         }
 
         var sponsorSegments = [];
@@ -2452,20 +2514,36 @@ namespace VixzDesktop
             {
                 AmbientGlowBtn.Foreground = StorageService.Settings.IsAmbientGlowEnabled ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.Gray;
             }
+            UpdateAmbientGlowFromVideo(_currentVideo);
         }
 
         private void UpdateAmbientGlowFromVideo(VideoItem? video)
         {
-            if (AmbientGlowBorder == null || video == null) return;
-            if (!StorageService.Settings.IsAmbientGlowEnabled) return;
+            if (video == null) return;
 
             // Generate an adaptive cinematic color palette for the ambient glow
             var hash = Math.Abs((video.Title + video.ChannelTitle).GetHashCode());
-            byte r = (byte)(70 + (hash % 150));
+            byte r = (byte)(80 + (hash % 160));
             byte g = (byte)(35 + ((hash / 13) % 130));
-            byte b = (byte)(80 + ((hash / 17) % 160));
+            byte b = (byte)(90 + ((hash / 17) % 150));
+            var colorHex = $"#{r:X2}{g:X2}{b:X2}";
 
-            AmbientGlowBorder.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(95, r, g, b));
+            if (AmbientGlowBorder != null)
+            {
+                AmbientGlowBorder.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(95, r, g, b));
+            }
+
+            if (VideoWebView?.CoreWebView2 != null)
+            {
+                _ = VideoWebView.ExecuteScriptAsync($"setAmbientGlow({StorageService.Settings.IsAmbientGlowEnabled.ToString().ToLower()}, '{colorHex}');");
+            }
+
+            if (PlayerView != null)
+            {
+                PlayerView.Background = StorageService.Settings.IsAmbientGlowEnabled 
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(50, r, g, b))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(9, 9, 12));
+            }
         }
 
         #endregion
