@@ -29,7 +29,7 @@ namespace VixzDesktop.Services
             catch { }
         }
 
-        public static async Task<List<VideoItem>> SearchVideosAsync(string query, int maxResults = 25, string? spFilter = null, bool sortByUploadDate = false)
+        public static async Task<List<VideoItem>> SearchVideosAsync(string query, int maxResults = 50, string? spFilter = null, bool sortByUploadDate = false)
         {
             var results = new List<VideoItem>();
             var seenIds = new HashSet<string>();
@@ -69,8 +69,8 @@ namespace VixzDesktop.Services
                 System.Diagnostics.Debug.WriteLine($"ytInitialData parse error: {ex.Message}");
             }
 
-            // 2. YoutubeExplode comprehensive fallback
-            if (results.Count == 0)
+            // 2. YoutubeExplode stream pagination to fill up to maxResults
+            if (results.Count < maxResults)
             {
                 try
                 {
@@ -102,6 +102,40 @@ namespace VixzDesktop.Services
                 }
             }
 
+            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+        }
+
+        public static async Task<List<VideoItem>> FetchNextSearchBatchAsync(string query, HashSet<string> existingIds, int takeCount = 35)
+        {
+            var results = new List<VideoItem>();
+            try
+            {
+                var searchResults = _client.Search.GetVideosAsync(query);
+                await foreach (var video in searchResults)
+                {
+                    if (!existingIds.Contains(video.Id.Value))
+                    {
+                        existingIds.Add(video.Id.Value);
+                        results.Add(new VideoItem
+                        {
+                            Id = video.Id.Value,
+                            Title = video.Title,
+                            ChannelTitle = video.Author.ChannelTitle,
+                            ChannelId = video.Author.ChannelId.Value,
+                            ThumbnailUrl = video.Thumbnails.OrderByDescending(t => t.Resolution.Area).FirstOrDefault()?.Url ?? $"https://i.ytimg.com/vi/{video.Id.Value}/hqdefault.jpg",
+                            Duration = video.Duration,
+                            DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
+                            UploadDateText = ""
+                        });
+
+                        if (results.Count >= takeCount) break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error fetching next search batch: {ex.Message}");
+            }
             return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
         }
 

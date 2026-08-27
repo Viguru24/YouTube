@@ -412,66 +412,77 @@
                         </Grid>
 
                         <!-- Video Grid Scroll Viewer -->
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="16,0,8,12">
-                            <ItemsControl x:Name="VideoItemsControl">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Width="280" Height="240" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
-                                            <Border.ContextMenu>
-                                                <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
-                                                    <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
-                                                    <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
-                                                    <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
-                                                    <Separator Background="{StaticResource BorderSubtle}"/>
-                                                    <MenuItem Header="⭐ Toggle Favorite" Click="ContextMenuFavorite_Click"/>
-                                                    <MenuItem Header="🕒 Toggle Watch Later" Click="ContextMenuWatchLater_Click"/>
-                                                    <Separator Background="{StaticResource BorderSubtle}"/>
-                                                    <MenuItem Header="↗️ Share Video (WhatsApp, Link...)" Click="ContextMenuShare_Click"/>
-                                                    <MenuItem Header="📋 Copy Video URL" Click="ContextMenuCopyLink_Click"/>
-                                                </ContextMenu>
-                                            </Border.ContextMenu>
-                                            <Border.Style>
-                                                <Style TargetType="Border">
-                                                    <Style.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="#22222E"/>
-                                                            <Setter Property="BorderBrush" Value="{StaticResource BorderHover}"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Border.Style>
-                                            <Grid>
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="158"/>
-                                                    <RowDefinition Height="*"/>
-                                                </Grid.RowDefinitions>
+                        <!-- Video Grid Scroll Viewer with Auto Infinite Scroll -->
+                        <ScrollViewer x:Name="FeedScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="16,0,8,12" ScrollChanged="FeedScrollViewer_ScrollChanged">
+                            <StackPanel>
+                                <ItemsControl x:Name="VideoItemsControl">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="280" Height="240" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
+                                                        <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
+                                                        <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
+                                                        <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
+                                                        <Separator Background="{StaticResource BorderSubtle}"/>
+                                                        <MenuItem Header="⭐ Toggle Favorite" Click="ContextMenuFavorite_Click"/>
+                                                        <MenuItem Header="🕒 Toggle Watch Later" Click="ContextMenuWatchLater_Click"/>
+                                                        <Separator Background="{StaticResource BorderSubtle}"/>
+                                                        <MenuItem Header="↗️ Share Video (WhatsApp, Link...)" Click="ContextMenuShare_Click"/>
+                                                        <MenuItem Header="📋 Copy Video URL" Click="ContextMenuCopyLink_Click"/>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="#22222E"/>
+                                                                <Setter Property="BorderBrush" Value="{StaticResource BorderHover}"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="158"/>
+                                                        <RowDefinition Height="*"/>
+                                                    </Grid.RowDefinitions>
 
-                                                <!-- Thumbnail Image -->
-                                                <Border Grid.Row="0" CornerRadius="12,12,0,0" ClipToBounds="True">
-                                                    <Grid>
-                                                        <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
-                                                        <!-- Duration Badge -->
-                                                        <Border Background="#CC000000" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
-                                                            <TextBlock Text="{Binding DurationText}" Foreground="White" FontSize="11" FontWeight="Bold"/>
-                                                        </Border>
-                                                    </Grid>
-                                                </Border>
+                                                    <!-- Thumbnail Image -->
+                                                    <Border Grid.Row="0" CornerRadius="12,12,0,0" ClipToBounds="True">
+                                                        <Grid>
+                                                            <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
+                                                            <!-- Duration Badge -->
+                                                            <Border Background="#CC000000" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
+                                                                <TextBlock Text="{Binding DurationText}" Foreground="White" FontSize="11" FontWeight="Bold"/>
+                                                            </Border>
+                                                        </Grid>
+                                                    </Border>
 
-                                                <!-- Video Info -->
-                                                <StackPanel Grid.Row="1" Margin="10,8,10,6">
-                                                    <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
-                                                    <TextBlock Text="{Binding SubtitleText}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                                                    <!-- Video Info -->
+                                                    <StackPanel Grid.Row="1" Margin="10,8,10,6">
+                                                        <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
+                                                        <TextBlock Text="{Binding SubtitleText}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Infinite Scroll Loading Banner & Load More Trigger -->
+                                <Border x:Name="InfiniteScrollBanner" Margin="0,16,0,24" HorizontalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button x:Name="LoadMoreVideosBtn" Content="⚡ Load More Videos..." Style="{StaticResource GlassButton}" Padding="16,8" FontSize="12.5" FontWeight="Bold" Click="LoadMoreVideosBtn_Click"/>
+                                        <ProgressBar x:Name="InfiniteScrollSpinner" IsIndeterminate="True" Width="90" Height="4" Margin="12,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                         </ScrollViewer>
                     </Grid>
 

@@ -1219,10 +1219,15 @@ namespace VixzDesktop
             await PerformSearchWithFiltersAsync();
         }
 
+        private string? _currentSearchQuery = null;
+        private bool _isLoadingMore = false;
+
         private async Task PerformSearchWithFiltersAsync()
         {
             var query = SearchBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(query)) return;
+
+            _currentSearchQuery = query;
 
             var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
@@ -1242,11 +1247,72 @@ namespace VixzDesktop
             SwitchToFeedView();
             FeedTitleText.Text = $"🔍 Search: \"{query}\"";
 
-            var results = await YouTubeService.SearchVideosAsync(query, 35, spFilter: spParam);
+            var results = await YouTubeService.SearchVideosAsync(query, 50, spFilter: spParam);
             _rawUnfilteredFeed = results;
             _currentFeed = YouTubeService.ApplyLocalFilters(results, dateTag, durationTag, sortByTag);
             VideoItemsControl.ItemsSource = _currentFeed;
             LoadingSpinner.Visibility = Visibility.Collapsed;
+        }
+
+        private async void FeedScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (FeedView.Visibility != Visibility.Visible || _isLoadingMore) return;
+
+            // Trigger when scrolled to bottom 85%
+            if (e.VerticalChange > 0 && e.VerticalOffset >= e.ExtentHeight - e.ViewportHeight - 350)
+            {
+                await LoadNextPageOfVideosAsync();
+            }
+        }
+
+        private async void LoadMoreVideosBtn_Click(object sender, RoutedEventArgs e)
+        {
+            await LoadNextPageOfVideosAsync();
+        }
+
+        private async Task LoadNextPageOfVideosAsync()
+        {
+            if (_isLoadingMore || _rawUnfilteredFeed == null || _rawUnfilteredFeed.Count == 0) return;
+            _isLoadingMore = true;
+
+            if (InfiniteScrollSpinner != null) InfiniteScrollSpinner.Visibility = Visibility.Visible;
+            if (LoadMoreVideosBtn != null) LoadMoreVideosBtn.IsEnabled = false;
+
+            try
+            {
+                var existingIds = new HashSet<string>(_rawUnfilteredFeed.Select(v => v.Id));
+                List<VideoItem> moreVideos = new List<VideoItem>();
+
+                if (!string.IsNullOrWhiteSpace(_currentSearchQuery))
+                {
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35);
+                }
+                else
+                {
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync("Trending Worldwide", existingIds, 35);
+                }
+
+                if (moreVideos.Count > 0)
+                {
+                    _rawUnfilteredFeed.AddRange(moreVideos);
+                    ApplyCurrentFilters();
+                    ShowToast($"✨ Loaded {moreVideos.Count} more videos (Total: {_currentFeed.Count})");
+                }
+                else
+                {
+                    ShowToast("ℹ️ All available videos loaded");
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"⚠️ Could not load more: {ex.Message}");
+            }
+            finally
+            {
+                _isLoadingMore = false;
+                if (InfiniteScrollSpinner != null) InfiniteScrollSpinner.Visibility = Visibility.Collapsed;
+                if (LoadMoreVideosBtn != null) LoadMoreVideosBtn.IsEnabled = true;
+            }
         }
 
         public static string? ExtractYouTubeVideoId(string input)
