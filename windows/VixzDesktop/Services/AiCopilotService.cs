@@ -479,48 +479,52 @@ namespace VixzDesktop.Services
                         }
                     }
                 }
-                // 3. Google Gemini Provider (Default)
+                // 3. Google Gemini Provider (Gemini 3.7 Flash with Gemini 2.0 Flash Fallback)
                 else
                 {
-                    var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={apiKey}";
-                    var contextPrompt = "You are Vixz AI, a powerful, helpful AI assistant integrated into the Vixz Desktop YouTube player application on Windows. Be concise, informative, and friendly.\n";
-                    if (currentVideo != null)
+                    var geminiModels = new[] { "gemini-3.7-flash", "gemini-2.0-flash", "gemini-1.5-flash" };
+                    foreach (var modelName in geminiModels)
                     {
-                        contextPrompt += $"Currently playing video: \"{currentVideo.Title}\" by channel \"{currentVideo.ChannelTitle}\" (Duration: {currentVideo.DurationText}).\n";
-                    }
-
-                    foreach (var turn in _conversationHistory.TakeLast(6))
-                    {
-                        contextPrompt += $"{turn.Role}: {turn.Content}\n";
-                    }
-                    contextPrompt += $"\nUser: {prompt}\n\nVixz AI:";
-
-                    var payload = new
-                    {
-                        contents = new[]
+                        var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={apiKey}";
+                        var contextPrompt = "You are Vixz AI, a powerful, helpful AI assistant integrated into the Vixz Desktop YouTube player application on Windows. Be concise, informative, and friendly.\n";
+                        if (currentVideo != null)
                         {
-                            new { parts = new[] { new { text = contextPrompt } } }
+                            contextPrompt += $"Currently playing video: \"{currentVideo.Title}\" by channel \"{currentVideo.ChannelTitle}\" (Duration: {currentVideo.DurationText}).\n";
                         }
-                    };
 
-                    var content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                    var resp = await _httpClient.PostAsync(endpoint, content);
-                    if (resp.IsSuccessStatusCode)
-                    {
-                        var json = await resp.Content.ReadAsStringAsync();
-                        var jObj = JObject.Parse(json);
-                        var aiText = (string?)jObj["candidates"]?[0]?["content"]?["parts"]?[0]?["text"];
-                        if (!string.IsNullOrWhiteSpace(aiText))
+                        foreach (var turn in _conversationHistory.TakeLast(6))
                         {
-                            var trimmed = aiText.Trim();
-                            _conversationHistory.Add(("user", prompt));
-                            _conversationHistory.Add(("assistant", trimmed));
-                            return new AiCommandResult
+                            contextPrompt += $"{turn.Role}: {turn.Content}\n";
+                        }
+                        contextPrompt += $"\nUser: {prompt}\n\nVixz AI:";
+
+                        var payload = new
+                        {
+                            contents = new[]
                             {
-                                Type = AiCommandType.ChatAnswer,
-                                ResponseMessage = trimmed,
-                                SourceCitation = "Gemini AI"
-                            };
+                                new { parts = new[] { new { text = contextPrompt } } }
+                            }
+                        };
+
+                        var content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        var resp = await _httpClient.PostAsync(endpoint, content);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var json = await resp.Content.ReadAsStringAsync();
+                            var jObj = JObject.Parse(json);
+                            var aiText = (string?)jObj["candidates"]?[0]?["content"]?["parts"]?[0]?["text"];
+                            if (!string.IsNullOrWhiteSpace(aiText))
+                            {
+                                var trimmed = aiText.Trim();
+                                _conversationHistory.Add(("user", prompt));
+                                _conversationHistory.Add(("assistant", trimmed));
+                                return new AiCommandResult
+                                {
+                                    Type = AiCommandType.ChatAnswer,
+                                    ResponseMessage = trimmed,
+                                    SourceCitation = $"Google {modelName}"
+                                };
+                            }
                         }
                     }
                 }
