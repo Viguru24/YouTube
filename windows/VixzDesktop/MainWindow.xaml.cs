@@ -1100,6 +1100,12 @@ namespace VixzDesktop
             await PerformSearchAsync();
         }
 
+        private void ClearSearchBtn_Click(object sender, RoutedEventArgs e)
+        {
+            SearchBox.Text = "";
+            SearchBox.Focus();
+        }
+
         private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)

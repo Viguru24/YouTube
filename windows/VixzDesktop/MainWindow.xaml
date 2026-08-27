@@ -64,37 +64,56 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- Top Search Bar -->
+                    <!-- Top Search Bar (High Contrast & Clear Option) -->
                     <Border Grid.Column="1" 
-                            Background="#181820" 
-                            BorderBrush="{StaticResource BorderSubtle}" 
-                            BorderThickness="1" 
-                            CornerRadius="20"
-                            Height="34"
-                            MaxWidth="520"
+                            Background="#1B1B29" 
+                            BorderBrush="#383852" 
+                            BorderThickness="1.5" 
+                            CornerRadius="19"
+                            Height="38"
+                            MaxWidth="540"
                             Margin="30,0"
                             VerticalAlignment="Center">
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <!-- Left Search Icon -->
+                                <ColumnDefinition Width="Auto"/>
+                                <!-- Text Box Input -->
                                 <ColumnDefinition Width="*"/>
+                                <!-- ✕ Clear Button -->
+                                <ColumnDefinition Width="Auto"/>
+                                <!-- Integrated Search Action Button -->
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
+                            <!-- Left Search Glyph -->
+                            <Path Grid.Column="0" 
+                                  Data="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L19.71,19L18.29,20.42L13.03,15.16C12.06,16 10.84,16.5 9.5,16.5A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z" 
+                                  Fill="#8A8AA8" 
+                                  Width="15" 
+                                  Height="15" 
+                                  Stretch="Uniform" 
+                                  Margin="14,0,8,0" 
+                                  VerticalAlignment="Center"/>
+
+                            <!-- Text Box Input -->
                             <TextBox x:Name="SearchBox"
+                                     Grid.Column="1"
                                      Background="Transparent"
                                      Foreground="White"
                                      BorderThickness="0"
                                      FontSize="13"
                                      VerticalAlignment="Center"
-                                     Margin="14,0,0,0"
+                                     Margin="0,0,6,0"
                                      KeyDown="SearchBox_KeyDown"
                                      CaretBrush="{StaticResource AccentRed}"/>
 
-                            <TextBlock Text="Search videos, channels, topics..." 
-                                       Foreground="{StaticResource TextMuted}" 
+                            <!-- Watermark Placeholder -->
+                            <TextBlock Grid.Column="1"
+                                       Text="Search videos, channels, topics..." 
+                                       Foreground="#70708C" 
                                        FontSize="13" 
                                        VerticalAlignment="Center" 
-                                       Margin="14,0,0,0"
                                        IsHitTestVisible="False">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
@@ -108,15 +127,49 @@
                                 </TextBlock.Style>
                             </TextBlock>
 
-                            <Button Grid.Column="1"
-                                    Content="🔍"
-                                    Foreground="White"
-                                    Background="Transparent"
-                                    BorderThickness="0"
-                                    Width="36"
-                                    Height="30"
+                            <!-- ✕ Clear Search Button -->
+                            <Button x:Name="ClearSearchBtn"
+                                    Grid.Column="2"
+                                    Content="✕"
+                                    Foreground="#8E8EA6"
+                                    Background="#25FFFFFF"
+                                    BorderBrush="#35FFFFFF"
+                                    BorderThickness="1"
+                                    Width="20"
+                                    Height="20"
+                                    FontSize="10"
                                     Cursor="Hand"
-                                    Click="SearchButton_Click"/>
+                                    ToolTip="Clear Search Text"
+                                    Margin="0,0,6,0"
+                                    Click="ClearSearchBtn_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconActionButton}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <!-- Right: Modern Integrated Search Pill Button -->
+                            <Button Grid.Column="3"
+                                    Style="{StaticResource GlassButton}"
+                                    Background="#28283C"
+                                    BorderBrush="#3E3E58"
+                                    BorderThickness="1"
+                                    Padding="12,5"
+                                    Height="28"
+                                    Margin="0,0,5,0"
+                                    Cursor="Hand"
+                                    ToolTip="Search (Enter)"
+                                    Click="SearchButton_Click">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Search" Foreground="White" FontSize="11.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
                         </Grid>
                     </Border>
 
