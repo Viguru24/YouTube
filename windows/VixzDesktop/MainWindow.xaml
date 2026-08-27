@@ -109,8 +109,6 @@
                                      VerticalAlignment="Center"
                                      Margin="0,0,6,0"
                                      KeyDown="SearchBox_KeyDown"
-                                     GotFocus="SearchBox_GotFocus"
-                                     PreviewMouseDown="SearchBox_PreviewMouseDown"
                                      CaretBrush="{StaticResource AccentRed}"/>
 
                             <!-- Watermark Placeholder -->

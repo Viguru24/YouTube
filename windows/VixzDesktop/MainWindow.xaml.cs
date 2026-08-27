@@ -1158,26 +1158,6 @@ namespace VixzDesktop
             ToggleSearchHistoryPopup();
         }
 
-        private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
-        {
-            OpenSearchHistoryPopupIfAvailable();
-        }
-
-        private void SearchBox_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (SearchHistoryPopup != null && !SearchHistoryPopup.IsOpen)
-            {
-                OpenSearchHistoryPopupIfAvailable();
-            }
-        }
-
-        private void OpenSearchHistoryPopupIfAvailable()
-        {
-            if (SearchHistoryPopup == null) return;
-            UpdateSearchHistoryList();
-            SearchHistoryPopup.IsOpen = true;
-        }
-
         private void ToggleSearchHistoryPopup()
         {
             if (SearchHistoryPopup == null) return;
