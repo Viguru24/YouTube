@@ -41,6 +41,16 @@ namespace VixzDesktop.Services
             return input;
         }
 
+        public static string GetDownloadsFolder()
+        {
+            var targetDir = ScreenshotService.GetTargetDirectory();
+            if (!Directory.Exists(targetDir))
+            {
+                try { Directory.CreateDirectory(targetDir); } catch { }
+            }
+            return targetDir;
+        }
+
         public static async Task<string> DownloadVideoAsync(string videoInput, string title, IProgress<double>? progress = null)
         {
             var videoId = ExtractVideoId(videoInput);
@@ -49,11 +59,7 @@ namespace VixzDesktop.Services
                 throw new ArgumentException("Invalid or empty Video ID", nameof(videoInput));
             }
 
-            var downloadsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Vixz");
-            if (!Directory.Exists(downloadsFolder))
-            {
-                Directory.CreateDirectory(downloadsFolder);
-            }
+            var downloadsFolder = GetDownloadsFolder();
 
             Exception? lastError = null;
 
@@ -116,11 +122,7 @@ namespace VixzDesktop.Services
                 throw new ArgumentException("Invalid or empty Video ID", nameof(videoInput));
             }
 
-            var downloadsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Vixz");
-            if (!Directory.Exists(downloadsFolder))
-            {
-                Directory.CreateDirectory(downloadsFolder);
-            }
+            var downloadsFolder = GetDownloadsFolder();
 
             Exception? lastError = null;
 

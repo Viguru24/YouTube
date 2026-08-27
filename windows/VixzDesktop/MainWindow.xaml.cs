@@ -2016,18 +2016,14 @@ namespace VixzDesktop
             if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
             try
             {
-                var downloadsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Vixz");
-                if (!Directory.Exists(downloadsFolder))
-                {
-                    Directory.CreateDirectory(downloadsFolder);
-                }
+                var downloadsFolder = DownloadService.GetDownloadsFolder();
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "explorer.exe",
                     Arguments = $"\"{downloadsFolder}\"",
                     UseShellExecute = true
                 });
-                ShowToast("📂 Opening Downloads folder...");
+                ShowToast($"📂 Opening {Path.GetFileName(downloadsFolder)}...");
             }
             catch (Exception ex)
             {

@@ -330,10 +330,10 @@
                             </Grid>
                         </Border>
 
-                        <!-- Active Screenshot Folder Section -->
+                        <!-- Active Saved Folder Section -->
                         <Border Grid.Row="2" Background="#16161F" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="12">
                             <StackPanel>
-                                <TextBlock Text="📁 Screenshot Folder" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="Bold"/>
+                                <TextBlock Text="📁 Save Destination" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="Bold"/>
                                 <TextBlock x:Name="CurrentFolderText" Text="Pictures\Vixz\Default" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,4,0,8"/>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Content="Change" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Click="ChangeFolder_Click"/>
@@ -698,14 +698,14 @@
                             </Border.Effect>
                             <StackPanel>
                                 <Grid Margin="0,0,0,12">
-                                    <TextBlock Text="📁 Screenshot Destination" Foreground="White" FontSize="16" FontWeight="Bold"/>
+                                    <TextBlock Text="📁 Save Destination (Downloads &amp; Media)" Foreground="White" FontSize="15" FontWeight="Bold"/>
                                     <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" HorizontalAlignment="Right" Click="CloseFolderModal_Click"/>
                                 </Grid>
 
                                 <!-- Current Active Path Display -->
                                 <Border Background="#14141A" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,12">
                                     <StackPanel>
-                                        <TextBlock Text="CURRENT SAVE LOCATION" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Text="ACTIVE SAVE DIRECTORY (FOR DOWNLOADS &amp; MEDIA)" Foreground="{StaticResource TextSecondary}" FontSize="9.5" FontWeight="Bold"/>
                                         <TextBlock x:Name="PopupCurrentFolderText" Text="Pictures\Vixz" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,3,0,0"/>
                                     </StackPanel>
                                 </Border>
@@ -726,7 +726,7 @@
                                     <Button Grid.Column="1" Content="Add" Style="{StaticResource GlassButton}" Margin="6,0,0,0" Click="AddNewFolder_Click"/>
                                 </Grid>
 
-                                <Button Content="Open Folder in Windows Explorer ↗" Style="{StaticResource GlassButton}" Click="OpenFolder_Click"/>
+                                <Button Content="Open Active Save Folder in Explorer ↗" Style="{StaticResource GlassButton}" Click="OpenFolder_Click"/>
                             </StackPanel>
                         </Border>
                     </Popup>
