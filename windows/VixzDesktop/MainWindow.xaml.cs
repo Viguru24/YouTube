@@ -977,11 +977,34 @@ namespace VixzDesktop
             ApplyCurrentFilters();
         }
 
-        private void SwitchToFeedView()
+        private async void SwitchToFeedView()
         {
             PlayerView.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Visible;
             _sponsorBlockTimer?.Stop();
+
+            try
+            {
+                if (VideoWebView?.CoreWebView2 != null)
+                {
+                    // Save playback position
+                    if (_currentVideo != null)
+                    {
+                        var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
+                        if (double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) && sec > 1)
+                        {
+                            StorageService.SavePlaybackPosition(_currentVideo.Id, sec);
+                        }
+                    }
+
+                    // Immediately pause video and all media elements so it stops playing in the background
+                    await VideoWebView.ExecuteScriptAsync("document.querySelectorAll('video, audio').forEach(m => { m.pause(); }); if (window.player && typeof window.player.pauseVideo === 'function') window.player.pauseVideo();");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error pausing video on SwitchToFeedView: {ex.Message}");
+            }
         }
 
         private void SwitchToPlayerView()
