@@ -150,6 +150,17 @@ namespace VixzDesktop
         }
 
         #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
+        
+        #click-detector {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 50px);
+            z-index: 10;
+            cursor: pointer;
+            background: transparent;
+        }
     </style>
 </head>
 <body>
@@ -158,6 +169,7 @@ namespace VixzDesktop
     </div>
     <div id=""player-wrapper"">
         <div id=""player""></div>
+        <div id=""click-detector""></div>
     </div>
     <script>
         var tag = document.createElement('script');
@@ -421,12 +433,32 @@ namespace VixzDesktop
             }
         }
 
-        // Double-click to maximize / restore window
-        document.addEventListener('dblclick', function(e) {
-            if (window.chrome && window.chrome.webview) {
-                window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
-            }
-        });
+        // Intelligent Click / Double-Click Interceptor
+        var clickTimer = null;
+        var clickDetector = document.getElementById('click-detector');
+        if (clickDetector) {
+            clickDetector.addEventListener('click', function(e) {
+                if (clickTimer) {
+                    // Second click arrived -> DOUBLE CLICK!
+                    clearTimeout(clickTimer);
+                    clickTimer = null;
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
+                    }
+                } else {
+                    // First click: wait 260ms before toggling play/pause
+                    clickTimer = setTimeout(function() {
+                        clickTimer = null;
+                        togglePlay();
+                    }, 260);
+                }
+            });
+
+            clickDetector.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        }
     </script>
 </body>
 </html>";
