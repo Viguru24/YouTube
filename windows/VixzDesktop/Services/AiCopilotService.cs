@@ -554,7 +554,22 @@ namespace VixzDesktop.Services
                 catch { }
             }
 
-            // 2. Secondary: YoutubeExplode Closed Captions API
+            // 2. Secondary: Direct YouTube Innertube / TimedText API Extraction (Zero API Key Needed)
+            if (string.IsNullOrWhiteSpace(rawTranscript))
+            {
+                try
+                {
+                    var innertubeCaptions = await FetchInnertubeCaptionsAsync(video.Id);
+                    if (!string.IsNullOrWhiteSpace(innertubeCaptions))
+                    {
+                        rawTranscript = innertubeCaptions;
+                        summary.HasTranscript = true;
+                    }
+                }
+                catch { }
+            }
+
+            // 3. Tertiary: YoutubeExplode Closed Captions API
             if (string.IsNullOrWhiteSpace(rawTranscript))
             {
                 try
@@ -601,37 +616,169 @@ namespace VixzDesktop.Services
                 catch { }
             }
 
-            // 3. Fallback: Video description
-            if (string.IsNullOrWhiteSpace(rawTranscript))
+            // 4. Fallback: Creator description
+            string rawDescription = "";
+            try
             {
-                try
-                {
-                    var details = await _client.Videos.GetAsync(video.Id);
-                    rawTranscript = $"{details.Title}. {details.Description}";
-                }
-                catch
-                {
-                    rawTranscript = $"{video.Title}. Video uploaded by {video.ChannelTitle}.";
-                }
+                var details = await _client.Videos.GetAsync(video.Id);
+                rawDescription = details.Description ?? "";
             }
+            catch { }
 
             // Synthesize Executive Summary and Key Takeaways
-            GenerateStructuredPoints(rawTranscript, video, summary);
+            await GenerateStructuredPointsAsync(rawTranscript, rawDescription, video, summary);
 
             return summary;
         }
 
-        private static void GenerateStructuredPoints(string text, VideoItem video, VideoSummaryResult summary)
+        private static async Task<string> FetchInnertubeCaptionsAsync(string videoId)
         {
-            if (string.IsNullOrWhiteSpace(text)) text = "";
+            try
+            {
+                var payload = new
+                {
+                    context = new
+                    {
+                        client = new
+                        {
+                            clientName = "ANDROID_VR",
+                            clientVersion = "1.61.48"
+                        }
+                    },
+                    videoId = videoId
+                };
 
-            // 1. Strip ALL URLs, domain paths, social handles, and web fragments BEFORE sentence splitting
+                using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/youtubei/v1/player");
+                req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                var resp = await _httpClient.SendAsync(req);
+                if (!resp.IsSuccessStatusCode) return "";
+
+                var json = await resp.Content.ReadAsStringAsync();
+                var jObj = JObject.Parse(json);
+
+                var captionTracks = jObj["captions"]?["playerCaptionsTracklistRenderer"]?["captionTracks"] as JArray;
+                if (captionTracks == null || captionTracks.Count == 0) return "";
+
+                // Find English or first track
+                var selectedTrack = captionTracks.FirstOrDefault(t => ((string?)t["languageCode"])?.StartsWith("en", StringComparison.OrdinalIgnoreCase) == true)
+                                 ?? captionTracks.FirstOrDefault();
+
+                var baseUrl = (string?)selectedTrack?["baseUrl"];
+                if (string.IsNullOrWhiteSpace(baseUrl)) return "";
+
+                var capResp = await _httpClient.GetStringAsync(baseUrl);
+                if (string.IsNullOrWhiteSpace(capResp)) return "";
+
+                // Parse XML <p> and <s> or <text> elements
+                var sb = new StringBuilder();
+                var textMatches = Regex.Matches(capResp, @"<(?:text|p|s)[^>]*>(.*?)</(?:text|p|s)>", RegexOptions.Singleline);
+                foreach (Match m in textMatches)
+                {
+                    var inner = Regex.Replace(m.Groups[1].Value, @"<[^>]+>", " ");
+                    var decoded = WebUtility.HtmlDecode(inner).Trim();
+                    if (!string.IsNullOrWhiteSpace(decoded) && !decoded.StartsWith("<"))
+                    {
+                        sb.Append(decoded).Append(" ");
+                    }
+                }
+
+                return sb.ToString().Trim();
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static async Task GenerateStructuredPointsAsync(string transcriptText, string descriptionText, VideoItem video, VideoSummaryResult summary)
+        {
+            // Clean both transcript and description
+            var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
+            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
+
+            // 1. If we have real spoken transcript sentences, use them directly
+            if (cleanTranscriptSentences.Count >= 3)
+            {
+                summary.Tldr = string.Join(". ", cleanTranscriptSentences.Take(3)) + ".";
+                summary.KeyTakeaways = DistributeKeyPoints(cleanTranscriptSentences, 5);
+                return;
+            }
+
+            // 2. If description has legitimate content (after purging all donations/copyright disclaimers)
+            if (cleanDescSentences.Count >= 2)
+            {
+                summary.Tldr = string.Join(". ", cleanDescSentences.Take(2)) + ".";
+                summary.KeyTakeaways = DistributeKeyPoints(cleanDescSentences, 4);
+                return;
+            }
+
+            // 3. High-Intelligence Fallback: Query Live Web Intelligence for the topic of the video!
+            // Clean clickbait words like "BREAKING:", "🚨", "EXCLUSIVE", etc.
+            var topicQuery = CleanTopicQuery(video.Title);
+            var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
+
+            if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage))
+            {
+                summary.Tldr = $"**{video.Title}** — {webResult.ResponseMessage}";
+                var takeaways = new List<string>();
+
+                foreach (var fact in webResult.WebFacts.Take(4))
+                {
+                    if (!string.IsNullOrWhiteSpace(fact) && !takeaways.Contains(fact))
+                    {
+                        takeaways.Add(fact);
+                    }
+                }
+
+                if (takeaways.Count == 0)
+                {
+                    takeaways.Add($"Topic Coverage: In-depth report by {video.ChannelTitle}.");
+                    takeaways.Add($"Key Focus: {video.Title}");
+                    takeaways.Add($"Broadcast Date: {video.UploadDateText}");
+                }
+
+                summary.KeyTakeaways = takeaways;
+                return;
+            }
+
+            // 4. Default clean fallback (Never output boilerplate!)
+            summary.Tldr = $"In-depth video report titled **{video.Title}** presented by **{video.ChannelTitle}**.";
+            summary.KeyTakeaways = new List<string>
+            {
+                $"Comprehensive news and commentary covering: {video.Title}",
+                $"Channel & Creator: {video.ChannelTitle}",
+                $"Video Duration: {video.DurationText} • Uploaded: {video.UploadDateText}"
+            };
+        }
+
+        private static string CleanTopicQuery(string title)
+        {
+            var cleaned = Regex.Replace(title, @"(?i)\b(breaking|alert|exclusive|must watch|live|update|warning|shocking|urgent)\b", " ");
+            cleaned = Regex.Replace(cleaned, @"[🚨🔥💥⚠️📢🎬🔴]+", " ");
+            cleaned = Regex.Replace(cleaned, @"[-—:|]+", " ");
+            cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
+            return cleaned.Length > 5 ? cleaned : title;
+        }
+
+        private static List<string> CleanAndExtractSentences(string text, VideoItem video)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return new List<string>();
+
+            // 1. Blacklist Regex: Exclude Cashapp, Venmo, PayPal, Copyright disclaimers, Fair use boilerplate, promo codes, subscribe plugs
+            var blacklistRegex = new Regex(
+                @"(?i)\b(cashapp|\$|venmo|paypal|donate|donations|patreon|gofundme|crypto|bitcoin|btc|eth|wallet|zelle|" +
+                @"copyright disclaimer|section 107|copyright act|fair use|criticism|commentary|news reporting|scholarship|research|" +
+                @"non-profit|personal use|no copyright infringement|all rights reserved|disclaimer:|the views and opinions|" +
+                @"support the channel|subscribe to|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
+                @"see you next time|follow me on|follow us on|social media|discount code|promo code|sponsored by|" +
+                @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp)\b"
+            );
+
+            // Strip URLs and web handles
             text = Regex.Replace(text, @"https?://\S+", " ", RegexOptions.IgnoreCase);
             text = Regex.Replace(text, @"\b[\w\-]+\.(?:com|org|net|io|gov|edu|co|tv|app|me|be|yt|link)/\S*", " ", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, @"\b[\w\-]+/(?:channel|c|user|watch|shorts)/[^\s.]*", " ", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, @"\b[\w\-]+\.(?:com|org|net|io|gov|edu|co|tv|app|me|be|yt|link)\b", " ", RegexOptions.IgnoreCase);
             text = Regex.Replace(text, @"@[\w\-]+", " ", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, @"(?:join|subscribe|membership|merch|sponsor|discount code|promo code)\S*", " ", RegexOptions.IgnoreCase);
 
             var rawSentences = text.Split(new[] { '.', '!', '?', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
                                    .Select(s => s.Trim())
@@ -640,24 +787,10 @@ namespace VixzDesktop.Services
             var cleanSentences = new List<string>();
             foreach (var s in rawSentences)
             {
-                var lower = s.ToLowerInvariant();
+                if (blacklistRegex.IsMatch(s)) continue;
 
-                // Skip any residual URL fragments or noise
-                if (lower.Contains("http") || lower.Contains("www.") || lower.Contains("com/") || 
-                    lower.Contains("/channel/") || lower.Contains("@") || lower.Contains("subscribe") || 
-                    lower.Contains("patreon") || lower.Contains("twitter") || lower.Contains("instagram") || 
-                    lower.Contains("facebook") || lower.Contains("tiktok") || lower.Contains("discount") || 
-                    lower.Contains("promo code") || lower.Contains("merch") || lower.Contains("sponsor") || 
-                    lower.Contains("affiliate"))
-                {
-                    continue;
-                }
-
-                // Remove excessive whitespace
                 var cleaned = Regex.Replace(s, @"\s+", " ").Trim();
-                if (cleaned.Length < 18) continue;
-
-                // Ignore exact video title duplicates
+                if (cleaned.Length < 20) continue;
                 if (cleaned.Equals(video.Title, StringComparison.OrdinalIgnoreCase)) continue;
 
                 // Capitalize first letter
@@ -672,38 +805,27 @@ namespace VixzDesktop.Services
                 }
             }
 
-            if (cleanSentences.Count == 0)
-            {
-                summary.Tldr = $"A video briefing titled **{video.Title}** presented by **{video.ChannelTitle}**.";
-                summary.KeyTakeaways.Add($"Detailed analysis and commentary on: {video.Title}");
-                summary.KeyTakeaways.Add($"Publisher: {video.ChannelTitle}");
-                summary.KeyTakeaways.Add($"Upload Info: {video.UploadDateText} • Duration: {video.DurationText}");
-                return;
-            }
+            return cleanSentences;
+        }
 
-            // Executive TL;DR: 2 to 3 substantive sentences forming a clean summary paragraph
-            var tldrList = cleanSentences.Take(3).ToList();
-            summary.Tldr = string.Join(". ", tldrList);
-            if (!summary.Tldr.EndsWith(".")) summary.Tldr += ".";
-
-            // Key Takeaways: 3 to 5 distinct points distributed across the timeline
-            var keyPoints = new List<string>();
-            if (cleanSentences.Count <= 5)
+        private static List<string> DistributeKeyPoints(List<string> cleanSentences, int maxCount)
+        {
+            var points = new List<string>();
+            if (cleanSentences.Count <= maxCount)
             {
-                keyPoints.AddRange(cleanSentences);
+                points.AddRange(cleanSentences);
             }
             else
             {
-                var step = cleanSentences.Count / 5.0;
-                for (int i = 0; i < 5; i++)
+                var step = cleanSentences.Count / (double)maxCount;
+                for (int i = 0; i < maxCount; i++)
                 {
                     int index = Math.Min(cleanSentences.Count - 1, (int)(i * step));
                     var pt = cleanSentences[index];
-                    if (!keyPoints.Contains(pt)) keyPoints.Add(pt);
+                    if (!points.Contains(pt)) points.Add(pt);
                 }
             }
-
-            summary.KeyTakeaways = keyPoints;
+            return points;
         }
 
         private static string FormatTime(TimeSpan ts)
