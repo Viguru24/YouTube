@@ -63,14 +63,15 @@ namespace VixzDesktop
                 var userDataFolder = Path.Combine(appData, "WebView2Profile");
                 var chromiumFlags = "--autoplay-policy=no-user-gesture-required " +
                                     "--force_high_performance_gpu " +
+                                    "--gpu-preference=2 " +
                                     "--enable-gpu-rasterization " +
+                                    "--force-gpu-rasterization " +
                                     "--enable-zero-copy " +
-                                    "--enable-hardware-overlays " +
                                     "--use-angle=d3d11 " +
                                     "--enable-accelerated-video-decode " +
                                     "--enable-accelerated-mjpeg-decode " +
                                     "--enable-accelerated-2d-canvas " +
-                                    "--enable-features=VaapiVideoDecoder,D3D11VideoDecoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays,MediaFoundationVideoCapture,NvidiaVsr,NvidiaVideoUpscaling " +
+                                    "--enable-features=VaapiVideoDecoder,D3D11VideoDecoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays,HardwareMediaKeyHandling " +
                                     "--disable-features=PreloadMediaEngagementData,TrackingPrevention " +
                                     "--disable-web-security " +
                                     "--allow-running-insecure-content";
