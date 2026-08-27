@@ -51,8 +51,9 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- App Logo & Brand -->
+                    <!-- App Logo & Brand + Fold Toggle -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="SidebarToggleBtn" Content="☰" Style="{StaticResource IconActionButton}" Width="30" Height="30" FontSize="14" Margin="0,0,8,0" ToolTip="Fold / Expand Sidebar Menu" Click="SidebarToggle_Click"/>
                         <Border CornerRadius="8" ClipToBounds="True" Width="30" Height="30">
                             <Image Source="App.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>
                         </Border>
@@ -212,6 +213,7 @@
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
                                 <Grid Grid.Row="0" Margin="4,0,4,6">
@@ -221,7 +223,17 @@
                                         <Button x:Name="ManageChannelsBtn" Content="⚙️" Style="{StaticResource IconActionButton}" Width="22" Height="22" FontSize="10" Margin="2,0,0,0" ToolTip="Manage Subscriptions (Clear / Reset / Bulk Edit)" Click="ManageChannelsBtn_Click"/>
                                     </StackPanel>
                                 </Grid>
-                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <!-- Subscription Folder Category Filter Chips -->
+                                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Margin="0,0,0,6">
+                                    <StackPanel Orientation="Horizontal" x:Name="SubscriptionFolderChipsPanel">
+                                        <Button x:Name="FolderChipAll" Content="All" Tag="All" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="6,2" Margin="0,0,3,0" Click="SubscriptionFolderChip_Click"/>
+                                        <Button x:Name="FolderChipAi" Content="AI &amp; Tech" Tag="AI &amp; Tech" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="6,2" Margin="0,0,3,0" Click="SubscriptionFolderChip_Click"/>
+                                        <Button x:Name="FolderChipPodcasts" Content="Podcasts" Tag="Podcasts" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="6,2" Margin="0,0,3,0" Click="SubscriptionFolderChip_Click"/>
+                                        <Button x:Name="FolderChipGaming" Content="Gaming" Tag="Gaming" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="6,2" Margin="0,0,3,0" Click="SubscriptionFolderChip_Click"/>
+                                        <Button x:Name="FolderChipMusic" Content="Music" Tag="Music" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="6,2" Click="SubscriptionFolderChip_Click"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl x:Name="SubscribedChannelsList">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
@@ -384,16 +396,29 @@
                     </Grid>
 
                     <!-- B. HIGH-PERFORMANCE VIDEO PLAYER VIEW -->
-                    <Grid x:Name="PlayerView" Visibility="Collapsed" Background="#09090C">
+                    <Grid x:Name="PlayerView" Visibility="Collapsed" Background="#09090C"
+                          MouseMove="PlayerView_MouseMove">
                         <Grid.RowDefinitions>
                             <!-- Player Deck + Video Frame -->
                             <RowDefinition Height="*"/>
-                            <!-- Below Player Controls & Video Info -->
+                            <!-- Below Player Controls & Video Info (Auto-fading) -->
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
                         <!-- Video Player Area -->
                         <Grid Grid.Row="0" x:Name="PlayerContainer">
+                            <!-- Dynamic Ambient Glow Layer (GPU Accelerated) -->
+                            <Border x:Name="AmbientGlowBorder"
+                                    CornerRadius="16"
+                                    Margin="-20"
+                                    Opacity="0.45"
+                                    IsHitTestVisible="False"
+                                    Background="#30FF0044">
+                                <Border.Effect>
+                                    <BlurEffect Radius="55"/>
+                                </Border.Effect>
+                            </Border>
+
                             <!-- WebView2 Embedded Player (Hardware Accelerated) -->
                             <wv2:WebView2 x:Name="VideoWebView"/>
 
@@ -450,8 +475,10 @@
                             </Border>
                         </Grid>
 
-                        <!-- Below Video Details & Desktop Utility Deck -->
-                        <Border Grid.Row="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12">
+                        <!-- Below Video Details & Desktop Utility Deck (Auto-fades after inactivity) -->
+                        <Border x:Name="PlayerBottomBar" Grid.Row="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
+                                MouseEnter="PlayerBottomBar_MouseEnter"
+                                MouseLeave="PlayerBottomBar_MouseLeave">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -491,49 +518,52 @@
                                     <!-- 1. 📸 Screenshot Button -->
                                     <Button x:Name="ScreenshotBtn" Content="📸" Style="{StaticResource IconActionButton}" ToolTip="Take Screenshot (S)" Margin="0,0,5,0" Click="ScreenshotBtn_Click"/>
 
-                                    <!-- 2. 📥 Download Video (MP4) -->
-                                    <Button x:Name="DownloadVideoBtn" Content="📥" Style="{StaticResource IconActionButton}" ToolTip="Download Video MP4 (D)" Margin="0,0,5,0" Click="DownloadVideoBtn_Click"/>
+                                    <!-- 2. 📥 Download Video / Audio Button -->
+                                    <Button x:Name="DownloadVideoBtn" Content="📥" Style="{StaticResource IconActionButton}" ToolTip="Download Video / Audio (D)" Margin="0,0,5,0" Click="DownloadVideoBtn_Click"/>
 
-                                    <!-- 3. 📁 Folder Switcher -->
+                                    <!-- 3. 💡 Dynamic Ambient Lighting Glow Toggle -->
+                                    <Button x:Name="AmbientGlowBtn" Content="💡" Style="{StaticResource IconActionButton}" ToolTip="Toggle Dynamic Ambient Glow" Margin="0,0,5,0" Click="AmbientGlowBtn_Click"/>
+
+                                    <!-- 4. 📁 Folder Switcher -->
                                     <Button Content="📁" Style="{StaticResource IconActionButton}" ToolTip="Change Screenshot Folder" Margin="0,0,5,0" Click="ChangeFolder_Click"/>
 
-                                    <!-- 4. ▶️/⏸️ Autoplay Toggle Switch -->
+                                    <!-- 5. ▶️/⏸️ Autoplay Toggle Switch -->
                                     <Button x:Name="AutoplayBtn" Content="▶️" Style="{StaticResource IconActionButton}" ToolTip="Toggle Autoplay Next Video" Margin="0,0,5,0" Click="AutoplayBtn_Click"/>
 
-                                    <!-- 5. 🌙 Sleep Timer -->
+                                    <!-- 6. 🌙 Sleep Timer -->
                                     <Button x:Name="SleepTimerBtn" Content="🌙" Style="{StaticResource IconActionButton}" ToolTip="Sleep Timer" Margin="0,0,5,0" Click="SleepTimerBtn_Click"/>
 
-                                    <!-- 5. 👍 Thumbs Up (Like / Boost) -->
+                                    <!-- 7. 👍 Thumbs Up (Like / Boost) -->
                                     <Button x:Name="ThumbsUpBtn" Content="👍" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Up / Like (+Algorithm Boost)" Margin="0,0,5,0" Click="ThumbsUpBtn_Click"/>
 
-                                    <!-- 6. 👎 Thumbs Down (Dislike / Remove) -->
+                                    <!-- 8. 👎 Thumbs Down (Dislike / Remove) -->
                                     <Button x:Name="ThumbsDownBtn" Content="👎" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Down / Dislike &amp; Remove (-Negative Algorithm Score)" Margin="0,0,5,0" Click="ThumbsDownBtn_Click"/>
 
-                                    <!-- 7. ⭐ Favorite -->
+                                    <!-- 9. ⭐ Favorite -->
                                     <Button x:Name="FavBtn" Content="⭐" Style="{StaticResource IconActionButton}" ToolTip="Favorite" Margin="0,0,5,0" Click="FavBtn_Click"/>
 
-                                    <!-- 8. 🕒 Watch Later -->
+                                    <!-- 10. 🕒 Watch Later -->
                                     <Button x:Name="WatchLaterBtn" Content="🕒" Style="{StaticResource IconActionButton}" ToolTip="Watch Later" Margin="0,0,5,0" Click="WatchLaterBtn_Click"/>
 
-                                    <!-- 9. ⏭️ Next Video -->
+                                    <!-- 11. ⏭️ Next Video -->
                                     <Button Content="⏭️" Style="{StaticResource IconActionButton}" ToolTip="Next Video (N)" Margin="0,0,5,0" Click="NextVideoBtn_Click"/>
 
-                                    <!-- 10. 📺 Quality Selector (1080p HD Default) -->
+                                    <!-- 12. 📺 Quality Selector (1080p HD Default) -->
                                     <Button x:Name="QualityBtn" Content="HD 1080p" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="Bold" Padding="8,4" Margin="0,0,5,0" ToolTip="Select Video Quality (1080p / 720p / Auto)" Click="QualityBtn_Click"/>
 
-                                    <!-- 11. ✨ AI Summarize & Copilot -->
+                                    <!-- 13. ✨ AI Summarize & Copilot -->
                                     <Button x:Name="PlayerAiBtn" Content="✨" Style="{StaticResource IconActionButton}" ToolTip="AI Video Summarizer &amp; Assistant" Margin="0,0,5,0" Click="AiCopilotBtn_Click"/>
 
-                                    <!-- 12. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
+                                    <!-- 14. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
                                     <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
 
-                                    <!-- 13. ⧉ POP-OUT FLOATING PLAYER -->
+                                    <!-- 15. ⧉ POP-OUT FLOATING PLAYER -->
                                     <Button x:Name="PopOutBtn" Content="⧉" Style="{StaticResource IconActionButton}" ToolTip="Pop-out Floating Mini Player (Always on Top)" Margin="0,0,5,0" Click="PopOutPlayer_Click"/>
 
-                                    <!-- 14. 🛠️ F12 DevTools -->
+                                    <!-- 16. 🛠️ F12 DevTools -->
                                     <Button Content="🛠️" Style="{StaticResource IconActionButton}" ToolTip="Developer Tools (F12)" Margin="0,0,5,0" Click="DevToolsBtn_Click"/>
 
-                                    <!-- 15. ⛶ Fullscreen -->
+                                    <!-- 17. ⛶ Fullscreen -->
                                     <Button Content="⛶" Style="{StaticResource IconActionButton}" ToolTip="Fullscreen (F)" Click="FullscreenBtn_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -657,7 +687,47 @@
                         </Border>
                     </Popup>
 
-                    <!-- G. SHARE VIDEO POPUP (HWnd Layered, floats above WebView2) -->
+                    <!-- G. DOWNLOAD CHOICE POPUP (Video vs Pure Audio) -->
+                    <Popup x:Name="DownloadChoicePopup" AllowsTransparency="True" StaysOpen="False" Placement="Top" PlacementTarget="{Binding ElementName=DownloadVideoBtn}">
+                        <Border Width="300" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="18">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="25" ShadowDepth="0" Opacity="0.85" Color="Black"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="📥" FontSize="16" Margin="0,0,6,0"/>
+                                        <TextBlock Text="Download Options" Foreground="White" FontSize="15" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <Button Content="✕" Style="{StaticResource IconActionButton}" Width="22" Height="22" HorizontalAlignment="Right" Click="CloseDownloadPopup_Click"/>
+                                </Grid>
+
+                                <!-- Option 1: Video MP4 -->
+                                <Button Style="{StaticResource GlassButton}" Padding="12,10" Margin="0,0,0,8" HorizontalContentAlignment="Left" Click="DownloadMp4Choice_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🎬" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Video (MP4)" Foreground="White" FontSize="13" FontWeight="Bold"/>
+                                            <TextBlock Text="Best 1080p / 4K Video + Audio" Foreground="{StaticResource TextSecondary}" FontSize="10.5"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
+                                <!-- Option 2: Pure Audio MP3/M4A -->
+                                <Button Style="{StaticResource GlassButton}" Padding="12,10" HorizontalContentAlignment="Left" Click="DownloadMp3Choice_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🎵" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Audio Only (MP3 / M4A)" Foreground="{StaticResource AccentGold}" FontSize="13" FontWeight="Bold"/>
+                                            <TextBlock Text="High-Quality 320kbps Music / Podcast" Foreground="{StaticResource TextSecondary}" FontSize="10.5"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- H. SHARE VIDEO POPUP (HWnd Layered, floats above WebView2) -->
                     <Popup x:Name="SharePopup" AllowsTransparency="True" StaysOpen="False" Placement="Top" PlacementTarget="{Binding ElementName=ShareBtn}">
                         <Border Width="380" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="18">
                             <Border.Effect>

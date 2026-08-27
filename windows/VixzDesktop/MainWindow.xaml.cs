@@ -51,6 +51,12 @@ namespace VixzDesktop
             UpdateQualityButtonText(StorageService.Settings.PreferredQuality);
             SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
             SubscribersHeader.Text = $"👤 Subscriptions ({WillRyanProfileData.SubscribedChannels.Count})";
+
+            SetupBottomBarAutoFade();
+            ApplySidebarState();
+            ApplyAmbientGlowState();
+            UpdateFolderChipHighlights();
+
             await InitializeWebViewAsync();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
         }
@@ -1174,6 +1180,10 @@ namespace VixzDesktop
 
             FeedView.Visibility = Visibility.Collapsed;
             PlayerView.Visibility = Visibility.Visible;
+            UpdateAmbientGlowFromVideo(video);
+            AnimateBottomBar(1.0);
+            _bottomBarHideTimer?.Stop();
+            _bottomBarHideTimer?.Start();
 
             if (VideoWebView.CoreWebView2 == null)
             {
@@ -1434,6 +1444,8 @@ namespace VixzDesktop
                 ShowToast(_currentVideo.IsFavorite ? "Added to Favorites ⭐" : "Removed from Favorites");
             }
         }
+
+        #endregion
 
         #region Video Card Context Menu Handlers
 
@@ -1736,18 +1748,41 @@ namespace VixzDesktop
             }
         }
 
-        #endregion
+        #region Video & Audio Download & Screenshot
 
-        #region Video Download & Screenshot
-
-        private async void DownloadVideoBtn_Click(object sender, RoutedEventArgs e)
+        private void DownloadVideoBtn_Click(object sender, RoutedEventArgs e)
         {
-            await DownloadCurrentVideoAsync();
+            if (_currentVideo == null)
+            {
+                ShowToast("⚠️ No video is currently playing");
+                return;
+            }
+            if (DownloadChoicePopup != null)
+            {
+                DownloadChoicePopup.IsOpen = !DownloadChoicePopup.IsOpen;
+            }
+        }
+
+        private void CloseDownloadPopup_Click(object sender, RoutedEventArgs e)
+        {
+            if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
+        }
+
+        private async void DownloadMp4Choice_Click(object sender, RoutedEventArgs e)
+        {
+            if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
+            await DownloadCurrentVideoAsync(isVideo: true);
+        }
+
+        private async void DownloadMp3Choice_Click(object sender, RoutedEventArgs e)
+        {
+            if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
+            await DownloadCurrentVideoAsync(isVideo: false);
         }
 
         private bool _isDownloading = false;
 
-        private async Task DownloadCurrentVideoAsync()
+        private async Task DownloadCurrentVideoAsync(bool isVideo = true)
         {
             if (_currentVideo == null)
             {
@@ -1763,7 +1798,7 @@ namespace VixzDesktop
 
             _isDownloading = true;
             DownloadVideoBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
-            ShowToast($"📥 Fetching video streams...");
+            ShowToast(isVideo ? "📥 Fetching video streams..." : "🎵 Extracting HQ audio...");
 
             try
             {
@@ -1772,14 +1807,18 @@ namespace VixzDesktop
                     var percent = (int)(p * 100);
                     if (percent % 10 == 0 || percent == 100)
                     {
-                        Dispatcher.Invoke(() => ShowToast($"📥 Downloading MP4: {percent}%"));
+                        Dispatcher.Invoke(() => ShowToast(isVideo ? $"📥 Downloading MP4: {percent}%" : $"🎵 Downloading Audio: {percent}%"));
                     }
                 });
 
-                var filePath = await DownloadService.DownloadVideoAsync(_currentVideo.Id, _currentVideo.Title, progressHandler);
-                ShowToast($"✅ Download Complete!");
+                var filePath = isVideo 
+                    ? await DownloadService.DownloadVideoAsync(_currentVideo.Id, _currentVideo.Title, progressHandler)
+                    : await DownloadService.DownloadAudioAsync(_currentVideo.Id, _currentVideo.Title, progressHandler);
 
-                var result = MessageBox.Show($"Video downloaded successfully!\n\nSaved to: {filePath}\n\nWould you like to open the folder?", "Download Complete", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                ShowToast(isVideo ? "✅ Video Download Complete!" : "✅ Audio Download Complete!");
+
+                var typeName = isVideo ? "Video" : "Audio";
+                var result = MessageBox.Show($"{typeName} downloaded successfully!\n\nSaved to: {filePath}\n\nWould you like to open the folder?", "Download Complete", MessageBoxButton.YesNo, MessageBoxImage.Information);
                 if (result == MessageBoxResult.Yes)
                 {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -2296,6 +2335,182 @@ namespace VixzDesktop
             StorageService.SignOutUser();
             UpdateAccountUi();
             ShowToast("🚪 Signed out of Google Account");
+        }
+
+        #endregion
+
+        #region Auto-Fading Bottom Player Bar
+
+        private DispatcherTimer? _bottomBarHideTimer;
+        private bool _isMouseOverBottomBar = false;
+
+        private void SetupBottomBarAutoFade()
+        {
+            _bottomBarHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            _bottomBarHideTimer.Tick += (s, e) =>
+            {
+                if (PlayerView.Visibility == Visibility.Visible && !_isMouseOverBottomBar)
+                {
+                    // If any popup is open, don't hide the bar
+                    if ((SharePopup != null && SharePopup.IsOpen) ||
+                        (DownloadChoicePopup != null && DownloadChoicePopup.IsOpen) ||
+                        (QualityPopup != null && QualityPopup.IsOpen) ||
+                        (SleepTimerPopup != null && SleepTimerPopup.IsOpen) ||
+                        (FolderPopup != null && FolderPopup.IsOpen) ||
+                        (AccountPopup != null && AccountPopup.IsOpen))
+                    {
+                        return;
+                    }
+
+                    AnimateBottomBar(0.0);
+                }
+            };
+        }
+
+        private void PlayerView_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (PlayerView.Visibility == Visibility.Visible)
+            {
+                AnimateBottomBar(1.0);
+                _bottomBarHideTimer?.Stop();
+                if (!_isMouseOverBottomBar)
+                {
+                    _bottomBarHideTimer?.Start();
+                }
+            }
+        }
+
+        private void PlayerBottomBar_MouseEnter(object sender, MouseEventArgs e)
+        {
+            _isMouseOverBottomBar = true;
+            _bottomBarHideTimer?.Stop();
+            AnimateBottomBar(1.0);
+        }
+
+        private void PlayerBottomBar_MouseLeave(object sender, MouseEventArgs e)
+        {
+            _isMouseOverBottomBar = false;
+            _bottomBarHideTimer?.Stop();
+            _bottomBarHideTimer?.Start();
+        }
+
+        private void AnimateBottomBar(double targetOpacity)
+        {
+            if (PlayerBottomBar == null) return;
+            if (Math.Abs(PlayerBottomBar.Opacity - targetOpacity) < 0.01) return;
+
+            var anim = new DoubleAnimation(targetOpacity, TimeSpan.FromMilliseconds(220));
+            PlayerBottomBar.BeginAnimation(OpacityProperty, anim);
+        }
+
+        #endregion
+
+        #region Collapsible Sidebar
+
+        private void SidebarToggle_Click(object sender, RoutedEventArgs e)
+        {
+            StorageService.Settings.IsSidebarCollapsed = !StorageService.Settings.IsSidebarCollapsed;
+            StorageService.Save();
+            ApplySidebarState();
+            ShowToast(StorageService.Settings.IsSidebarCollapsed ? "◀ Sidebar Folded" : "☰ Sidebar Expanded");
+        }
+
+        private void ApplySidebarState()
+        {
+            if (SidebarCol == null) return;
+            double targetWidth = StorageService.Settings.IsSidebarCollapsed ? 0 : 210;
+
+            if (SidebarToggleBtn != null)
+            {
+                SidebarToggleBtn.Content = StorageService.Settings.IsSidebarCollapsed ? "▶" : "☰";
+                SidebarToggleBtn.ToolTip = StorageService.Settings.IsSidebarCollapsed ? "Expand Sidebar Menu" : "Fold Sidebar Menu";
+                SidebarToggleBtn.Foreground = StorageService.Settings.IsSidebarCollapsed ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.White;
+            }
+
+            SidebarCol.Width = new GridLength(targetWidth);
+        }
+
+        #endregion
+
+        #region Dynamic Ambient Lighting Glow
+
+        private void AmbientGlowBtn_Click(object sender, RoutedEventArgs e)
+        {
+            StorageService.Settings.IsAmbientGlowEnabled = !StorageService.Settings.IsAmbientGlowEnabled;
+            StorageService.Save();
+            ApplyAmbientGlowState();
+            ShowToast(StorageService.Settings.IsAmbientGlowEnabled ? "💡 Ambient Glow: ON" : "💡 Ambient Glow: OFF");
+        }
+
+        private void ApplyAmbientGlowState()
+        {
+            if (AmbientGlowBorder != null)
+            {
+                AmbientGlowBorder.Visibility = StorageService.Settings.IsAmbientGlowEnabled ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (AmbientGlowBtn != null)
+            {
+                AmbientGlowBtn.Foreground = StorageService.Settings.IsAmbientGlowEnabled ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.Gray;
+            }
+        }
+
+        private void UpdateAmbientGlowFromVideo(VideoItem? video)
+        {
+            if (AmbientGlowBorder == null || video == null) return;
+            if (!StorageService.Settings.IsAmbientGlowEnabled) return;
+
+            // Generate an adaptive cinematic color palette for the ambient glow
+            var hash = Math.Abs((video.Title + video.ChannelTitle).GetHashCode());
+            byte r = (byte)(70 + (hash % 150));
+            byte g = (byte)(35 + ((hash / 13) % 130));
+            byte b = (byte)(80 + ((hash / 17) % 160));
+
+            AmbientGlowBorder.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(95, r, g, b));
+        }
+
+        #endregion
+
+        #region Subscription Folder Groupings
+
+        private string _activeSubscriptionFolder = "All";
+
+        private void SubscriptionFolderChip_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string folderName)
+            {
+                _activeSubscriptionFolder = folderName;
+                UpdateFolderChipHighlights();
+
+                if (folderName == "All")
+                {
+                    SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
+                }
+                else if (StorageService.Settings.SubscriptionFolders.TryGetValue(folderName, out var channels))
+                {
+                    var matched = WillRyanProfileData.SubscribedChannels
+                        .Where(c => channels.Any(ch => c.IndexOf(ch, StringComparison.OrdinalIgnoreCase) >= 0 || ch.IndexOf(c, StringComparison.OrdinalIgnoreCase) >= 0))
+                        .ToList();
+                    
+                    if (matched.Count == 0)
+                    {
+                        matched = channels;
+                    }
+                    SubscribedChannelsList.ItemsSource = matched;
+                }
+                ShowToast($"📁 Folder: {folderName}");
+            }
+        }
+
+        private void UpdateFolderChipHighlights()
+        {
+            var gold = (System.Windows.Media.Brush)FindResource("AccentGold");
+            var normal = (System.Windows.Media.Brush)FindResource("TextSecondary");
+
+            if (FolderChipAll != null) FolderChipAll.Foreground = _activeSubscriptionFolder == "All" ? gold : normal;
+            if (FolderChipAi != null) FolderChipAi.Foreground = _activeSubscriptionFolder == "AI & Tech" ? gold : normal;
+            if (FolderChipPodcasts != null) FolderChipPodcasts.Foreground = _activeSubscriptionFolder == "Podcasts" ? gold : normal;
+            if (FolderChipGaming != null) FolderChipGaming.Foreground = _activeSubscriptionFolder == "Gaming" ? gold : normal;
+            if (FolderChipMusic != null) FolderChipMusic.Foreground = _activeSubscriptionFolder == "Music" ? gold : normal;
         }
 
         #endregion

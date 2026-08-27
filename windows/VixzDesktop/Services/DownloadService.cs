@@ -108,6 +108,115 @@ namespace VixzDesktop.Services
             throw new Exception($"All download engines failed for video '{videoId}'. Last error: {lastError?.Message}", lastError);
         }
 
+        public static async Task<string> DownloadAudioAsync(string videoInput, string title, IProgress<double>? progress = null)
+        {
+            var videoId = ExtractVideoId(videoInput);
+            if (string.IsNullOrWhiteSpace(videoId))
+            {
+                throw new ArgumentException("Invalid or empty Video ID", nameof(videoInput));
+            }
+
+            var downloadsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Vixz");
+            if (!Directory.Exists(downloadsFolder))
+            {
+                Directory.CreateDirectory(downloadsFolder);
+            }
+
+            Exception? lastError = null;
+
+            // Strategy 1: High-Speed yt-dlp Audio Extraction (HQ MP3 / M4A)
+            try
+            {
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = $"-m yt_dlp -x --audio-format mp3 --audio-quality 0 --no-playlist --newline --progress-template \"PROGRESS:%(progress._percent_str)s\" -P \"{downloadsFolder}\" \"https://www.youtube.com/watch?v={videoId}\" --print \"after_move:filepath\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = new Process { StartInfo = startInfo };
+                string? resultingFilePath = null;
+
+                process.OutputDataReceived += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(e.Data)) return;
+                    var line = e.Data.Trim();
+
+                    if (line.StartsWith("PROGRESS:"))
+                    {
+                        var pStr = line.Substring(9).Replace("%", "").Trim();
+                        if (double.TryParse(pStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var percent))
+                        {
+                            progress?.Report(Math.Clamp(percent / 100.0, 0.0, 0.99));
+                        }
+                    }
+                    else if (File.Exists(line) || (line.Contains(downloadsFolder, StringComparison.OrdinalIgnoreCase) && (line.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) || line.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        resultingFilePath = line;
+                    }
+                };
+
+                process.Start();
+                process.BeginOutputReadLine();
+                await process.WaitForExitAsync();
+
+                if (!string.IsNullOrWhiteSpace(resultingFilePath) && File.Exists(resultingFilePath))
+                {
+                    progress?.Report(1.0);
+                    return resultingFilePath;
+                }
+
+                var candidates = Directory.GetFiles(downloadsFolder, $"*{videoId}*.mp3")
+                    .Concat(Directory.GetFiles(downloadsFolder, $"*{videoId}*.m4a")).ToArray();
+                if (candidates.Length > 0)
+                {
+                    var found = candidates.OrderByDescending(File.GetLastWriteTime).First();
+                    progress?.Report(1.0);
+                    return found;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                Debug.WriteLine($"[DownloadService] yt-dlp audio failed: {ex.Message}");
+            }
+
+            // Strategy 2: YoutubeExplode Audio-Only Stream Engine
+            try
+            {
+                var manifest = await _explodeClient.Videos.Streams.GetManifestAsync(videoId);
+                var audioStreamInfo = manifest.GetAudioOnlyStreams().GetWithHighestBitrate() ??
+                                      manifest.GetAudioOnlyStreams().FirstOrDefault();
+
+                if (audioStreamInfo != null)
+                {
+                    var decodedTitle = WebUtility.HtmlDecode(title ?? "");
+                    var invalidChars = Path.GetInvalidFileNameChars();
+                    var cleanTitle = new string(decodedTitle.Where(c => !invalidChars.Contains(c)).ToArray()).Trim('.', ' ');
+                    if (string.IsNullOrWhiteSpace(cleanTitle)) cleanTitle = $"Audio_{videoId}";
+                    if (cleanTitle.Length > 60) cleanTitle = cleanTitle.Substring(0, 60).Trim('.', ' ');
+
+                    var ext = audioStreamInfo.Container.Name.ToLowerInvariant();
+                    if (string.IsNullOrWhiteSpace(ext)) ext = "m4a";
+
+                    var filePath = Path.Combine(downloadsFolder, $"{cleanTitle}_{videoId}.{ext}");
+                    await _explodeClient.Videos.Streams.DownloadAsync(audioStreamInfo, filePath, progress);
+                    progress?.Report(1.0);
+                    return filePath;
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                Debug.WriteLine($"[DownloadService] YoutubeExplode audio failed: {ex.Message}");
+            }
+
+            throw new Exception($"Audio download failed for video '{videoId}'. Last error: {lastError?.Message}", lastError);
+        }
+
         private static async Task<string?> TryDownloadWithYtDlpAsync(string videoId, string downloadsFolder, IProgress<double>? progress)
         {
             var startInfo = new ProcessStartInfo

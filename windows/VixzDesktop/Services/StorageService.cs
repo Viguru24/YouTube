@@ -33,6 +33,16 @@ namespace VixzDesktop.Services
         public string PreferredQuality { get; set; } = "hd1080";
         public UserAccount UserAccount { get; set; } = new UserAccount();
         public string? GeminiApiKey { get; set; } = null;
+        public bool IsAmbientGlowEnabled { get; set; } = true;
+        public bool IsSidebarCollapsed { get; set; } = false;
+        public Dictionary<string, List<string>> SubscriptionFolders { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "All", new List<string>() },
+            { "AI & Tech", new List<string> { "Two Minute Papers", "Fireship", "Matt Wolfe", "ThePrimeTime", "Yannic Kilcher" } },
+            { "Podcasts", new List<string> { "Lex Fridman", "The Joe Rogan Experience", "Huberman Lab", "Dwarkesh Patel" } },
+            { "Gaming", new List<string> { "IGN", "Gameranx", "Digital Foundry" } },
+            { "Music", new List<string> { "Lofi Girl", "NCS", "ChilledCow" } }
+        };
     }
 
     public static class StorageService
