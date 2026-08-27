@@ -767,12 +767,26 @@
                                 </Button>
 
                                 <!-- Option 2: Pure Audio MP3/M4A -->
-                                <Button Style="{StaticResource GlassButton}" Padding="12,10" HorizontalContentAlignment="Left" Click="DownloadMp3Choice_Click">
+                                <Button Style="{StaticResource GlassButton}" Padding="12,10" Margin="0,0,0,10" HorizontalContentAlignment="Left" Click="DownloadMp3Choice_Click">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="🎵" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="Audio Only (MP3 / M4A)" Foreground="{StaticResource AccentGold}" FontSize="13" FontWeight="Bold"/>
                                             <TextBlock Text="High-Quality 320kbps Music / Podcast" Foreground="{StaticResource TextSecondary}" FontSize="10.5"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Button>
+
+                                <!-- Separator -->
+                                <Border Height="1" Background="{StaticResource BorderSubtle}" Margin="0,0,0,10"/>
+
+                                <!-- Option 3: Open Downloads Folder -->
+                                <Button Style="{StaticResource GlassButton}" Padding="12,8" HorizontalContentAlignment="Left" Background="#242436" ToolTip="Open Downloads Folder in Windows Explorer" Click="OpenDownloadsFolder_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="📂" FontSize="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="Open Downloads Folder" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Downloads\Vixz" Foreground="{StaticResource TextMuted}" FontSize="10"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </Button>

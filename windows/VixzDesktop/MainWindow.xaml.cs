@@ -1836,6 +1836,30 @@ namespace VixzDesktop
             if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
         }
 
+        private void OpenDownloadsFolder_Click(object sender, RoutedEventArgs e)
+        {
+            if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
+            try
+            {
+                var downloadsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Vixz");
+                if (!Directory.Exists(downloadsFolder))
+                {
+                    Directory.CreateDirectory(downloadsFolder);
+                }
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{downloadsFolder}\"",
+                    UseShellExecute = true
+                });
+                ShowToast("📂 Opening Downloads folder...");
+            }
+            catch (Exception ex)
+            {
+                ShowToast($"⚠️ Could not open folder: {ex.Message}");
+            }
+        }
+
         private async void DownloadMp4Choice_Click(object sender, RoutedEventArgs e)
         {
             if (DownloadChoicePopup != null) DownloadChoicePopup.IsOpen = false;
