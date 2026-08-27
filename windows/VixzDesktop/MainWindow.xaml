@@ -488,7 +488,8 @@
 
                     <!-- B. HIGH-PERFORMANCE VIDEO PLAYER VIEW -->
                     <Grid x:Name="PlayerView" Visibility="Collapsed" Background="#09090C"
-                          MouseMove="PlayerView_MouseMove">
+                          MouseMove="PlayerView_MouseMove"
+                          MouseDown="PlayerContainer_MouseDown">
                         <Grid.RowDefinitions>
                             <!-- Player Deck + Video Frame -->
                             <RowDefinition Height="*"/>
@@ -497,7 +498,7 @@
                         </Grid.RowDefinitions>
 
                         <!-- Video Player Area -->
-                        <Grid Grid.Row="0" x:Name="PlayerContainer">
+                        <Grid Grid.Row="0" x:Name="PlayerContainer" MouseDown="PlayerContainer_MouseDown">
                             <!-- Dynamic Ambient Glow Layer (GPU Accelerated) -->
                             <Border x:Name="AmbientGlowBorder"
                                     CornerRadius="16"

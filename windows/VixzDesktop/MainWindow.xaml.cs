@@ -413,12 +413,18 @@ namespace VixzDesktop
                             }
                         }
                     }
-                }
                 return fullText.trim();
             } catch (e) {
                 return '';
             }
         }
+
+        // Double-click to maximize / restore window
+        document.addEventListener('dblclick', function(e) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
+            }
+        });
     </script>
 </body>
 </html>";
@@ -555,6 +561,13 @@ namespace VixzDesktop
                 {
                     var q = msg.Substring("QUALITY:".Length);
                     Dispatcher.Invoke(() => UpdateQualityButtonText(q));
+                }
+                else if (msg == "DOUBLE_CLICK_VIDEO")
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        MaximizeToggle();
+                    });
                 }
                 else if (msg.StartsWith("POS:"))
                 {
@@ -2392,6 +2405,14 @@ namespace VixzDesktop
         private void MaximizeToggle()
         {
             WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+        }
+
+        private void PlayerContainer_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount == 2)
+            {
+                MaximizeToggle();
+            }
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)
