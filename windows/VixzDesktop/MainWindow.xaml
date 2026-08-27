@@ -64,8 +64,9 @@
                         </Border>
                     </StackPanel>
 
-                    <!-- Top Search Bar (High Contrast & Clear Option) -->
-                    <Border Grid.Column="1" 
+                    <!-- Top Search Bar (High Contrast & Clear Option & Recent History Dropdown) -->
+                    <Border x:Name="SearchContainer"
+                            Grid.Column="1" 
                             Background="#1B1B29" 
                             BorderBrush="#383852" 
                             BorderThickness="1.5" 
@@ -81,6 +82,8 @@
                                 <!-- Text Box Input -->
                                 <ColumnDefinition Width="*"/>
                                 <!-- ✕ Clear Button -->
+                                <ColumnDefinition Width="Auto"/>
+                                <!-- ▾ History Dropdown Arrow -->
                                 <ColumnDefinition Width="Auto"/>
                                 <!-- Integrated Search Action Button -->
                                 <ColumnDefinition Width="Auto"/>
@@ -106,6 +109,8 @@
                                      VerticalAlignment="Center"
                                      Margin="0,0,6,0"
                                      KeyDown="SearchBox_KeyDown"
+                                     GotFocus="SearchBox_GotFocus"
+                                     PreviewMouseDown="SearchBox_PreviewMouseDown"
                                      CaretBrush="{StaticResource AccentRed}"/>
 
                             <!-- Watermark Placeholder -->
@@ -140,7 +145,7 @@
                                     FontSize="10"
                                     Cursor="Hand"
                                     ToolTip="Clear Search Text"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,4,0"
                                     Click="ClearSearchBtn_Click">
                                 <Button.Style>
                                     <Style TargetType="Button" BasedOn="{StaticResource IconActionButton}">
@@ -154,8 +159,30 @@
                                 </Button.Style>
                             </Button>
 
+                            <!-- ▾ History Dropdown Arrow Button -->
+                            <Button x:Name="SearchHistoryToggleBtn"
+                                    Grid.Column="3"
+                                    Content="▾"
+                                    Foreground="#8E8EA6"
+                                    Background="#20FFFFFF"
+                                    BorderBrush="#30FFFFFF"
+                                    BorderThickness="1"
+                                    Width="20"
+                                    Height="20"
+                                    FontSize="11"
+                                    Cursor="Hand"
+                                    ToolTip="Recent Search History"
+                                    Margin="0,0,6,0"
+                                    Click="SearchHistoryToggle_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconActionButton}">
+                                        <Setter Property="Padding" Value="0,0,0,2"/>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
                             <!-- Right: Modern Integrated Search Pill Button -->
-                            <Button Grid.Column="3"
+                            <Button Grid.Column="4"
                                     Style="{StaticResource GlassButton}"
                                     Background="#28283C"
                                     BorderBrush="#3E3E58"
@@ -794,7 +821,65 @@
                         </Border>
                     </Popup>
 
-                    <!-- H. SHARE VIDEO POPUP (HWnd Layered, floats above WebView2) -->
+                    <!-- H. SEARCH HISTORY DROPDOWN POPUP -->
+                    <Popup x:Name="SearchHistoryPopup" 
+                           AllowsTransparency="True" 
+                           StaysOpen="False" 
+                           Placement="Bottom" 
+                           PlacementTarget="{Binding ElementName=SearchContainer}" 
+                           Width="{Binding ActualWidth, ElementName=SearchContainer}">
+                        <Border Background="#161622" 
+                                BorderBrush="#383852" 
+                                BorderThickness="1.5" 
+                                CornerRadius="14" 
+                                Padding="8" 
+                                Margin="0,4,0,0">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="25" ShadowDepth="4" Opacity="0.8" Color="Black"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- Header with Clear All -->
+                                <Grid Margin="6,4,6,6">
+                                    <TextBlock Text="🕒 RECENT SEARCHES" Foreground="{StaticResource TextSecondary}" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                    <Button Content="Clear All" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,2" HorizontalAlignment="Right" Click="ClearAllSearchHistory_Click"/>
+                                </Grid>
+
+                                <!-- Recent Queries List -->
+                                <ItemsControl x:Name="SearchHistoryItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="Transparent" CornerRadius="8" Padding="8,6" Margin="0,1" Cursor="Hand" MouseDown="SearchHistoryItem_MouseDown">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="#252538"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="🕒 " Foreground="{StaticResource AccentGold}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding}" Foreground="White" FontSize="12.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    <Button Grid.Column="2" Content="✕" Style="{StaticResource IconActionButton}" Width="18" Height="18" FontSize="9" ToolTip="Remove from History" Click="RemoveSearchHistoryItem_Click" Tag="{Binding}"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- Empty State placeholder -->
+                                <TextBlock x:Name="SearchHistoryEmptyText" Text="No recent searches" Foreground="{StaticResource TextMuted}" FontSize="11" Margin="8,4" Visibility="Collapsed"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- I. SHARE VIDEO POPUP (HWnd Layered, floats above WebView2) -->
                     <Popup x:Name="SharePopup" AllowsTransparency="True" StaysOpen="False" Placement="Top" PlacementTarget="{Binding ElementName=ShareBtn}">
                         <Border Width="380" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="18">
                             <Border.Effect>

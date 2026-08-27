@@ -1106,6 +1106,85 @@ namespace VixzDesktop
             SearchBox.Focus();
         }
 
+        private void SearchHistoryToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleSearchHistoryPopup();
+        }
+
+        private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            OpenSearchHistoryPopupIfAvailable();
+        }
+
+        private void SearchBox_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (SearchHistoryPopup != null && !SearchHistoryPopup.IsOpen)
+            {
+                OpenSearchHistoryPopupIfAvailable();
+            }
+        }
+
+        private void OpenSearchHistoryPopupIfAvailable()
+        {
+            if (SearchHistoryPopup == null) return;
+            UpdateSearchHistoryList();
+            SearchHistoryPopup.IsOpen = true;
+        }
+
+        private void ToggleSearchHistoryPopup()
+        {
+            if (SearchHistoryPopup == null) return;
+            if (SearchHistoryPopup.IsOpen)
+            {
+                SearchHistoryPopup.IsOpen = false;
+            }
+            else
+            {
+                UpdateSearchHistoryList();
+                SearchHistoryPopup.IsOpen = true;
+            }
+        }
+
+        private void UpdateSearchHistoryList()
+        {
+            if (SearchHistoryItemsControl == null) return;
+            var history = StorageService.Settings.SearchHistory;
+            SearchHistoryItemsControl.ItemsSource = null;
+            SearchHistoryItemsControl.ItemsSource = history.ToList();
+
+            if (SearchHistoryEmptyText != null)
+            {
+                SearchHistoryEmptyText.Visibility = history.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private async void SearchHistoryItem_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement elem && elem.DataContext is string query)
+            {
+                if (SearchHistoryPopup != null) SearchHistoryPopup.IsOpen = false;
+                SearchBox.Text = query;
+                await PerformSearchAsync();
+            }
+        }
+
+        private void RemoveSearchHistoryItem_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            if (sender is Button btn && btn.Tag is string query)
+            {
+                StorageService.RemoveSearchHistoryItem(query);
+                UpdateSearchHistoryList();
+            }
+        }
+
+        private void ClearAllSearchHistory_Click(object sender, RoutedEventArgs e)
+        {
+            StorageService.ClearSearchHistory();
+            UpdateSearchHistoryList();
+            ShowToast("🗑️ Search history cleared");
+        }
+
         private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -1118,6 +1197,9 @@ namespace VixzDesktop
         {
             var query = SearchBox.Text.Trim();
             if (string.IsNullOrWhiteSpace(query)) return;
+
+            if (SearchHistoryPopup != null) SearchHistoryPopup.IsOpen = false;
+            StorageService.AddSearchHistory(query);
 
             // Direct YouTube URL or Video ID detection -> play instantly!
             var extractedId = ExtractYouTubeVideoId(query);

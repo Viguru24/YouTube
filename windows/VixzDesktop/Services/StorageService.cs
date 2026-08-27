@@ -35,6 +35,13 @@ namespace VixzDesktop.Services
         public string? GeminiApiKey { get; set; } = null;
         public bool IsAmbientGlowEnabled { get; set; } = true;
         public bool IsSidebarCollapsed { get; set; } = false;
+        public List<string> SearchHistory { get; set; } = new List<string>
+        {
+            "AI Documentary",
+            "Lofi Beats Live",
+            "NVIDIA RTX 5080",
+            "Space Exploration"
+        };
         public Dictionary<string, List<string>> SubscriptionFolders { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
         {
             { "All", new List<string>() },
@@ -218,6 +225,31 @@ namespace VixzDesktop.Services
         public static void SetPreferredQuality(string quality)
         {
             Settings.PreferredQuality = quality ?? "hd1080";
+            Save();
+        }
+
+        public static void AddSearchHistory(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return;
+            query = query.Trim();
+            Settings.SearchHistory.RemoveAll(q => string.Equals(q, query, StringComparison.OrdinalIgnoreCase));
+            Settings.SearchHistory.Insert(0, query);
+            if (Settings.SearchHistory.Count > 15)
+            {
+                Settings.SearchHistory = Settings.SearchHistory.Take(15).ToList();
+            }
+            Save();
+        }
+
+        public static void RemoveSearchHistoryItem(string query)
+        {
+            Settings.SearchHistory.RemoveAll(q => string.Equals(q, query, StringComparison.OrdinalIgnoreCase));
+            Save();
+        }
+
+        public static void ClearSearchHistory()
+        {
+            Settings.SearchHistory.Clear();
             Save();
         }
     }
