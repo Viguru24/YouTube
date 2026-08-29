@@ -1083,6 +1083,21 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun toggleDislikeVideo(video: VideoEntity, onSkipNext: (() -> Unit)? = null) {
+        val current = _dislikedVideoIds.value
+        val isDisliked = video.youtubeId in current
+        if (isDisliked) {
+            val next = current - video.youtubeId
+            _dislikedVideoIds.value = next
+            saveDislikedVideoIds(next)
+        } else {
+            val next = current + video.youtubeId
+            _dislikedVideoIds.value = next
+            saveDislikedVideoIds(next)
+            onSkipNext?.invoke()
+        }
+    }
+
     fun deleteVideo(video: VideoEntity) {
         val newDisliked = _dislikedVideoIds.value + video.youtubeId
         _dislikedVideoIds.value = newDisliked

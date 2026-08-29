@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -61,7 +62,7 @@ fun PlayerBottomBar(
     selectedQuality: String,
     onSelectQuality: (String) -> Unit,
     onToggleDebugConsole: () -> Unit,
-    onToggleFullscreen: () -> Unit,
+    onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -445,18 +446,18 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 7. Screen Rotation / Horizontal Flip Toggle [🔄 / ⛶]
+                    // 7. Back Navigation Button [⬅️]
                     IconButton(
-                        onClick = { onToggleFullscreen() },
+                        onClick = onBackClick,
                         modifier = Modifier
-                            .size(if (isTablet) 44.dp else 36.dp)
+                            .size(if (isTablet) 42.dp else 34.dp)
                             .background(Color.White.copy(alpha = 0.12f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.ScreenRotation,
-                            contentDescription = "Turn Screen Horizontal / Vertical",
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back / Exit Player",
                             tint = Color.White,
-                            modifier = Modifier.size(if (isTablet) 24.dp else 20.dp)
+                            modifier = Modifier.size(if (isTablet) 22.dp else 18.dp)
                         )
                     }
                 }

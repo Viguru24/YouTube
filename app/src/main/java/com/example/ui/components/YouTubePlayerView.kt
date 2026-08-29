@@ -88,6 +88,7 @@ fun YouTubePlayerView(
     videoTitle: String = "Video",
     isFullscreen: Boolean = false,
     onToggleFullscreen: () -> Unit = {},
+    onBackClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -1138,12 +1139,7 @@ fun YouTubePlayerView(
                 }
             },
             onToggleDebugConsole = { onToggleDebugConsole() },
-            onToggleFullscreen = {
-                playerRotationAngle = if (playerRotationAngle == 0f) 180f else 0f
-                val msg = if (playerRotationAngle == 180f) "🔄 Flipped 180° Backwards Horizontal" else "📺 Flipped 0° Normal Horizontal"
-                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                onToggleFullscreen()
-            },
+            onBackClick = { onBackClick() },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 

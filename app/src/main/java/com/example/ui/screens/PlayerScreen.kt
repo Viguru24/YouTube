@@ -62,6 +62,8 @@ fun PlayerScreen(
     onBackClick: () -> Unit,
     onFavoriteToggle: (VideoEntity) -> Unit,
     onWatchLaterToggle: (VideoEntity) -> Unit,
+    isDisliked: Boolean = false,
+    onDislikeToggle: (VideoEntity) -> Unit = {},
     onAddNote: (timestampSeconds: Int, timestampFormatted: String, noteText: String) -> Unit,
     onDeleteNote: (noteId: Long) -> Unit,
     onSelectOtherVideo: (VideoEntity) -> Unit,
@@ -241,6 +243,8 @@ fun PlayerScreen(
                         },
                         isFavorite = video.isFavorite,
                         isWatchLater = video.isWatchLater,
+                        isDisliked = isDisliked,
+                        onDislikeToggle = { onDislikeToggle(video) },
                         onFavoriteToggle = { onFavoriteToggle(video) },
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },
@@ -252,6 +256,7 @@ fun PlayerScreen(
                         videoTitle = video.title,
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = toggleFullscreen,
+                        onBackClick = onBackClick,
                         onPlayerReady = { wv -> webViewInstance = wv },
                         modifier = Modifier.fillMaxSize()
                     )

@@ -394,6 +394,10 @@ fun MainAppContent(
                 // Standard Landscape/Portrait Video Player Screen
                 PlayerScreen(
                     video = activeVideo!!,
+                    isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
+                    onDislikeToggle = { v ->
+                        viewModel.toggleDislikeVideo(v)
+                    },
                     notes = activeNotes,
                     playlistVideos = videos,
                     googleAccount = googleAccount,
