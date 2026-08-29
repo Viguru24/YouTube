@@ -88,6 +88,7 @@ fun HomeScreen(
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
     var showAddChannelDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
     var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
@@ -298,7 +299,6 @@ fun HomeScreen(
                 },
                 actions = {
                     if (!isSearchExpanded) {
-                        var showLanguageDialog by remember { mutableStateOf(false) }
                         val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
 
                         // 1. Search 🔍
@@ -312,12 +312,6 @@ fun HomeScreen(
                             modifier = Modifier.testTag("top_language_btn")
                         ) {
                             Text("🌐", fontSize = 18.sp)
-                        }
-
-                        if (showLanguageDialog) {
-                            com.example.ui.components.LanguageSelectionDialog(
-                                onDismiss = { showLanguageDialog = false }
-                            )
                         }
 
                         // 3. LS Profile Button (Opens Settings & Full Menu Options)
@@ -1062,6 +1056,12 @@ fun HomeScreen(
                         Text("Cancel")
                     }
                 }
+            )
+        }
+
+        if (showLanguageDialog) {
+            com.example.ui.components.LanguageSelectionDialog(
+                onDismiss = { showLanguageDialog = false }
             )
         }
     }

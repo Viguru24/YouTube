@@ -49,7 +49,14 @@ fun LibraryScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Subjects, 1: Downloads, 2: Favorites, 3: Watch Later, 4: History
+    var showLanguageDialog by remember { mutableStateOf(false) }
     val strings = com.example.util.LocalAppStrings.current
+
+    if (showLanguageDialog) {
+        com.example.ui.components.LanguageSelectionDialog(
+            onDismiss = { showLanguageDialog = false }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -62,20 +69,12 @@ fun LibraryScreen(
                     )
                 },
                 actions = {
-                    var showLanguageDialog by remember { mutableStateOf(false) }
-
                     // 1-Click Direct Language Selector 🌐
                     IconButton(
                         onClick = { showLanguageDialog = true },
                         modifier = Modifier.testTag("library_language_btn")
                     ) {
                         Text("🌐", fontSize = 18.sp)
-                    }
-
-                    if (showLanguageDialog) {
-                        com.example.ui.components.LanguageSelectionDialog(
-                            onDismiss = { showLanguageDialog = false }
-                        )
                     }
 
                     IconButton(
