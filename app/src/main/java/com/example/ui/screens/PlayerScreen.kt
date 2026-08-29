@@ -118,11 +118,11 @@ fun PlayerScreen(
         }
     }
 
-    val toggleFullscreen: () -> Unit = {
+        val toggleFullscreen: () -> Unit = {
         val act = context as? android.app.Activity
         if (act != null) {
-            val isLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            if (isLand || isMaximized) {
+            val isCurrentLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            if (isCurrentLand) {
                 isMaximized = false
                 act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             } else {

@@ -445,14 +445,14 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 7. Screen Rotation / Fullscreen Mode Toggle [⛶ / 🔄]
+                    // 7. Screen Rotation / Horizontal Flip Toggle [🔄 / ⛶]
                     IconButton(
                         onClick = onToggleFullscreen,
                         modifier = Modifier.size(bottomBtnSize)
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Fullscreen,
-                            contentDescription = "Rotate Screen / Fullscreen Mode",
+                            imageVector = Icons.Filled.ScreenRotation,
+                            contentDescription = "Turn Screen Horizontal / Vertical",
                             tint = Color.White,
                             modifier = Modifier.size(bottomIconSize + 2.dp)
                         )
