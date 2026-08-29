@@ -124,7 +124,7 @@ fun PlayerScreen(
             val isLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             if (isLand || isMaximized) {
                 isMaximized = false
-                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             } else {
                 isMaximized = true
                 act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE

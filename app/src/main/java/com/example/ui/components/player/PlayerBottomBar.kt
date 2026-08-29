@@ -1,7 +1,6 @@
 package com.example.ui.components.player
 
 import android.content.Context
-import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -58,9 +57,11 @@ fun PlayerBottomBar(
     onToggleCaptions: () -> Unit,
     videoId: String,
     videoTitle: String,
+    availableQualities: List<String>,
     selectedQuality: String,
-    onOpenQualityMenu: () -> Unit,
+    onSelectQuality: (String) -> Unit,
     onToggleDebugConsole: () -> Unit,
+    onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -69,6 +70,7 @@ fun PlayerBottomBar(
     val timeFontSize = if (isTablet) 12.sp else 10.sp
 
     var showSettingsMenu by remember { mutableStateOf(false) }
+    var showQualitySubMenu by remember { mutableStateOf(false) }
 
     fun formatMs(ms: Long): String {
         val totalSec = (ms / 1000).coerceAtLeast(0)
@@ -207,7 +209,7 @@ fun PlayerBottomBar(
                     }
                 }
 
-                // Right side: Speed Pill + Screenshot + Folder + Sleep Timer + CC + Settings Gear
+                // Right side: Speed Pill + Screenshot + Folder + Autoplay + Sleep Timer + CC + Settings Gear + Rotate Screen
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -380,27 +382,7 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 6. Share Button [↗️]
-                    IconButton(
-                        onClick = {
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, videoTitle)
-                                putExtra(Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Video"))
-                        },
-                        modifier = Modifier.size(bottomBtnSize)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Share,
-                            contentDescription = "Share Video",
-                            tint = Color.White,
-                            modifier = Modifier.size(bottomIconSize)
-                        )
-                    }
-
-                    // 7. Settings Gear [⚙️]
+                    // 6. Settings Gear [⚙️]
                     Box {
                         IconButton(
                             onClick = { showSettingsMenu = true },
@@ -416,25 +398,64 @@ fun PlayerBottomBar(
 
                         DropdownMenu(
                             expanded = showSettingsMenu,
-                            onDismissRequest = { showSettingsMenu = false }
+                            onDismissRequest = {
+                                showSettingsMenu = false
+                                showQualitySubMenu = false
+                            }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    onOpenQualityMenu()
+                            if (!showQualitySubMenu) {
+                                DropdownMenuItem(
+                                    text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                                    leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
+                                    onClick = { showQualitySubMenu = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Stats & Debug Console", fontSize = 13.sp) },
+                                    leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        onToggleDebugConsole()
+                                    }
+                                )
+                            } else {
+                                DropdownMenuItem(
+                                    text = { Text("⬅ Back", fontWeight = FontWeight.Bold, fontSize = 13.sp) },
+                                    onClick = { showQualitySubMenu = false }
+                                )
+                                val qualities = if (availableQualities.isNotEmpty()) availableQualities else listOf("Auto", "1080p", "720p", "480p", "360p")
+                                qualities.forEach { q ->
+                                    val isCurrent = q == selectedQuality
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = if (isCurrent) "✓ $q" else q,
+                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                fontSize = 13.sp
+                                            )
+                                        },
+                                        onClick = {
+                                            onSelectQuality(q)
+                                            showQualitySubMenu = false
+                                            showSettingsMenu = false
+                                        }
+                                    )
                                 }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Stats & Debug Console", fontSize = 13.sp) },
-                                leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
-                                onClick = {
-                                    showSettingsMenu = false
-                                    onToggleDebugConsole()
-                                }
-                            )
+                            }
                         }
+                    }
+
+                    // 7. Screen Rotation / Fullscreen Mode Toggle [⛶ / 🔄]
+                    IconButton(
+                        onClick = onToggleFullscreen,
+                        modifier = Modifier.size(bottomBtnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Fullscreen,
+                            contentDescription = "Rotate Screen / Fullscreen Mode",
+                            tint = Color.White,
+                            modifier = Modifier.size(bottomIconSize + 2.dp)
+                        )
                     }
                 }
             }

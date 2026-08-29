@@ -1039,545 +1039,105 @@ fun YouTubePlayerView(
             }
         }
 
-        // Sleek YouTube Bottom Utility Bar (Scrubber + Volume + Timestamp + CC + Settings) - Auto-vanishes & Reappears on Touch
-        androidx.compose.animation.AnimatedVisibility(
+        // Modular Bottom Utility Bar (Scrubber + Live Timestamps + Favorites + Folders + Watch Later + Speed Pill + Screenshots + Autoplay + Sleep Timer + CC + Settings + Rotate Screen)
+        com.example.ui.components.player.PlayerBottomBar(
             visible = shouldShowControls,
-            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
-            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)),
+            isTablet = isTablet,
+            isLiveStream = exoPlayer.isCurrentMediaItemLive,
+            currentPosMs = currentPosMs,
+            totalDurationMs = totalDurationMs,
+            isDraggingScrubber = isDraggingScrubber,
+            dragFraction = dragFraction,
+            onScrubberDrag = { fraction ->
+                isDraggingScrubber = true
+                dragFraction = fraction
+                currentPosMs = (fraction * totalDurationMs).toLong()
+            },
+            onScrubberRelease = { fraction ->
+                val targetMs = (fraction * totalDurationMs).toLong()
+                exoPlayer.seekTo(targetMs)
+                currentPosMs = targetMs
+                isDraggingScrubber = false
+            },
+            isFavorite = isFavorite,
+            onFavoriteToggle = { onFavoriteToggle() },
+            onSaveToSubject = { onSaveToSubject() },
+            isWatchLater = isWatchLater,
+            onWatchLaterToggle = { onWatchLaterToggle() },
+            selectedSpeed = selectedSpeed,
+            onSpeedChange = { newSpeed ->
+                selectedSpeed = newSpeed
+                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(newSpeed)
+            },
+            onSpeedFeedback = { feedback ->
+                speedFeedbackState = feedback
+                coroutineScope.launch {
+                    kotlinx.coroutines.delay(750)
+                    speedFeedbackState = null
+                }
+            },
+            onTakeScreenshot = { takeScreenshot() },
+            onOpenScreenshotFolder = { showScreenshotFolderDialog = true },
+            isAutoplayEnabled = isAutoplayEnabled,
+            onToggleAutoplay = {
+                val next = !isAutoplayEnabled
+                isAutoplayEnabled = next
+                playerPrefs.edit().putBoolean("autoplay_enabled", next).apply()
+                val msg = if (next) "▶️ Autoplay is ON" else "⏸️ Autoplay is OFF"
+                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+            },
+            isSleepTimerActive = isSleepTimerActive,
+            wasPausedBySleepTimer = wasPausedBySleepTimer,
+            onSleepTimerClick = {
+                if (wasPausedBySleepTimer) {
+                    wasPausedBySleepTimer = false
+                    sleepTimerRemainingSec = lastSleepDurationMinutes * 60
+                    isSleepTimerActive = true
+                    exoPlayer.play()
+                    isPlayingState = true
+                    android.widget.Toast.makeText(context, "🌙 Resumed for ${lastSleepDurationMinutes}m", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    showSleepTimerDialog = !showSleepTimerDialog
+                }
+            },
+            captionsEnabled = captionsEnabled,
+            onToggleCaptions = {
+                val next = !captionsEnabled
+                captionsEnabled = next
+                val msg = if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
+                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+            },
+            videoId = videoId,
+            videoTitle = videoTitle,
+            availableQualities = availableQualities,
+            selectedQuality = selectedQuality,
+            onSelectQuality = { q ->
+                selectedQuality = q
+                val (maxW, maxH) = when {
+                    q.contains("1080") -> 1920 to 1080
+                    q.contains("720") -> 1280 to 720
+                    q.contains("480") -> 854 to 480
+                    q.contains("360") -> 640 to 360
+                    else -> Int.MAX_VALUE to Int.MAX_VALUE
+                }
+                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                    .buildUpon().setMaxVideoSize(maxW, maxH).build()
+
+                coroutineScope.launch {
+                    val targetUrl = streamResult?.qualityUrlMap?.get(q)
+                        ?: com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
+                    if (!targetUrl.isNullOrEmpty()) {
+                        val currentPos = exoPlayer.currentPosition
+                        savedPositionMs = currentPos
+                        streamUrl = targetUrl
+                        android.widget.Toast.makeText(context, "Quality switched to $q", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onToggleDebugConsole = { onToggleDebugConsole() },
+            onToggleFullscreen = { onToggleFullscreen() },
             modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            val isLiveStream = exoPlayer.isCurrentMediaItemLive
-
-
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                        )
-                    )
-                    .padding(
-                        horizontal = if (isTablet) 18.dp else 10.dp,
-                        vertical = if (isTablet) 8.dp else 3.dp
-                    )
-            ) {
-                // 1. YouTube Red Scrubber Slider
-                if (!isLiveStream && totalDurationMs > 0) {
-                    val activeSliderValue = if (isDraggingScrubber) {
-                        dragFraction
-                    } else {
-                        (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
-                    }
-
-                    Slider(
-                        value = activeSliderValue,
-                        onValueChange = { fraction ->
-                            isDraggingScrubber = true
-                            dragFraction = fraction
-                            currentPosMs = (fraction * totalDurationMs).toLong()
-                        },
-                        onValueChangeFinished = {
-                            val targetMs = (dragFraction * totalDurationMs).toLong()
-                            exoPlayer.seekTo(targetMs)
-                            isDraggingScrubber = false
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = YouTubeRed,
-                            activeTrackColor = YouTubeRed,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(14.dp)
-                    )
-                }
-
-                // 2. Utility Row: [▶ Play/Pause] [🔊 Volume] [08:28 / 16:52] ---------- [[CC] Captions] [⚙️ Settings]
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Left side: Favorites + Subject + Watch Later + Timestamp
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-
-                        // On-Screen Direct Star (Favorite) Button
-                        IconButton(
-                            onClick = { onFavoriteToggle() },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
-                                contentDescription = "Favorite",
-                                tint = if (isFavorite) com.example.ui.theme.GoldStar else Color.White,
-                                modifier = Modifier.size(bottomIconSize)
-                            )
-                        }
-
-                        // On-Screen Direct Save to Subject Button
-                        IconButton(
-                            onClick = { onSaveToSubject() },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Folder,
-                                contentDescription = "Save to Subject",
-                                tint = Color.White,
-                                modifier = Modifier.size(bottomIconSize)
-                            )
-                        }
-
-                        // On-Screen Direct Watch Later Button
-                        IconButton(
-                            onClick = { onWatchLaterToggle() },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Filled.AccessTime,
-                                contentDescription = "Watch Later",
-                                tint = if (isWatchLater) YouTubeRed else Color.White,
-                                modifier = Modifier.size(bottomIconSize)
-                            )
-                        }
-
-                        if (isLiveStream) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(YouTubeRed, RoundedCornerShape(3.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "LIVE",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        } else if (totalDurationMs > 0) {
-                            Text(
-                                text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
-                                color = Color.White,
-                                fontSize = timeFontSize,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // Right side: Discreet Speed Pill + Screenshot + Folder + Sleep Timer + CC + Settings Gear
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Discreet Speed Controls [ - ] 1.0x [ + ]
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color.Black.copy(alpha = 0.65f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedSpeed != 1.0f) YouTubeRed.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.25f))
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)
-                            ) {
-                                // Slower [ - ]
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
-                                            val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
-                                            if (prev != selectedSpeed) {
-                                                selectedSpeed = prev
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(prev)
-                                                speedFeedbackState = "🐢 ${prev}x Speed"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("–", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-
-                                // Speed Label (Tap to reset to 1.0x)
-                                Text(
-                                    text = "${selectedSpeed}x",
-                                    color = if (selectedSpeed == 1.0f) Color.White else YouTubeRed,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .padding(horizontal = 3.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .clickable {
-                                            if (selectedSpeed != 1.0f) {
-                                                selectedSpeed = 1.0f
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
-                                                speedFeedbackState = "⚡ 1.0x Speed (Normal)"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        }
-                                )
-
-                                // Faster [ + ]
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
-                                            val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
-                                            if (next != selectedSpeed) {
-                                                selectedSpeed = next
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(next)
-                                                speedFeedbackState = "⚡ ${next}x Speed"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("+", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-                            }
-                        }
-
-                        // 1. Screenshot Button [📸]
-                        IconButton(
-                            onClick = { takeScreenshot() },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.CameraAlt,
-                                contentDescription = "Screenshot",
-                                tint = Color.White,
-                                modifier = Modifier.size(bottomIconSize)
-                            )
-                        }
-
-                        // 2. Screenshot Folder Switcher [📁]
-                        IconButton(
-                            onClick = { showScreenshotFolderDialog = true },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.FolderOpen,
-                                contentDescription = "Screenshot Folder",
-                                tint = com.example.ui.theme.GoldStar,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-
-                        // 3. Autoplay Toggle [▶️ / ⏸️] (Auto-advances next video)
-                        IconButton(
-                            onClick = {
-                                val next = !isAutoplayEnabled
-                                isAutoplayEnabled = next
-                                playerPrefs.edit().putBoolean("autoplay_enabled", next).apply()
-                                val msg = if (next) "▶️ Autoplay is ON (Auto-advance next video)" else "⏸️ Autoplay is OFF"
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(19.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isAutoplayEnabled) com.example.ui.theme.GoldStar.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (isAutoplayEnabled) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                        contentDescription = if (isAutoplayEnabled) "Autoplay is ON" else "Autoplay is OFF",
-                                        tint = if (isAutoplayEnabled) com.example.ui.theme.GoldStar else Color.LightGray,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-                                if (isAutoplayEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(10.dp)
-                                            .height(2.dp)
-                                            .background(com.example.ui.theme.GoldStar)
-                                    )
-                                }
-                            }
-                        }
-
-                        // 4. Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
-                        IconButton(
-                            onClick = {
-                                if (wasPausedBySleepTimer) {
-                                    wasPausedBySleepTimer = false
-                                    sleepTimerRemainingSec = lastSleepDurationMinutes * 60
-                                    isSleepTimerActive = true
-                                    exoPlayer.play()
-                                    isPlayingState = true
-                                    android.widget.Toast.makeText(context, "🌙 Resumed for ${lastSleepDurationMinutes}m", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    showSleepTimerDialog = !showSleepTimerDialog
-                                }
-                            },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Filled.Bedtime,
-                                    contentDescription = "Sleep Timer",
-                                    tint = if (isSleepTimerActive || wasPausedBySleepTimer) com.example.ui.theme.GoldStar else Color.White,
-                                    modifier = Modifier.size(bottomIconSize)
-                                )
-                                if (isSleepTimerActive || wasPausedBySleepTimer) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(12.dp)
-                                            .height(2.dp)
-                                            .background(com.example.ui.theme.GoldStar)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Subtitles [CC]
-                        IconButton(
-                            onClick = {
-                                val next = !captionsEnabled
-                                captionsEnabled = next
-                                val msg = if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Filled.ClosedCaption,
-                                    contentDescription = "Subtitles",
-                                    tint = if (captionsEnabled) YouTubeRed else Color.White,
-                                    modifier = Modifier.size(bottomIconSize)
-                                )
-                                if (captionsEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(12.dp)
-                                            .height(2.dp)
-                                            .background(YouTubeRed)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Share Button [↗️] (WhatsApp, Socials, Copy Link)
-                        IconButton(
-                            onClick = {
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                            },
-                            modifier = Modifier.size(bottomBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Share,
-                                contentDescription = "Share Video",
-                                tint = Color.White,
-                                modifier = Modifier.size(bottomIconSize)
-                            )
-                        }
-
-                        // Settings Gear [⚙️]
-                        Box {
-                            IconButton(
-                                onClick = {
-                                    showSettingsMenu = true
-                                },
-                                modifier = Modifier.size(bottomBtnSize)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Settings,
-                                    contentDescription = "Settings",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(bottomIconSize)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = showSettingsMenu,
-                                onDismissRequest = {
-                                    showSettingsMenu = false
-                                    showSpeedSubMenu = false
-                                    showQualitySubMenu = false
-                                }
-                            ) {
-                                if (!showSpeedSubMenu && !showQualitySubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                        leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = { showQualitySubMenu = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Playback Speed: ${selectedSpeed}x", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                        leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = { showSpeedSubMenu = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Stats & Debug Console", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            onToggleDebugConsole()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Share Video ↗️", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = Color.White) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            try {
-                                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                    type = "text/plain"
-                                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                                }
-                                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                                            } catch (e: Exception) { }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Open in Browser 🌐", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.OpenInBrowser, contentDescription = null) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId"))
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) { }
-                                        }
-                                    )
-                                } else if (showQualitySubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                                        onClick = { showQualitySubMenu = false }
-                                    )
-                                    availableQualities.forEach { q ->
-                                        val isCurrent = q.equals(selectedQuality, ignoreCase = true)
-                                        val label = when (q) {
-                                            "2160p" -> "4K Ultra HD (2160p)"
-                                            "1440p" -> "Quad HD (1440p)"
-                                            "1080p" -> "1080p (Full HD)"
-                                            "720p"  -> "720p (HD)"
-                                            "480p"  -> "480p (Standard)"
-                                            "360p"  -> "360p (Data Saver)"
-                                            "240p"  -> "240p (Low)"
-                                            "144p"  -> "144p (Lowest)"
-                                            "Auto"  -> "Auto (Best Quality)"
-                                            else    -> q
-                                        }
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = if (isCurrent) "✓ $label" else label,
-                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 13.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                selectedQuality = q
-                                                showQualitySubMenu = false
-                                                showSettingsMenu = false
-
-                                                val (maxW, maxH) = when (q) {
-                                                    "2160p" -> Pair(3840, 2160)
-                                                    "1440p" -> Pair(2560, 1440)
-                                                    "1080p" -> Pair(1920, 1080)
-                                                    "720p"  -> Pair(1280, 720)
-                                                    "480p"  -> Pair(854, 480)
-                                                    "360p"  -> Pair(640, 360)
-                                                    else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
-                                                }
-                                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                                .buildUpon().setMaxVideoSize(maxW, maxH).build()
-
-                                                coroutineScope.launch {
-                                                    val targetUrl = streamResult?.qualityUrlMap?.get(q)
-                                                        ?: com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
-                                                    if (!targetUrl.isNullOrEmpty()) {
-                                                        val currentPos = exoPlayer.currentPosition
-                                                        savedPositionMs = currentPos
-                                                        streamUrl = targetUrl
-                                                        android.widget.Toast.makeText(context, "Quality switched to $q", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-                                } else if (showSpeedSubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                                        onClick = { showSpeedSubMenu = false }
-                                    )
-                                    listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
-                                        val isCurrent = s == selectedSpeed
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = if (isCurrent) "✓ ${s}x (Normal)" else "${s}x",
-                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 13.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                selectedSpeed = s
-                                                showSpeedSubMenu = false
-                                                showSettingsMenu = false
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
-                        IconButton(
-                            onClick = { onToggleFullscreen() },
-                            modifier = Modifier.size(bottomBtnSize).testTag("fullscreen_toggle_btn")
-                        ) {
-                            Icon(
-                                imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                contentDescription = if (isFullscreen) "Exit Fullscreen" else "Maximize / Fullscreen",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        )
 
         // Tiny Out-of-the-Way Bottom-Right Floating Zoom Reset Button
         if (zoomScale > 1.05f) {
