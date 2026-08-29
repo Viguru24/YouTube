@@ -1614,11 +1614,11 @@ fun YouTubePlayerView(
                 }
         ) {
             if (zoomScale <= 1.05f) {
-                // Left Half: Screen Brightness Zone
+                // Left Outer Border: Screen Brightness Zone (18% edge width)
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth(0.48f)
+                        .fillMaxWidth(0.18f)
                         .align(Alignment.CenterStart)
                         .pointerInput(videoId) {
                             detectVerticalDragGestures(
@@ -1694,11 +1694,11 @@ fun YouTubePlayerView(
                         }
                 )
 
-                // Right Half: Device Volume Zone
+                // Right Outer Border: Device Volume Zone (18% edge width)
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth(0.48f)
+                        .fillMaxWidth(0.18f)
                         .align(Alignment.CenterEnd)
                         .pointerInput(videoId) {
                             detectVerticalDragGestures(
@@ -1764,11 +1764,11 @@ fun YouTubePlayerView(
                         }
                 )
 
-                // Center Strip (Tap for Controls & Double-Tap to cycle zoom 1x -> 1.5x -> 2x -> 1x)
+                // Center Canvas (64% width): Tap for Controls & Double-Tap Fullscreen
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth(0.12f)
+                        .fillMaxWidth(0.64f)
                         .align(Alignment.Center)
                         .pointerInput(videoId) {
                             detectTapGestures(
@@ -1787,17 +1787,7 @@ fun YouTubePlayerView(
                                     }
                                 },
                                 onDoubleTap = {
-                                    // Cycle Zoom: 1.0x -> 1.5x -> 2.0x -> 1.0x
-                                    val nextScale = when {
-                                        zoomScale < 1.3f -> 1.5f
-                                        zoomScale < 1.8f -> 2.0f
-                                        else -> 1.0f
-                                    }
-                                    zoomScale = nextScale
-                                    if (nextScale == 1.0f) {
-                                        panOffsetX = 0f
-                                        panOffsetY = 0f
-                                    }
+                                    onToggleFullscreen()
                                 }
                             )
                         }
@@ -1805,29 +1795,7 @@ fun YouTubePlayerView(
             }
         }
 
-        // Floating Zoom Reset Badge
-        if (zoomScale > 1.05f) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.75f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 16.dp)
-                    .clickable {
-                        zoomScale = 1.0f
-                        panOffsetX = 0f
-                        panOffsetY = 0f
-                    }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text("🔍 ${(zoomScale * 100).toInt()}% • Tap to Reset ✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+
 
         // Left Side Screen Brightness Gesture HUD Overlay
         androidx.compose.animation.AnimatedVisibility(
