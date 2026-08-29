@@ -440,28 +440,37 @@ fun MainAppContent(
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
+                    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+                    val isTablet = configuration.screenWidthDp >= 600 || configuration.smallestScreenWidthDp >= 600
+                    val navBarHeight = if (isTablet) 72.dp else 60.dp
+                    val navIconSize = if (isTablet) 24.dp else 20.dp
+                    val navTextSize = if (isTablet) 13.sp else 11.sp
+                    val strings = com.example.util.LocalAppStrings.current
+
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
-                            .height(52.dp)
+                            .height(navBarHeight)
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
                         NavigationBarItem(
                             selected = selectedNavIndex == 0,
                             onClick = { selectedNavIndex = 0 },
+                            alwaysShowLabel = true,
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 0) Icons.Filled.Home else Icons.Outlined.Home,
-                                    contentDescription = "Home",
-                                    modifier = Modifier.size(18.dp)
+                                    contentDescription = strings.navHome,
+                                    modifier = Modifier.size(navIconSize)
                                 )
                             },
-                            label = { Text("Home", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                            label = { Text(strings.navHome, fontSize = navTextSize, fontWeight = if (selectedNavIndex == 0) FontWeight.Bold else FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_home")
@@ -470,17 +479,19 @@ fun MainAppContent(
                         NavigationBarItem(
                             selected = selectedNavIndex == 1,
                             onClick = { selectedNavIndex = 1 },
+                            alwaysShowLabel = true,
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 1) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
-                                    contentDescription = "Library",
-                                    modifier = Modifier.size(18.dp)
+                                    contentDescription = strings.navLibrary,
+                                    modifier = Modifier.size(navIconSize)
                                 )
                             },
-                            label = { Text("Library", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                            label = { Text(strings.navLibrary, fontSize = navTextSize, fontWeight = if (selectedNavIndex == 1) FontWeight.Bold else FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_library")
@@ -489,17 +500,19 @@ fun MainAppContent(
                         NavigationBarItem(
                             selected = selectedNavIndex == 2,
                             onClick = { selectedNavIndex = 2 },
+                            alwaysShowLabel = true,
                             icon = {
                                 Icon(
                                     imageVector = if (selectedNavIndex == 2) Icons.Filled.History else Icons.Outlined.History,
-                                    contentDescription = "History",
-                                    modifier = Modifier.size(18.dp)
+                                    contentDescription = strings.tabHistory,
+                                    modifier = Modifier.size(navIconSize)
                                 )
                             },
-                            label = { Text("History", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                            label = { Text(strings.tabHistory, fontSize = navTextSize, fontWeight = if (selectedNavIndex == 2) FontWeight.Bold else FontWeight.Medium) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.White,
                                 selectedTextColor = YouTubeRed,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 indicatorColor = YouTubeRed.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.testTag("nav_item_history")
