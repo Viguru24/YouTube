@@ -660,11 +660,6 @@ fun YouTubePlayerView(
                                 isPlayingState = false
                                 areControlsVisible = true // Show controls when paused (stay forever)
                             }
-                            playPauseFeedbackState = willPlay
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(650)
-                                playPauseFeedbackState = null
-                            }
                         }
                     },
                     onDoubleTap = { offset ->
@@ -987,28 +982,6 @@ fun YouTubePlayerView(
             }
         }
 
-        // Quick Animated Play / Pause Center Bubble Indicator
-        androidx.compose.animation.AnimatedVisibility(
-            visible = playPauseFeedbackState != null,
-            enter = androidx.compose.animation.scaleIn(initialScale = 0.6f) + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.scaleOut(targetScale = 1.2f) + androidx.compose.animation.fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(68.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (playPauseFeedbackState == true) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = if (playPauseFeedbackState == true) "Playing" else "Paused",
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-        }
 
         // Sleek See-Through Frosted Action Strip: 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download
         if (!isPlayingState && !isLoading) {
