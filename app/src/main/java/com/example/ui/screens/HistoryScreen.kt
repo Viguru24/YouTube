@@ -279,7 +279,8 @@ private fun CompactHistoryBox(
                 )
 
                 if (video.lastWatchedTimestamp > 0) {
-                    val timeAgo = formatWatchedTimeAgo(video.lastWatchedTimestamp)
+                    val lang = com.example.util.LocalAppLanguage.current
+                    val timeAgo = formatWatchedTimeAgo(video.lastWatchedTimestamp, lang)
                     Text(
                         text = timeAgo,
                         style = MaterialTheme.typography.labelSmall,
@@ -293,17 +294,33 @@ private fun CompactHistoryBox(
     }
 }
 
-private fun formatWatchedTimeAgo(timestamp: Long): String {
+private fun formatWatchedTimeAgo(timestamp: Long, lang: com.example.util.AppLanguage): String {
     val diffMs = System.currentTimeMillis() - timestamp
     val mins = diffMs / (1000 * 60)
     val hours = mins / 60
     val days = hours / 24
 
-    return when {
-        mins < 1 -> "Watched just now"
-        mins < 60 -> "Watched ${mins}m ago"
-        hours < 24 -> "Watched ${hours}h ago"
-        days == 1L -> "Watched yesterday"
-        else -> "Watched ${days}d ago"
+    val rawRel = when {
+        mins < 1 -> "just now"
+        mins < 60 -> "$mins minutes ago"
+        hours < 24 -> "$hours hours ago"
+        days == 1L -> "1 day ago"
+        else -> "$days days ago"
+    }
+
+    val loc = com.example.util.LanguageManager.localizeRelativeTime(rawRel, lang)
+    return when (lang) {
+        com.example.util.AppLanguage.ES -> "Visto $loc"
+        com.example.util.AppLanguage.FR -> "Visionné $loc"
+        com.example.util.AppLanguage.DE -> "Angesehen $loc"
+        com.example.util.AppLanguage.PT -> "Assistido $loc"
+        com.example.util.AppLanguage.IT -> "Visto $loc"
+        com.example.util.AppLanguage.RU -> "Просмотрено $loc"
+        com.example.util.AppLanguage.JA -> "視聴済み ($loc)"
+        com.example.util.AppLanguage.KO -> "시청함 ($loc)"
+        com.example.util.AppLanguage.ZH -> "已观看 ($loc)"
+        com.example.util.AppLanguage.HI -> "देखा गया ($loc)"
+        com.example.util.AppLanguage.AR -> "تمت المشاهدة $loc"
+        else -> "Watched $loc"
     }
 }

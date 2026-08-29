@@ -403,14 +403,32 @@ fun VideoCard(
                                 }
                             )
 
-                            if (video.viewCountText.isNotBlank()) {
+                            val currentLang = com.example.util.LocalAppLanguage.current
+                            val locViews = com.example.util.LanguageManager.localizeViewCount(video.viewCountText, currentLang)
+                            val locTime = com.example.util.LanguageManager.localizeRelativeTime(video.publishedTimeText, currentLang)
+
+                            if (locViews.isNotBlank()) {
                                 Text(
                                     text = "•",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = video.viewCountText,
+                                    text = locViews,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+
+                            if (locTime.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = locTime,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1

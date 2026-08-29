@@ -346,11 +346,11 @@
                             <!-- Save Destination -->
                             <Border Background="#16161F" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,6">
                                 <StackPanel>
-                                    <TextBlock Text="📁 Save Destination" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold"/>
+                                    <TextBlock x:Name="SaveDestTitle" Text="📁 Save Destination" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold"/>
                                     <TextBlock x:Name="CurrentFolderText" Text="Pictures\Vixz\Default" Foreground="{StaticResource TextSecondary}" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,2,0,6"/>
                                     <StackPanel Orientation="Horizontal">
-                                        <Button Content="Change" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Click="ChangeFolder_Click"/>
-                                        <Button Content="Open ↗" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Margin="4,0,0,0" Click="OpenFolder_Click"/>
+                                        <Button x:Name="ChangeFolderBtn" Content="Change" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Click="ChangeFolder_Click"/>
+                                        <Button x:Name="OpenFolderBtn" Content="Open ↗" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Margin="4,0,0,0" Click="OpenFolder_Click"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Border>

@@ -3643,6 +3643,7 @@ namespace VixzDesktop
             StorageService.Settings.AppLanguage = langCode;
             StorageService.Save();
 
+            DesktopLocalizationService.CurrentLanguageCode = langCode;
             var strings = DesktopLocalizationService.GetStrings(langCode);
             var (displayName, flag, nativeName) = DesktopLocalizationService.AvailableLanguages.TryGetValue(langCode, out var val) 
                 ? val 
@@ -3663,18 +3664,63 @@ namespace VixzDesktop
             ApplyFiltersBtn.Content = strings.ApplyFilters;
             ResetFiltersBtn.Content = strings.Reset;
 
-            if (FeedTitleText.Text == "Recommended Feed" || 
-                FeedTitleText.Text == "Feed Recomendado" || 
-                FeedTitleText.Text == "Flux Recommandé" ||
-                FeedTitleText.Text == "Empfohlener Feed" ||
-                FeedTitleText.Text == "Рекомендации" ||
-                FeedTitleText.Text == "おすすめフィード" ||
-                FeedTitleText.Text == "맞춤 추천 피드" ||
-                FeedTitleText.Text == "为你推荐" ||
-                FeedTitleText.Text == "सुझाई गई फ़ीड" ||
-                FeedTitleText.Text == "الفيديوهات المقترحة")
+            // DateFilterCombo options
+            if (DateFilterCombo != null && DateFilterCombo.Items.Count >= 5)
             {
-                FeedTitleText.Text = strings.RecommendedFeed;
+                if (DateFilterCombo.Items[0] is ComboBoxItem i0) i0.Content = strings.DateAnyTime;
+                if (DateFilterCombo.Items[1] is ComboBoxItem i1) i1.Content = strings.DateLastHour;
+                if (DateFilterCombo.Items[2] is ComboBoxItem i2) i2.Content = strings.DateToday;
+                if (DateFilterCombo.Items[3] is ComboBoxItem i3) i3.Content = strings.DateThisWeek;
+                if (DateFilterCombo.Items[4] is ComboBoxItem i4) i4.Content = strings.DateThisMonth;
+            }
+
+            // DurationFilterCombo options
+            if (DurationFilterCombo != null && DurationFilterCombo.Items.Count >= 4)
+            {
+                if (DurationFilterCombo.Items[0] is ComboBoxItem d0) d0.Content = strings.DurationAny;
+                if (DurationFilterCombo.Items[1] is ComboBoxItem d1) d1.Content = strings.DurationShort;
+                if (DurationFilterCombo.Items[2] is ComboBoxItem d2) d2.Content = strings.DurationMedium;
+                if (DurationFilterCombo.Items[3] is ComboBoxItem d3) d3.Content = strings.DurationLong;
+            }
+
+            // SortByFilterCombo options
+            if (SortByFilterCombo != null && SortByFilterCombo.Items.Count >= 3)
+            {
+                if (SortByFilterCombo.Items[0] is ComboBoxItem s0) s0.Content = strings.SortRelevance;
+                if (SortByFilterCombo.Items[1] is ComboBoxItem s1) s1.Content = strings.SortNewest;
+                if (SortByFilterCombo.Items[2] is ComboBoxItem s2) s2.Content = strings.SortMostViewed;
+            }
+
+            // Save Destination Sidebar
+            if (SaveDestTitle != null) SaveDestTitle.Text = $"📁 {strings.SaveDestination}";
+            if (ChangeFolderBtn != null) ChangeFolderBtn.Content = strings.ChangeFolder;
+            if (OpenFolderBtn != null) OpenFolderBtn.Content = strings.OpenFolder;
+
+            // Update Feed Title
+            if (FeedTitleText != null)
+            {
+                if (FeedTitleText.Text == "Recommended Feed" || 
+                    FeedTitleText.Text == "Feed Recomendado" || 
+                    FeedTitleText.Text == "Flux Recommandé" ||
+                    FeedTitleText.Text == "Empfohlener Feed" ||
+                    FeedTitleText.Text == "Рекомендации" ||
+                    FeedTitleText.Text == "おすすめフィード" ||
+                    FeedTitleText.Text == "맞춤 추천 피드" ||
+                    FeedTitleText.Text == "为你推荐" ||
+                    FeedTitleText.Text == "सुझाई गई फ़ीड" ||
+                    FeedTitleText.Text == "الفيديوهات المقترحة" ||
+                    FeedTitleText.Text == "Feed Consigliato" ||
+                    FeedTitleText.Text == "Início")
+                {
+                    FeedTitleText.Text = strings.RecommendedFeed;
+                }
+            }
+
+            // Instantly refresh current feed items so dynamic timestamps & views re-render in the target language
+            if (VideoItemsControl != null && _currentFeed != null && _currentFeed.Count > 0)
+            {
+                VideoItemsControl.ItemsSource = null;
+                VideoItemsControl.ItemsSource = _currentFeed;
             }
         }
 
