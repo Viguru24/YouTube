@@ -554,7 +554,25 @@ fun YouTubePlayerView(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clipToBounds(),
+            .clipToBounds()
+            .pointerInput(videoId) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    if (zoom != 1f || (zoomScale > 1f && (pan.x != 0f || pan.y != 0f))) {
+                        val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
+                        zoomScale = newScale
+                        if (newScale > 1.02f) {
+                            val maxPanX = (size.width * (newScale - 1f)) / 2f
+                            val maxPanY = (size.height * (newScale - 1f)) / 2f
+                            panOffsetX = (panOffsetX + pan.x * newScale).coerceIn(-maxPanX, maxPanX)
+                            panOffsetY = (panOffsetY + pan.y * newScale).coerceIn(-maxPanY, maxPanY)
+                        } else {
+                            panOffsetX = 0f
+                            panOffsetY = 0f
+                            zoomScale = 1f
+                        }
+                    }
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         // Video Surface Container with Pinch-to-Zoom and Pan Graphics Layer
@@ -1746,11 +1764,11 @@ fun YouTubePlayerView(
                         }
                 )
 
-                // Center Strip (Tap for Controls & Double-Tap Fullscreen)
+                // Center Strip (Tap for Controls & Double-Tap to cycle zoom 1x -> 1.5x -> 2x -> 1x)
                 Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .fillMaxWidth(0.04f)
+                        .fillMaxWidth(0.12f)
                         .align(Alignment.Center)
                         .pointerInput(videoId) {
                             detectTapGestures(
@@ -1769,13 +1787,48 @@ fun YouTubePlayerView(
                                     }
                                 },
                                 onDoubleTap = {
-                                    onToggleFullscreen()
+                                    // Cycle Zoom: 1.0x -> 1.5x -> 2.0x -> 1.0x
+                                    val nextScale = when {
+                                        zoomScale < 1.3f -> 1.5f
+                                        zoomScale < 1.8f -> 2.0f
+                                        else -> 1.0f
+                                    }
+                                    zoomScale = nextScale
+                                    if (nextScale == 1.0f) {
+                                        panOffsetX = 0f
+                                        panOffsetY = 0f
+                                    }
                                 }
                             )
                         }
                 )
             }
         }
+
+        // Floating Zoom Reset Badge
+        if (zoomScale > 1.05f) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.75f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+                    .clickable {
+                        zoomScale = 1.0f
+                        panOffsetX = 0f
+                        panOffsetY = 0f
+                    }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text("🔍 ${(zoomScale * 100).toInt()}% • Tap to Reset ✕", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // Left Side Screen Brightness Gesture HUD Overlay
         androidx.compose.animation.AnimatedVisibility(
             visible = isAdjustingBrightness,
