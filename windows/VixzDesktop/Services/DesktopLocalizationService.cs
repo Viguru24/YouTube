@@ -44,6 +44,35 @@ namespace VixzDesktop.Services
         public string SortNewest { get; set; } = "Newest First";
         public string SortMostViewed { get; set; } = "Most Viewed";
 
+        // Subscriptions & Channels
+        public string Subscribe { get; set; } = "Subscribe";
+        public string Subscribed { get; set; } = "Subscribed";
+        public string ManageSubscriptions { get; set; } = "Manage Subscriptions";
+        public string ManageSubscriptionsHeading { get; set; } = "⚙️ Manage Your Subscribed Channels";
+        public string AddChannel { get; set; } = "Add Channel / Creator";
+        public string AddChannelDesc { get; set; } = "Enter any YouTube channel name or handle to add to your custom subscriptions feed:";
+        public string NoSubscriptionsYet { get; set; } = "No subscribed channels yet. Click '➕' in the sidebar to add your favorites!";
+        public string ResetToDefault { get; set; } = "Reset to Default";
+        public string ClearAll { get; set; } = "Clear All";
+        public string Cancel { get; set; } = "Cancel";
+        public string Close { get; set; } = "Close";
+        public string Add { get; set; } = "Add";
+
+        // Folder Chips
+        public string FolderAll { get; set; } = "All";
+        public string FolderAi { get; set; } = "AI & Tech";
+        public string FolderPodcasts { get; set; } = "Podcasts";
+        public string FolderGaming { get; set; } = "Gaming";
+        public string FolderMusic { get; set; } = "Music";
+
+        // Feed Header Titles
+        public string FeedAllVideos { get; set; } = "All Videos";
+        public string FeedSubscriptions { get; set; } = "Subscriptions Feed";
+        public string FeedTrending { get; set; } = "Trending Videos";
+        public string FeedFavorites { get; set; } = "Favorite Videos";
+        public string FeedWatchLater { get; set; } = "Watch Later Queue";
+        public string FeedHistory { get; set; } = "Watch History";
+
         // Action Buttons & Context Menu
         public string Download { get; set; } = "Download";
         public string Downloading { get; set; } = "Downloading...";
@@ -145,6 +174,32 @@ namespace VixzDesktop.Services
                     SortNewest = "Más recientes",
                     SortMostViewed = "Más vistos",
 
+                    Subscribe = "Suscribirse",
+                    Subscribed = "Suscrito",
+                    ManageSubscriptions = "Gestionar Suscripciones",
+                    ManageSubscriptionsHeading = "⚙️ Gestionar tus canales suscritos",
+                    AddChannel = "Añadir Canal",
+                    AddChannelDesc = "Introduce el nombre o handle del canal de YouTube:",
+                    NoSubscriptionsYet = "Aún no hay canales suscritos. ¡Haz clic en '➕' en la barra lateral para añadir!",
+                    ResetToDefault = "Restablecer Predeterminados",
+                    ClearAll = "Borrar Todo",
+                    Cancel = "Cancelar",
+                    Close = "Cerrar",
+                    Add = "Añadir",
+
+                    FolderAll = "Todos",
+                    FolderAi = "IA y Tech",
+                    FolderPodcasts = "Pódcasts",
+                    FolderGaming = "Videojuegos",
+                    FolderMusic = "Música",
+
+                    FeedAllVideos = "Todos los Videos",
+                    FeedSubscriptions = "Feed de Suscripciones",
+                    FeedTrending = "Videos en Tendencia",
+                    FeedFavorites = "Videos Favoritos",
+                    FeedWatchLater = "Cola de Ver Más Tarde",
+                    FeedHistory = "Historial de Reproducción",
+
                     Download = "Descargar",
                     Downloading = "Descargando...",
                     Downloaded = "Descargado",
@@ -216,6 +271,32 @@ namespace VixzDesktop.Services
                     SortRelevance = "Pertinence",
                     SortNewest = "Plus récents",
                     SortMostViewed = "Plus vues",
+
+                    Subscribe = "S'abonner",
+                    Subscribed = "Abonné",
+                    ManageSubscriptions = "Gérer les Abonnements",
+                    ManageSubscriptionsHeading = "⚙️ Gérer vos chaînes abonnées",
+                    AddChannel = "Ajouter une chaîne",
+                    AddChannelDesc = "Entrez le nom ou le handle de la chaîne YouTube :",
+                    NoSubscriptionsYet = "Aucune chaîne abonnée pour le moment. Cliquez sur '➕' pour en ajouter !",
+                    ResetToDefault = "Réinitialiser par défaut",
+                    ClearAll = "Tout effacer",
+                    Cancel = "Annuler",
+                    Close = "Fermer",
+                    Add = "Ajouter",
+
+                    FolderAll = "Tout",
+                    FolderAi = "IA & Tech",
+                    FolderPodcasts = "Podcasts",
+                    FolderGaming = "Jeux Vidéo",
+                    FolderMusic = "Musique",
+
+                    FeedAllVideos = "Toutes les vidéos",
+                    FeedSubscriptions = "Flux d'Abonnements",
+                    FeedTrending = "Vidéos Tendances",
+                    FeedFavorites = "Vidéos Favorites",
+                    FeedWatchLater = "À regarder plus tard",
+                    FeedHistory = "Historique de visionnage",
 
                     Download = "Télécharger",
                     Downloading = "Téléchargement...",
@@ -289,6 +370,32 @@ namespace VixzDesktop.Services
                     SortNewest = "Neueste zuerst",
                     SortMostViewed = "Meistgesehen",
 
+                    Subscribe = "Abonnieren",
+                    Subscribed = "Abonniert",
+                    ManageSubscriptions = "Abos verwalten",
+                    ManageSubscriptionsHeading = "⚙️ Verwalte deine abonnierten Kanäle",
+                    AddChannel = "Kanal hinzufügen",
+                    AddChannelDesc = "Gib einen YouTube-Kanalnamen oder Handle ein:",
+                    NoSubscriptionsYet = "Noch keine Kanäle abonniert. Klicke auf '➕', um Favoriten hinzuzufügen!",
+                    ResetToDefault = "Standard wiederherstellen",
+                    ClearAll = "Alles löschen",
+                    Cancel = "Abbrechen",
+                    Close = "Schließen",
+                    Add = "Hinzufügen",
+
+                    FolderAll = "Alle",
+                    FolderAi = "KI & Tech",
+                    FolderPodcasts = "Podcasts",
+                    FolderGaming = "Gaming",
+                    FolderMusic = "Musik",
+
+                    FeedAllVideos = "Alle Videos",
+                    FeedSubscriptions = "Abonnement-Feed",
+                    FeedTrending = "Trends Videos",
+                    FeedFavorites = "Favoriten Videos",
+                    FeedWatchLater = "Später ansehen",
+                    FeedHistory = "Wiedergabeverlauf",
+
                     Download = "Herunterladen",
                     Downloading = "Wird geladen...",
                     Downloaded = "Heruntergeladen",
@@ -360,6 +467,32 @@ namespace VixzDesktop.Services
                     SortRelevance = "Relevância",
                     SortNewest = "Mais recentes",
                     SortMostViewed = "Mais visualizados",
+
+                    Subscribe = "Inscrever-se",
+                    Subscribed = "Inscrito",
+                    ManageSubscriptions = "Gerenciar Inscrições",
+                    ManageSubscriptionsHeading = "⚙️ Gerenciar seus canais inscritos",
+                    AddChannel = "Adicionar Canal",
+                    AddChannelDesc = "Insira o nome ou identificador do canal do YouTube:",
+                    NoSubscriptionsYet = "Nenhum canal inscrito ainda. Clique em '➕' para adicionar!",
+                    ResetToDefault = "Restaurar Padrão",
+                    ClearAll = "Limpar Tudo",
+                    Cancel = "Cancelar",
+                    Close = "Fechar",
+                    Add = "Adicionar",
+
+                    FolderAll = "Todos",
+                    FolderAi = "IA & Tech",
+                    FolderPodcasts = "Podcasts",
+                    FolderGaming = "Jogos",
+                    FolderMusic = "Música",
+
+                    FeedAllVideos = "Todos os Vídeos",
+                    FeedSubscriptions = "Feed de Inscrições",
+                    FeedTrending = "Vídeos em Alta",
+                    FeedFavorites = "Vídeos Favoritos",
+                    FeedWatchLater = "Assistir Mais Tarde",
+                    FeedHistory = "Histórico de Exibição",
 
                     Download = "Baixar",
                     Downloading = "Baixando...",
@@ -433,6 +566,32 @@ namespace VixzDesktop.Services
                     SortNewest = "Più recenti",
                     SortMostViewed = "Più visualizzati",
 
+                    Subscribe = "Iscriviti",
+                    Subscribed = "Iscritto",
+                    ManageSubscriptions = "Gestisci Iscrizioni",
+                    ManageSubscriptionsHeading = "⚙️ Gestisci i tuoi canali iscritti",
+                    AddChannel = "Aggiungi Canale",
+                    AddChannelDesc = "Inserisci il nome o handle del canale YouTube:",
+                    NoSubscriptionsYet = "Nessun canale iscritto. Clicca su '➕' per aggiungerne uno!",
+                    ResetToDefault = "Ripristina Predefiniti",
+                    ClearAll = "Cancella Tutto",
+                    Cancel = "Annulla",
+                    Close = "Chiudi",
+                    Add = "Aggiungi",
+
+                    FolderAll = "Tutti",
+                    FolderAi = "IA & Tech",
+                    FolderPodcasts = "Podcast",
+                    FolderGaming = "Gaming",
+                    FolderMusic = "Musica",
+
+                    FeedAllVideos = "Tutti i Video",
+                    FeedSubscriptions = "Feed Iscrizioni",
+                    FeedTrending = "Video di Tendenza",
+                    FeedFavorites = "Video Preferiti",
+                    FeedWatchLater = "Guarda Più Tardi",
+                    FeedHistory = "Cronologia Visioni",
+
                     Download = "Scarica",
                     Downloading = "Download in corso...",
                     Downloaded = "Scaricato",
@@ -505,12 +664,38 @@ namespace VixzDesktop.Services
                     SortNewest = "Сначала новые",
                     SortMostViewed = "По просмотрам",
 
+                    Subscribe = "Подписаться",
+                    Subscribed = "Вы подписаны",
+                    ManageSubscriptions = "Управление подписками",
+                    ManageSubscriptionsHeading = "⚙️ Управление вашими подписками",
+                    AddChannel = "Добавить канал",
+                    AddChannelDesc = "Введите имя или тег канала YouTube:",
+                    NoSubscriptionsYet = "Вы еще не подписаны ни на один канал. Нажмите '➕' для добавления!",
+                    ResetToDefault = "По умолчанию",
+                    ClearAll = "Очистить все",
+                    Cancel = "Отмена",
+                    Close = "Закрыть",
+                    Add = "Добавить",
+
+                    FolderAll = "Все",
+                    FolderAi = "ИИ и Tech",
+                    FolderPodcasts = "Подкасты",
+                    FolderGaming = "Игры",
+                    FolderMusic = "Музыка",
+
+                    FeedAllVideos = "Все видео",
+                    FeedSubscriptions = "Лента подписок",
+                    FeedTrending = "В тренде",
+                    FeedFavorites = "Избранные видео",
+                    FeedWatchLater = "Смотреть позже",
+                    FeedHistory = "История просмотров",
+
                     Download = "Скачать",
                     Downloading = "Скачивание...",
                     Downloaded = "Скачано",
                     Delete = "Удалить",
                     AddToPlaylist = "В плейлист",
-                    PlayNext = "Слудующее",
+                    PlayNext = "Следующее",
                     CopyLink = "Скопировать ссылку",
                     OpenInBrowser = "Открыть в браузере",
                     ClearHistory = "Очистить историю",
@@ -574,8 +759,34 @@ namespace VixzDesktop.Services
                     DurationLong = "20分以上 (長編)",
 
                     SortRelevance = "関連度順",
-                    SortNewest = "アップロード日 (新しい順)",
+                    SortNewest = "最新順",
                     SortMostViewed = "視聴回数順",
+
+                    Subscribe = "チャンネル登録",
+                    Subscribed = "登録済み",
+                    ManageSubscriptions = "登録チャンネルの管理",
+                    ManageSubscriptionsHeading = "⚙️ 登録チャンネルの管理",
+                    AddChannel = "チャンネルを追加",
+                    AddChannelDesc = "YouTubeチャンネル名またはハンドルを入力してください:",
+                    NoSubscriptionsYet = "登録されたチャンネルはまだありません。「➕」をクリックして追加してください！",
+                    ResetToDefault = "初期設定に戻す",
+                    ClearAll = "すべてクリア",
+                    Cancel = "キャンセル",
+                    Close = "閉じる",
+                    Add = "追加",
+
+                    FolderAll = "すべて",
+                    FolderAi = "AI・テクノロジー",
+                    FolderPodcasts = "ポッドキャスト",
+                    FolderGaming = "ゲーム",
+                    FolderMusic = "音楽",
+
+                    FeedAllVideos = "すべての動画",
+                    FeedSubscriptions = "登録チャンネルのフィード",
+                    FeedTrending = "急上昇動画",
+                    FeedFavorites = "お気に入り動画",
+                    FeedWatchLater = "後で見る動画",
+                    FeedHistory = "再生履歴",
 
                     Download = "ダウンロード",
                     Downloading = "ダウンロード中...",
@@ -649,6 +860,32 @@ namespace VixzDesktop.Services
                     SortNewest = "최신순",
                     SortMostViewed = "조회수순",
 
+                    Subscribe = "구독",
+                    Subscribed = "구독중",
+                    ManageSubscriptions = "구독 관리",
+                    ManageSubscriptionsHeading = "⚙️ 구독한 채널 관리",
+                    AddChannel = "채널 추가",
+                    AddChannelDesc = "추가할 유튜브 채널 이름이나 핸들을 입력하세요:",
+                    NoSubscriptionsYet = "아직 구독한 채널이 없습니다. 사이드바의 '➕' 버튼을 눌러 추가해보세요!",
+                    ResetToDefault = "기본값으로 초기화",
+                    ClearAll = "전체 삭제",
+                    Cancel = "취소",
+                    Close = "닫기",
+                    Add = "추가",
+
+                    FolderAll = "전체",
+                    FolderAi = "AI 및 기술",
+                    FolderPodcasts = "팟캐스트",
+                    FolderGaming = "게임",
+                    FolderMusic = "음악",
+
+                    FeedAllVideos = "모든 동영상",
+                    FeedSubscriptions = "구독 채널 피드",
+                    FeedTrending = "인기 급상승 동영상",
+                    FeedFavorites = "좋아요한 동영상",
+                    FeedWatchLater = "나중에 볼 동영상",
+                    FeedHistory = "시청 기록",
+
                     Download = "다운로드",
                     Downloading = "다운로드 중...",
                     Downloaded = "다운로드 완료",
@@ -720,6 +957,32 @@ namespace VixzDesktop.Services
                     SortRelevance = "相关度最高",
                     SortNewest = "最新发布",
                     SortMostViewed = "播放量最多",
+
+                    Subscribe = "订阅",
+                    Subscribed = "已订阅",
+                    ManageSubscriptions = "管理订阅",
+                    ManageSubscriptionsHeading = "⚙️ 管理您订阅的频道",
+                    AddChannel = "添加频道",
+                    AddChannelDesc = "输入 YouTube 频道名称或标识符:",
+                    NoSubscriptionsYet = "暂无订阅的频道。点击侧边栏的 '➕' 即可添加！",
+                    ResetToDefault = "恢复默认频道",
+                    ClearAll = "清空全部",
+                    Cancel = "取消",
+                    Close = "关闭",
+                    Add = "添加",
+
+                    FolderAll = "全部",
+                    FolderAi = "AI 与科技",
+                    FolderPodcasts = "播客与访谈",
+                    FolderGaming = "游戏视频",
+                    FolderMusic = "音乐旋律",
+
+                    FeedAllVideos = "全部视频",
+                    FeedSubscriptions = "订阅频道内容",
+                    FeedTrending = "时下热门视频",
+                    FeedFavorites = "我的收藏视频",
+                    FeedWatchLater = "稍后观看队列",
+                    FeedHistory = "观看历史记录",
 
                     Download = "下载视频",
                     Downloading = "正在下载...",
@@ -793,6 +1056,32 @@ namespace VixzDesktop.Services
                     SortNewest = "नवीनतम पहले",
                     SortMostViewed = "सर्वाधिक देखे गए",
 
+                    Subscribe = "सदस्यता लें",
+                    Subscribed = "सदस्यता ली गई",
+                    ManageSubscriptions = "सदस्यता प्रबंधित करें",
+                    ManageSubscriptionsHeading = "⚙️ अपने सब्सक्राइब किए गए चैनल प्रबंधित करें",
+                    AddChannel = "चैनल जोड़ें",
+                    AddChannelDesc = "YouTube चैनल का नाम या हैंडल दर्ज करें:",
+                    NoSubscriptionsYet = "अभी तक कोई चैनल सब्सक्राइब नहीं किया गया है। जोड़ने के लिए '➕' पर क्लिक करें!",
+                    ResetToDefault = "डिफ़ॉल्ट पर रीसेट करें",
+                    ClearAll = "सभी साफ़ करें",
+                    Cancel = "रद्द करें",
+                    Close = "बंद करें",
+                    Add = "जोड़ें",
+
+                    FolderAll = "सभी",
+                    FolderAi = "एआई और टेक",
+                    FolderPodcasts = "पॉडकास्ट",
+                    FolderGaming = "गेमिंग",
+                    FolderMusic = "संगीत",
+
+                    FeedAllVideos = "सभी वीडियो",
+                    FeedSubscriptions = "सदस्यता फ़ीड",
+                    FeedTrending = "ट्रेंडिंग वीडियो",
+                    FeedFavorites = "पसंदीदा वीडियो",
+                    FeedWatchLater = "बाद में देखें",
+                    FeedHistory = "देखने का इतिहास",
+
                     Download = "डाउनलोड",
                     Downloading = "डाउनलोड हो रहा है...",
                     Downloaded = "डाउनलोड किया गया",
@@ -865,6 +1154,32 @@ namespace VixzDesktop.Services
                     SortNewest = "الأحدث أولاً",
                     SortMostViewed = "الأكثر مشاهدة",
 
+                    Subscribe = "اشتراك",
+                    Subscribed = "مشترك",
+                    ManageSubscriptions = "إدارة الاشتراكات",
+                    ManageSubscriptionsHeading = "⚙️ إدارة القنوات المشترك بها",
+                    AddChannel = "إضافة قناة",
+                    AddChannelDesc = "أدخل اسم أو معرّف قناة يوتيوب:",
+                    NoSubscriptionsYet = "لا توجد قنوات مشترك بها بعد. انقر على '➕' للإضافة!",
+                    ResetToDefault = "استعادة الافتراضي",
+                    ClearAll = "مسح الكل",
+                    Cancel = "إلغاء",
+                    Close = "إغلاق",
+                    Add = "إضافة",
+
+                    FolderAll = "الكل",
+                    FolderAi = "الذكاء الاصطناعي والتقنية",
+                    FolderPodcasts = "البودكاست",
+                    FolderGaming = "الألعاب",
+                    FolderMusic = "الموسيقى",
+
+                    FeedAllVideos = "جميع الفيديوهات",
+                    FeedSubscriptions = "خلاصة الاشتراكات",
+                    FeedTrending = "الفيديوهات الرائجة",
+                    FeedFavorites = "الفيديوهات المفضلة",
+                    FeedWatchLater = "المشاهدة لاحقاً",
+                    FeedHistory = "سجل المشاهدة",
+
                     Download = "تنزيل",
                     Downloading = "جاري التنزيل...",
                     Downloaded = "تم التنزيل",
@@ -913,10 +1228,6 @@ namespace VixzDesktop.Services
             return Translations["EN"];
         }
 
-        /// <summary>
-        /// Translates any relative publication date string (e.g. "2 years ago", "1 month ago", "3 days ago", "5 hours ago", "just now", "streamed 2 days ago")
-        /// into the target language.
-        /// </summary>
         public static string LocalizeRelativeTime(string? raw, string? langCode = null)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
@@ -926,7 +1237,6 @@ namespace VixzDesktop.Services
             var lower = raw.Trim().ToLowerInvariant();
             bool isStreamed = lower.Contains("streamed") || lower.Contains("en vivo") || lower.Contains("direct");
 
-            // Handle "just now" / "moments ago"
             if (lower.Contains("just now") || lower.Contains("moments ago") || lower.Contains("now"))
             {
                 return lang switch
@@ -984,7 +1294,6 @@ namespace VixzDesktop.Services
                 };
             }
 
-            // Regex match for: (number) (second|minute|hour|day|week|month|year)(s) ago
             var match = Regex.Match(lower, @"(\d+)\s*(second|sec|minute|min|hour|hr|day|week|month|year)s?\s*ago", RegexOptions.IgnoreCase);
             if (!match.Success)
             {
@@ -1138,10 +1447,6 @@ namespace VixzDesktop.Services
             };
         }
 
-        /// <summary>
-        /// Translates view count strings (e.g. "1.2M views", "500K views", "1,234 views", "No views")
-        /// into the target language.
-        /// </summary>
         public static string LocalizeViewCount(string? raw, string? langCode = null)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
@@ -1169,7 +1474,6 @@ namespace VixzDesktop.Services
                 };
             }
 
-            // Match number like "1.2M", "500K", "1,234", "100" followed by "views"
             var match = Regex.Match(lower, @"^([\d\.,]+(?:\s*[kmbt])?)\s*(?:views|view)?", RegexOptions.IgnoreCase);
             if (match.Success)
             {

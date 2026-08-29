@@ -751,9 +751,10 @@ namespace VixzDesktop
 
         private async void NavSubscriptions_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             _currentChannel = null;
             SwitchToFeedView();
-            await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
+            await LoadFeedAsync($"🔔 {strings.FeedSubscriptions}", () => YouTubeService.GetSubscribedFeedAsync());
         }
 
         private async void ChannelFilter_Click(object sender, RoutedEventArgs e)
@@ -772,9 +773,10 @@ namespace VixzDesktop
 
         private void RefreshSubscribedChannelsUi()
         {
+            var strings = DesktopLocalizationService.GetStrings();
             SubscribedChannelsList.ItemsSource = null;
             SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
-            SubscribersHeader.Text = $"👤 Subscriptions ({WillRyanProfileData.SubscribedChannels.Count})";
+            SubscribersHeader.Text = $"👤 {strings.Subscriptions} ({WillRyanProfileData.SubscribedChannels.Count})";
             UpdateSubscribeToggleBtn();
         }
 
@@ -790,9 +792,10 @@ namespace VixzDesktop
 
         private void AddChannelBtn_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             var prompt = new Window
             {
-                Title = "➕ Add Subscribed Channel",
+                Title = $"➕ {strings.AddChannel}",
                 Width = 420,
                 Height = 220,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -806,7 +809,7 @@ namespace VixzDesktop
             var sp = new StackPanel { Margin = new Thickness(18) };
             var heading = new TextBlock
             {
-                Text = "➕ Add Channel / Creator",
+                Text = $"➕ {strings.AddChannel}",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
@@ -814,7 +817,7 @@ namespace VixzDesktop
             };
             var desc = new TextBlock
             {
-                Text = "Enter any YouTube channel name or handle to add to your custom subscriptions feed:",
+                Text = strings.AddChannelDesc,
                 FontSize = 11.5,
                 Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
                 TextWrapping = TextWrapping.Wrap,
@@ -834,7 +837,7 @@ namespace VixzDesktop
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancelBtn = new Button
             {
-                Content = "Cancel",
+                Content = strings.Cancel,
                 Style = (Style)FindResource("GlassButton"),
                 Padding = new Thickness(12, 6, 12, 6),
                 Margin = new Thickness(0, 0, 8, 0)
@@ -843,7 +846,7 @@ namespace VixzDesktop
 
             var addBtn = new Button
             {
-                Content = "Add Channel",
+                Content = strings.Add,
                 Style = (Style)FindResource("GlassButton"),
                 Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
                 Foreground = System.Windows.Media.Brushes.Black,
@@ -884,9 +887,10 @@ namespace VixzDesktop
 
         private void ManageChannelsBtn_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             var prompt = new Window
             {
-                Title = "⚙️ Manage Subscriptions",
+                Title = $"⚙️ {strings.ManageSubscriptions}",
                 Width = 480,
                 Height = 440,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -904,7 +908,7 @@ namespace VixzDesktop
 
             var heading = new TextBlock
             {
-                Text = "⚙️ Manage Your Subscribed Channels",
+                Text = strings.ManageSubscriptionsHeading,
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
@@ -922,7 +926,7 @@ namespace VixzDesktop
                 {
                     listStack.Children.Add(new TextBlock
                     {
-                        Text = "No subscribed channels yet. Click '➕' in the sidebar to add your favorites!",
+                        Text = strings.NoSubscriptionsYet,
                         Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
                         FontSize = 12,
                         Margin = new Thickness(0, 30, 0, 0),
@@ -948,7 +952,7 @@ namespace VixzDesktop
 
                     var del = new Button
                     {
-                        Content = "Remove ✕",
+                        Content = $"{strings.Delete} ✕",
                         Style = (Style)FindResource("GlassButton"),
                         FontSize = 10,
                         Padding = new Thickness(8, 3, 8, 3),
@@ -982,7 +986,7 @@ namespace VixzDesktop
             var leftBtns = new StackPanel { Orientation = Orientation.Horizontal };
             var clearAllBtn = new Button
             {
-                Content = "Clear All Channels",
+                Content = strings.ClearAll,
                 Style = (Style)FindResource("GlassButton"),
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentRed"),
                 FontSize = 11,
@@ -999,7 +1003,7 @@ namespace VixzDesktop
 
             var restoreBtn = new Button
             {
-                Content = "Reset Defaults",
+                Content = strings.ResetToDefault,
                 Style = (Style)FindResource("GlassButton"),
                 FontSize = 11,
                 Padding = new Thickness(10, 6, 10, 6)
@@ -1018,7 +1022,7 @@ namespace VixzDesktop
 
             var closeBtn = new Button
             {
-                Content = "Done",
+                Content = strings.Close,
                 Style = (Style)FindResource("GlassButton"),
                 Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
                 Foreground = System.Windows.Media.Brushes.Black,
@@ -1067,31 +1071,34 @@ namespace VixzDesktop
                 return;
             }
 
+            var strings = DesktopLocalizationService.GetStrings();
             SubscribeToggleBtn.Visibility = Visibility.Visible;
             bool isSubbed = WillRyanProfileData.IsSubscribed(_currentVideo.ChannelTitle);
             if (isSubbed)
             {
-                SubscribeToggleBtn.Content = "✓ Subscribed";
+                SubscribeToggleBtn.Content = $"✓ {strings.Subscribed}";
                 SubscribeToggleBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
             }
             else
             {
-                SubscribeToggleBtn.Content = "+ Subscribe";
+                SubscribeToggleBtn.Content = $"+ {strings.Subscribe}";
                 SubscribeToggleBtn.Foreground = System.Windows.Media.Brushes.White;
             }
         }
 
         private async void NavTrending_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             SwitchToFeedView();
-            await LoadFeedAsync("🔥 Trending Videos", () => YouTubeService.SearchVideosAsync("Trending Worldwide", 30));
+            await LoadFeedAsync($"🔥 {strings.FeedTrending}", () => YouTubeService.SearchVideosAsync("Trending Worldwide", 30));
         }
 
         private void NavFavorites_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             _lastFeedScrollOffset = 0;
             SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = "⭐ Favorite Videos";
+            FeedTitleText.Text = $"⭐ {strings.FeedFavorites}";
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
             ApplyCurrentFilters();
             FeedScrollViewer?.ScrollToTop();
@@ -1099,9 +1106,10 @@ namespace VixzDesktop
 
         private void NavWatchLater_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             _lastFeedScrollOffset = 0;
             SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = "🕒 Watch Later Queue";
+            FeedTitleText.Text = $"🕒 {strings.FeedWatchLater}";
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
             ApplyCurrentFilters();
             FeedScrollViewer?.ScrollToTop();
@@ -1109,9 +1117,10 @@ namespace VixzDesktop
 
         private void NavHistory_Click(object sender, RoutedEventArgs e)
         {
+            var strings = DesktopLocalizationService.GetStrings();
             _lastFeedScrollOffset = 0;
             SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = "📜 Watch History";
+            FeedTitleText.Text = $"📜 {strings.FeedHistory}";
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
             ApplyCurrentFilters();
             FeedScrollViewer?.ScrollToTop();
@@ -3696,23 +3705,47 @@ namespace VixzDesktop
             if (ChangeFolderBtn != null) ChangeFolderBtn.Content = strings.ChangeFolder;
             if (OpenFolderBtn != null) OpenFolderBtn.Content = strings.OpenFolder;
 
-            // Update Feed Title
-            if (FeedTitleText != null)
+            // Subscriptions Sidebar Section
+            if (SubscribersHeader != null) SubscribersHeader.Text = $"👤 {strings.Subscriptions} ({WillRyanProfileData.SubscribedChannels.Count})";
+            if (AddChannelBtn != null) AddChannelBtn.ToolTip = strings.AddChannel;
+            if (ManageChannelsBtn != null) ManageChannelsBtn.ToolTip = strings.ManageSubscriptions;
+
+            // Subscription Folder Chips
+            if (FolderChipAll != null) FolderChipAll.Content = strings.FolderAll;
+            if (FolderChipAi != null) FolderChipAi.Content = strings.FolderAi;
+            if (FolderChipPodcasts != null) FolderChipPodcasts.Content = strings.FolderPodcasts;
+            if (FolderChipGaming != null) FolderChipGaming.Content = strings.FolderGaming;
+            if (FolderChipMusic != null) FolderChipMusic.Content = strings.FolderMusic;
+
+            UpdateSubscribeToggleBtn();
+
+            // Update Feed Title dynamically based on current screen
+            if (FeedTitleText != null && !string.IsNullOrWhiteSpace(FeedTitleText.Text))
             {
-                if (FeedTitleText.Text == "Recommended Feed" || 
-                    FeedTitleText.Text == "Feed Recomendado" || 
-                    FeedTitleText.Text == "Flux Recommandé" ||
-                    FeedTitleText.Text == "Empfohlener Feed" ||
-                    FeedTitleText.Text == "Рекомендации" ||
-                    FeedTitleText.Text == "おすすめフィード" ||
-                    FeedTitleText.Text == "맞춤 추천 피드" ||
-                    FeedTitleText.Text == "为你推荐" ||
-                    FeedTitleText.Text == "सुझाई गई फ़ीड" ||
-                    FeedTitleText.Text == "الفيديوهات المقترحة" ||
-                    FeedTitleText.Text == "Feed Consigliato" ||
-                    FeedTitleText.Text == "Início")
+                var cur = FeedTitleText.Text.Trim();
+                if (cur.Contains("Recommended") || cur.Contains("Recomendado") || cur.Contains("Recommandé") || cur.Contains("Empfohlener") || cur.Contains("Рекомендации") || cur.Contains("おすすめ") || cur.Contains("맞춤") || cur.Contains("为你推荐") || cur.Contains("सुझाई") || cur.Contains("المقترحة") || cur.Contains("Consigliato"))
                 {
                     FeedTitleText.Text = strings.RecommendedFeed;
+                }
+                else if (cur.Contains("Subscription") || cur.Contains("Suscrip") || cur.Contains("Abonn") || cur.Contains("Inscri") || cur.Contains("Iscri") || cur.Contains("подписк") || cur.Contains("登録チャンネル") || cur.Contains("구독") || cur.Contains("订阅") || cur.Contains("सदस्यता") || cur.Contains("الاشتراك"))
+                {
+                    FeedTitleText.Text = $"🔔 {strings.FeedSubscriptions}";
+                }
+                else if (cur.Contains("Trending") || cur.Contains("Tendencia") || cur.Contains("Tendances") || cur.Contains("Trends") || cur.Contains("Alta") || cur.Contains("тренде") || cur.Contains("急上昇") || cur.Contains("인기") || cur.Contains("时下") || cur.Contains("ट्रेंडिंग") || cur.Contains("الرائجة"))
+                {
+                    FeedTitleText.Text = $"🔥 {strings.FeedTrending}";
+                }
+                else if (cur.Contains("Favorite") || cur.Contains("Favorit") || cur.Contains("Favori") || cur.Contains("Избран") || cur.Contains("お気に入り") || cur.Contains("좋아요") || cur.Contains("收藏") || cur.Contains("पसंदीदा") || cur.Contains("المفضلة"))
+                {
+                    FeedTitleText.Text = $"⭐ {strings.FeedFavorites}";
+                }
+                else if (cur.Contains("Watch Later") || cur.Contains("Ver Más Tarde") || cur.Contains("regarder plus tard") || cur.Contains("Später ansehen") || cur.Contains("Assistir Mais Tarde") || cur.Contains("Guarda Più Tardi") || cur.Contains("Смотреть позже") || cur.Contains("後で見る") || cur.Contains("나중에") || cur.Contains("稍后") || cur.Contains("المشاهدة لاحقاً"))
+                {
+                    FeedTitleText.Text = $"🕒 {strings.FeedWatchLater}";
+                }
+                else if (cur.Contains("History") || cur.Contains("Historial") || cur.Contains("Historique") || cur.Contains("Verlauf") || cur.Contains("Histórico") || cur.Contains("Cronologia") || cur.Contains("История") || cur.Contains("履歴") || cur.Contains("기록") || cur.Contains("历史") || cur.Contains("इतिहास") || cur.Contains("السجل"))
+                {
+                    FeedTitleText.Text = $"📜 {strings.FeedHistory}";
                 }
             }
 
