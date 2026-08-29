@@ -2288,6 +2288,32 @@ namespace VixzDesktop
             ScreenshotService.OpenFolderInExplorer();
         }
 
+        private void OpenCosmoWhisper_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://cosmowhisper.com",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+
+        private void OpenCosmoSymphony_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare",
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+
         private void UpdateFolderUi()
         {
             var targetDir = ScreenshotService.GetTargetDirectory();
