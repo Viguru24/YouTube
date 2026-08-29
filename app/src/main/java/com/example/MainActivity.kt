@@ -130,12 +130,20 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            YouTubePlayerTheme {
-                MainAppContent(
-                    viewModel = viewModel,
-                    isInPipMode = isInPipMode,
-                    onEnterPip = { enterPipMode() }
-                )
+            val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
+            val strings = remember(currentLang) { com.example.util.LanguageManager.getStrings(currentLang) }
+
+            androidx.compose.runtime.CompositionLocalProvider(
+                com.example.util.LocalAppLanguage provides currentLang,
+                com.example.util.LocalAppStrings provides strings
+            ) {
+                YouTubePlayerTheme {
+                    MainAppContent(
+                        viewModel = viewModel,
+                        isInPipMode = isInPipMode,
+                        onEnterPip = { enterPipMode() }
+                    )
+                }
             }
         }
     }
