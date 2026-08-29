@@ -317,6 +317,8 @@ fun YouTubePlayerView(
 
     // Scrubber drag state (smooth scrubbing without ticker fighting)
     var isDraggingScrubber by remember { mutableStateOf(false) }
+    var showWebSignInModal by remember { mutableStateOf(false) }
+    var extractionRetryTrigger by remember { mutableIntStateOf(0) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
 
     var areControlsVisible by remember { mutableStateOf(true) }

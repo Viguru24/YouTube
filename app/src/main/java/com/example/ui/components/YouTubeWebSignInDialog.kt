@@ -40,7 +40,7 @@ fun YouTubeWebSignInDialog(
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var currentUrl by remember { mutableStateOf("https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/signin") }
+    var currentUrl by remember { mutableStateOf("https://m.youtube.com/signin") }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -118,7 +118,7 @@ fun YouTubeWebSignInDialog(
                             settings.useWideViewPort = true
                             settings.loadWithOverviewMode = true
                             // Use standard mobile Chrome user agent to prevent Google blocking embedded WebViews
-                            settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.127 Mobile Safari/537.36"
+                            settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
                             val cookieManager = CookieManager.getInstance()
                             cookieManager.setAcceptCookie(true)
