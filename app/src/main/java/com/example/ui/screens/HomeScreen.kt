@@ -653,14 +653,26 @@ fun HomeScreen(
                          (vCh.contains("youtube") && subSet.any { sub -> vTitle.contains(sub) })) &&
                         !isVideoHidden(video, allowWatched = true)
                     }.distinctBy { it.youtubeId }
-                } else if (selectedCategory == "⏰ Last 24h") {
-                    candidateList
+                } else if (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("24 hours", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true) || selectedCategory.equals("Today", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val within24h = allCandidate
                         .filter {
                             val timeLower = it.publishedTimeText.lowercase()
-                            (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
-                            !isVideoHidden(it)
+                            val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                            (sec <= 86400L || timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day") || timeLower.contains("just now")) &&
+                            !isVideoHidden(it, allowWatched = true)
                         }
+                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
+
+                    if (within24h.isNotEmpty()) {
+                        within24h
+                    } else {
+                        allCandidate
+                            .filter { !isVideoHidden(it, allowWatched = true) }
+                            .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                            .take(25)
+                    }
                 } else if (selectedCategory != "All") {
                     candidateList
                         .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
@@ -681,17 +693,18 @@ fun HomeScreen(
 
                 // Apply Upload Date Time Selector Filter to Search Results
                 val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
-                    val maxSeconds = when (selectedTimeFilter) {
-                        "Last Hour" -> 3600L
-                        "Today" -> 86400L
-                        "This Week" -> 604800L
-                        "This Month" -> 2592000L
-                        "This Year" -> 31536000L
+                    val maxSeconds = when (selectedTimeFilter.lowercase().trim()) {
+                        "last hour", "1 hour" -> 3600L
+                        "today", "last 24h", "last 24 hours", "24 hours", "24h" -> 86400L
+                        "this week", "week" -> 604800L
+                        "this month", "month" -> 2592000L
+                        "this year", "year" -> 31536000L
                         else -> Long.MAX_VALUE
                     }
                     rawDisplayList.filter { video ->
                         val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
-                        sec <= maxSeconds
+                        val tLower = video.publishedTimeText.lowercase()
+                        sec <= maxSeconds || (maxSeconds == 86400L && (tLower.contains("min") || tLower.contains("hour") || tLower.contains("today") || tLower.contains("1 day") || tLower.contains("just now")))
                     }
                 } else {
                     rawDisplayList

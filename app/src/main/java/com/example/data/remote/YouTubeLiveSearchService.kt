@@ -116,7 +116,7 @@ object YouTubeLiveSearchService {
         val sb = sortBy?.lowercase()?.trim()
         val df = durationFilter?.lowercase()?.trim()
 
-        if (tf == "today" || tf == "last 24h") {
+        if (tf != null && (tf == "today" || tf == "last 24h" || tf == "last 24 hours" || tf == "24 hours" || tf == "24h")) {
             if (sb == "views" || sb == "most viewed") return "CAMSBAgCEAE%3D"
             if (sb == "newest" || sb == "latest") return "CAISAggC"
             return "EgIIAg%3D%3D"
@@ -227,8 +227,18 @@ object YouTubeLiveSearchService {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
-        val topicQueries = when (category) {
-            "Tech & Code" -> listOf(
+        val cleanCat = category.replace(Regex("[^a-zA-Z0-9 &]"), "").trim()
+        val topicQueries = when {
+            category.contains("24h", ignoreCase = true) || category.contains("24 hours", ignoreCase = true) || category.contains("Last 24", ignoreCase = true) || category.equals("Today", ignoreCase = true) -> listOf(
+                "latest breaking news today 2026",
+                "Benny Johnson latest upload",
+                "Tucker Carlson latest",
+                "AI breakthrough news today 2026",
+                "trending topics today 2026",
+                "Lex Fridman podcast latest",
+                "world news update today"
+            )
+            category == "Tech & Code" -> listOf(
                 "Matthew Berman",
                 "AI Revolution",
                 "Two Bit da Vinci",
@@ -240,30 +250,30 @@ object YouTubeLiveSearchService {
                 "Fireship",
                 "Tech AI coding breakthrough news"
             )
-            "Tutorials" -> listOf(
+            category == "Tutorials" -> listOf(
                 "Warren Smith - Secret Scholar",
                 "Julian Goldie SEO",
                 "freeCodeCamp",
                 "How to tutorial guide 2026",
                 "Tutorial coding step by step"
             )
-            "Gaming" -> listOf(
+            category == "Gaming" -> listOf(
                 "ClashIQ",
                 "IGN gaming walkthrough 4K",
                 "Gaming news update today",
                 "PlayStation gameplay 4K"
             )
-            "Music" -> listOf(
+            category == "Music" -> listOf(
                 "Official music video 2026",
                 "Billboard top hits new release",
                 "Vevo official music video"
             )
-            "Focus & Ambient" -> listOf(
+            category == "Focus & Ambient" -> listOf(
                 "Lofi hip hop radio live stream",
                 "Ambient study music deep focus 4K",
                 "Focus ambient soundscape"
             )
-            else -> listOf("$category latest uploads", "$category news today")
+            else -> listOf("$cleanCat latest uploads", "$cleanCat news today")
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
