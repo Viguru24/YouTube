@@ -128,7 +128,7 @@ Installing Vixz takes less than 60 seconds:
 Discover more tools developed by our team:
 
 - 🎙️ **[Cosmo Whisper](https://cosmowhisper.com)** — Ultra-fast, on-device AI speech-to-text, audio transcription, and voice intelligence.
-- 🎵 **[Cosmo Symphony on Microsoft Store](https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare)** — Music, media, and audio processing on Windows.
+- 🎬 **[Cosmo Symphony on Microsoft Store](https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare)** — Video, photo, and media studio editing & organization on Windows.
 
 ---
 

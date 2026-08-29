@@ -356,12 +356,11 @@
                             </Border>
 
                             <!-- Try Our Other Products -->
-                            <Border Background="#14101A" BorderBrush="#358E24AA" BorderThickness="1" CornerRadius="10" Padding="10">
+                            <Border Background="#14101A" BorderBrush="#358E24AA" BorderThickness="1" CornerRadius="8" Padding="8,6" Margin="0,2,0,0">
                                 <StackPanel>
-                                    <TextBlock Text="✨ Try Our Other Products" Foreground="#CE93D8" FontSize="11" FontWeight="Bold"/>
-                                    <TextBlock Text="Explore our AI &amp; media tools" Foreground="{StaticResource TextSecondary}" FontSize="9.5" Margin="0,2,0,6"/>
-                                    <Button Content="🎙️ Cosmo Whisper ↗" Style="{StaticResource GlassButton}" FontSize="10.5" HorizontalContentAlignment="Left" Padding="6,3" Margin="0,0,0,4" ToolTip="Visit CosmoWhisper.com" Click="OpenCosmoWhisper_Click"/>
-                                    <Button Content="🎵 Cosmo Symphony ↗" Style="{StaticResource GlassButton}" FontSize="10.5" HorizontalContentAlignment="Left" Padding="6,3" ToolTip="Get Cosmo Symphony on Microsoft Store" Click="OpenCosmoSymphony_Click"/>
+                                    <TextBlock Text="✨ Other Products" Foreground="#CE93D8" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <Button Content="🎙️ Cosmo Whisper ↗" Style="{StaticResource GlassButton}" FontSize="10" HorizontalContentAlignment="Left" Padding="6,2.5" Margin="0,0,0,3" ToolTip="Cosmo Whisper - AI Speech-to-Text" Click="OpenCosmoWhisper_Click"/>
+                                    <Button Content="🎬 Cosmo Symphony ↗" Style="{StaticResource GlassButton}" FontSize="10" HorizontalContentAlignment="Left" Padding="6,2.5" ToolTip="Cosmo Symphony - Video &amp; Picture Studio on Microsoft Store" Click="OpenCosmoSymphony_Click"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
