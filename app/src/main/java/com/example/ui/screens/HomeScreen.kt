@@ -1,5 +1,11 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -98,6 +104,32 @@ fun HomeScreen(
     val sortCycle = listOf("Default", "Newest", "Oldest")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
     val strings = com.example.util.LocalAppStrings.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Voice to Text Speech Recognizer Launcher
+    val speechRecognizerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spokenText.isNullOrBlank()) {
+                onSearchQueryChanged(spokenText)
+                isSearchExpanded = true
+            }
+        }
+    }
+
+    val launchVoiceSearch: () -> Unit = {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Search YouTube videos or channels...")
+            }
+            speechRecognizerLauncher.launch(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(context, "Voice recognition not available on this device", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.WillRyanProfileData.subscribedChannels
 
@@ -162,12 +194,21 @@ fun HomeScreen(
                                 }
                             },
                             trailingIcon = {
-                                if (localSearchQuery.isNotEmpty()) {
-                                    IconButton(onClick = {
-                                        localSearchQuery = ""
-                                        onSearchQueryChanged("")
-                                    }) {
-                                        Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (localSearchQuery.isNotEmpty()) {
+                                        IconButton(onClick = {
+                                            localSearchQuery = ""
+                                            onSearchQueryChanged("")
+                                        }) {
+                                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                    IconButton(onClick = launchVoiceSearch) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Mic,
+                                            contentDescription = "Voice Search",
+                                            tint = YouTubeRed
+                                        )
                                     }
                                 }
                             },
@@ -307,6 +348,11 @@ fun HomeScreen(
                         // 1. Search 🔍
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
+                        }
+
+                        // 1.5 Voice Search 🎙️
+                        IconButton(onClick = launchVoiceSearch) {
+                            Icon(imageVector = Icons.Filled.Mic, contentDescription = "Voice Search", tint = MaterialTheme.colorScheme.onSurface)
                         }
 
                         // 2. Direct 1-Click Language Switcher 🌐
