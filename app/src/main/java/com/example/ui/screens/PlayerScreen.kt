@@ -244,7 +244,21 @@ fun PlayerScreen(
                         isFavorite = video.isFavorite,
                         isWatchLater = video.isWatchLater,
                         isDisliked = isDisliked,
-                        onDislikeToggle = { onDislikeToggle(video) },
+                        onDislikeToggle = {
+                            onDislikeToggle(video)
+                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+                            val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
+                                playlistVideos[currentIndex + 1]
+                            } else {
+                                otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+                            }
+                            if (next != null) {
+                                onSelectOtherVideo(next)
+                                android.widget.Toast.makeText(context, "Disliked 👎 ➔ Playing Next Video ⏭️", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(context, "Disliked 👎", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         onFavoriteToggle = { onFavoriteToggle(video) },
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },

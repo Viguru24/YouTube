@@ -85,7 +85,7 @@ fun PlayerPauseActionStrip(
 
                 Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
 
-                // 2. 👎 Dislike
+                // 2. 👎 Dislike & Auto-Skip
                 IconButton(
                     onClick = { onDislikeToggle() },
                     modifier = Modifier.size(actionBtnSize)
