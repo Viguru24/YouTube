@@ -308,10 +308,10 @@ fun YouTubePlayerView(
     var showQualitySubMenu by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
 
-    // Auto-hide bottom utility controls: ONLY when actively playing; when PAUSED, keep controls visible permanently
+    // Auto-hide bottom utility controls after 2.0 seconds — only while PLAYING (paused = stays visible)
     LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSettingsMenu, showSpeedSubMenu, showQualitySubMenu) {
         if (areControlsVisible && isPlayingState && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
-            delay(3500L)
+            delay(2000L)
             areControlsVisible = false
         }
     }
@@ -555,11 +555,11 @@ fun YouTubePlayerView(
                             if (willPlay) {
                                 exoPlayer.play()
                                 isPlayingState = true
-                                areControlsVisible = true
+                                areControlsVisible = false // Instant hide when play is pressed
                             } else {
                                 exoPlayer.pause()
                                 isPlayingState = false
-                                areControlsVisible = true
+                                areControlsVisible = true // Show controls when paused (stay forever)
                             }
                             playPauseFeedbackState = willPlay
                             coroutineScope.launch {
