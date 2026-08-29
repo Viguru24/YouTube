@@ -95,6 +95,7 @@ fun HomeScreen(
     var selectedSort by remember { mutableStateOf("Default") }
     val sortCycle = listOf("Default", "Newest", "Oldest")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
+    val strings = com.example.util.LocalAppStrings.current
 
     val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.WillRyanProfileData.subscribedChannels
 
@@ -237,7 +238,7 @@ fun HomeScreen(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else "Subscribed",
+                                            text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else strings.subscribed,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface,
@@ -260,7 +261,7 @@ fun HomeScreen(
                                     modifier = Modifier.heightIn(max = 400.dp).widthIn(min = 220.dp)
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("⭐ All Feed Videos", fontWeight = FontWeight.Bold, color = YouTubeRed) },
+                                        text = { Text("⭐ ${strings.allFeedVideos}", fontWeight = FontWeight.Bold, color = YouTubeRed) },
                                         onClick = {
                                             showSubscribedChannelsMenu = false
                                             onSubscribedChannelSelected("")
@@ -268,7 +269,7 @@ fun HomeScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⚙️ Manage Creators (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                                        text = { Text("⚙️ ${strings.manageCreators} (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                                         onClick = {
                                             showSubscribedChannelsMenu = false
                                             onOpenManageTopicsAndCreators(0)
@@ -359,42 +360,42 @@ fun HomeScreen(
                                 onDismissRequest = { showProfileMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("🌐 App Language (${currentLang.flagEmoji} ${currentLang.nativeName})", fontWeight = FontWeight.SemiBold) },
+                                    text = { Text("🌐 ${strings.appLanguageTitle} (${currentLang.flagEmoji} ${currentLang.nativeName})", fontWeight = FontWeight.SemiBold) },
                                     onClick = {
                                         showProfileMenu = false
                                         showLanguageDialog = true
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("⚙️ Settings & Algorithm", fontWeight = FontWeight.SemiBold) },
+                                    text = { Text("⚙️ ${strings.settingsTitle}", fontWeight = FontWeight.SemiBold) },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenSettings()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In / Account") },
+                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 ${strings.profileAccount}") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenGoogleAuth()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("➕ Add Video URL / ID") },
+                                    text = { Text("➕ ${strings.addVideoUrl}") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenAddVideoDialog()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🔀 Sort Feed (${selectedSort})") },
+                                    text = { Text("🔀 ${strings.sortFeed} (${selectedSort})") },
                                     onClick = {
                                         showProfileMenu = false
                                         showSortSubMenu = true
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🏷️ Manage Topics & Creators") },
+                                    text = { Text("🏷️ ${strings.manageTopicsCreators}") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenManageTopicsAndCreators(0)
