@@ -110,6 +110,7 @@ fun YouTubePlayerView(
 
     // Pinch-to-Zoom & Pan State (1.0x to 5.0x zoom with smooth translation)
     var zoomScale by remember(videoId) { mutableFloatStateOf(1f) }
+    var playerRotationAngle by remember(videoId) { mutableFloatStateOf(0f) }
     var panOffsetX by remember(videoId) { mutableFloatStateOf(0f) }
     var panOffsetY by remember(videoId) { mutableFloatStateOf(0f) }
 
@@ -574,6 +575,7 @@ fun YouTubePlayerView(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
+                    rotationZ = playerRotationAngle
                     scaleX = zoomScale
                     scaleY = zoomScale
                     translationX = panOffsetX
@@ -1136,7 +1138,12 @@ fun YouTubePlayerView(
                 }
             },
             onToggleDebugConsole = { onToggleDebugConsole() },
-            onToggleFullscreen = { onToggleFullscreen() },
+            onToggleFullscreen = {
+                playerRotationAngle = if (playerRotationAngle == 0f) 180f else 0f
+                val msg = if (playerRotationAngle == 180f) "🔄 Flipped 180° Backwards Horizontal" else "📺 Flipped 0° Normal Horizontal"
+                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                onToggleFullscreen()
+            },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
