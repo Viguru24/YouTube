@@ -92,6 +92,14 @@ fun YouTubePlayerView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val isTablet = configuration.screenWidthDp >= 600 || configuration.smallestScreenWidthDp >= 600
+    val bottomBtnSize = if (isTablet) 44.dp else 36.dp
+    val bottomIconSize = if (isTablet) 24.dp else 20.dp
+    val actionBtnSize = if (isTablet) 46.dp else 38.dp
+    val actionIconSize = if (isTablet) 24.dp else 20.dp
+    val timeFontSize = if (isTablet) 14.sp else 12.sp
+    val scrubberHeight = if (isTablet) 18.dp else 14.dp
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
@@ -839,16 +847,18 @@ fun YouTubePlayerView(
                     .align(Alignment.Center)
                     .padding(bottom = 12.dp)
             ) {
+
+
                 Surface(
                     shape = RoundedCornerShape(50.dp),
-                    color = Color.Black.copy(alpha = 0.58f),
-                    shadowElevation = 4.dp,
-                    border = androidx.compose.foundation.BorderStroke(0.75.dp, Color.White.copy(alpha = 0.25f))
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shadowElevation = 6.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(0.dp),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(horizontal = if (isTablet) 12.dp else 8.dp, vertical = if (isTablet) 6.dp else 4.dp)
                     ) {
                         // 1. 👍 Like
                         IconButton(
@@ -856,32 +866,32 @@ fun YouTubePlayerView(
                                 onFavoriteToggle()
                                 android.widget.Toast.makeText(context, if (!isFavorite) "Liked 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(actionBtnSize)
                         ) {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                 contentDescription = "Like",
                                 tint = if (isFavorite) YouTubeRed else Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(actionIconSize)
                             )
                         }
 
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
+                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
 
                         // 2. 👎 Dislike
                         IconButton(
                             onClick = { onDislikeToggle() },
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(actionBtnSize)
                         ) {
                             Icon(
                                 imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                                 contentDescription = "Dislike",
                                 tint = if (isDisliked) YouTubeRed else Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(actionIconSize)
                             )
                         }
 
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
+                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
 
                         // 3. ↗️ Share
                         IconButton(
@@ -893,62 +903,62 @@ fun YouTubePlayerView(
                                 }
                                 context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
                             },
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(actionBtnSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Share,
                                 contentDescription = "Share",
                                 tint = Color.White,
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(actionIconSize)
                             )
                         }
 
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
+                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
 
                         // 4. ✨ AI Summary
                         IconButton(
                             onClick = { onAiSummaryClick() },
                             modifier = Modifier
-                                .size(34.dp)
-                                .background(Color(0xFF8E24AA).copy(alpha = 0.28f), shape = CircleShape)
+                                .size(actionBtnSize)
+                                .background(Color(0xFF8E24AA).copy(alpha = 0.35f), shape = CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.AutoAwesome,
                                 contentDescription = "AI Summary",
                                 tint = Color(0xFFCE93D8),
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(actionIconSize)
                             )
                         }
 
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
+                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
 
                         // 5. ⬇️ Download
                         IconButton(
                             onClick = {
                                 if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
                             },
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(actionBtnSize)
                         ) {
                             if (isDownloaded) {
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = "Downloaded",
                                     tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(actionIconSize)
                                 )
                             } else if (downloadProgress in 1..99) {
                                 CircularProgressIndicator(
                                     progress = { downloadProgress / 100f },
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(actionIconSize),
                                     color = YouTubeRed,
-                                    strokeWidth = 2.dp
+                                    strokeWidth = 2.5.dp
                                 )
                             } else {
                                 Icon(
                                     imageVector = Icons.Filled.Download,
                                     contentDescription = "Download Video",
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(actionIconSize)
                                 )
                             }
                         }
@@ -966,15 +976,20 @@ fun YouTubePlayerView(
         ) {
             val isLiveStream = exoPlayer.isCurrentMediaItemLive
 
+
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
                         androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
                         )
                     )
-                    .padding(horizontal = 8.dp, vertical = 1.dp)
+                    .padding(
+                        horizontal = if (isTablet) 18.dp else 10.dp,
+                        vertical = if (isTablet) 8.dp else 3.dp
+                    )
             ) {
                 // 1. YouTube Red Scrubber Slider
                 if (!isLiveStream && totalDurationMs > 0) {
@@ -1024,39 +1039,39 @@ fun YouTubePlayerView(
                         // On-Screen Direct Star (Favorite) Button
                         IconButton(
                             onClick = { onFavoriteToggle() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
                                 contentDescription = "Favorite",
                                 tint = if (isFavorite) com.example.ui.theme.GoldStar else Color.White,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(bottomIconSize)
                             )
                         }
 
                         // On-Screen Direct Save to Subject Button
                         IconButton(
                             onClick = { onSaveToSubject() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Folder,
                                 contentDescription = "Save to Subject",
                                 tint = Color.White,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(bottomIconSize)
                             )
                         }
 
                         // On-Screen Direct Watch Later Button
                         IconButton(
                             onClick = { onWatchLaterToggle() },
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Filled.AccessTime,
                                 contentDescription = "Watch Later",
                                 tint = if (isWatchLater) YouTubeRed else Color.White,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(bottomIconSize)
                             )
                         }
 
@@ -1084,8 +1099,8 @@ fun YouTubePlayerView(
                             Text(
                                 text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
                                 color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
+                                fontSize = timeFontSize,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -1178,20 +1193,20 @@ fun YouTubePlayerView(
                         // 1. Screenshot Button [📸]
                         IconButton(
                             onClick = { takeScreenshot() },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.CameraAlt,
                                 contentDescription = "Screenshot",
                                 tint = Color.White,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(bottomIconSize)
                             )
                         }
 
                         // 2. Screenshot Folder Switcher [📁]
                         IconButton(
                             onClick = { showScreenshotFolderDialog = true },
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.FolderOpen,
@@ -1210,7 +1225,7 @@ fun YouTubePlayerView(
                                 val msg = if (next) "▶️ Autoplay is ON (Auto-advance next video)" else "⏸️ Autoplay is OFF"
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Box(
@@ -1252,14 +1267,14 @@ fun YouTubePlayerView(
                                     showSleepTimerDialog = !showSleepTimerDialog
                                 }
                             },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
                                     imageVector = Icons.Filled.Bedtime,
                                     contentDescription = "Sleep Timer",
                                     tint = if (isSleepTimerActive || wasPausedBySleepTimer) com.example.ui.theme.GoldStar else Color.White,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(bottomIconSize)
                                 )
                                 if (isSleepTimerActive || wasPausedBySleepTimer) {
                                     Box(
@@ -1280,14 +1295,14 @@ fun YouTubePlayerView(
                                 val msg = if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                             },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(
                                     imageVector = Icons.Filled.ClosedCaption,
                                     contentDescription = "Subtitles",
                                     tint = if (captionsEnabled) YouTubeRed else Color.White,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(bottomIconSize)
                                 )
                                 if (captionsEnabled) {
                                     Box(
@@ -1310,13 +1325,13 @@ fun YouTubePlayerView(
                                 }
                                 context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
                             },
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(bottomBtnSize)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Share,
                                 contentDescription = "Share Video",
                                 tint = Color.White,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(bottomIconSize)
                             )
                         }
 
@@ -1326,13 +1341,13 @@ fun YouTubePlayerView(
                                 onClick = {
                                     showSettingsMenu = true
                                 },
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(bottomBtnSize)
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Settings,
                                     contentDescription = "Settings",
                                     tint = Color.White,
-                                    modifier = Modifier.size(19.dp)
+                                    modifier = Modifier.size(bottomIconSize)
                                 )
                             }
 
@@ -1478,7 +1493,7 @@ fun YouTubePlayerView(
                         // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
                         IconButton(
                             onClick = { onToggleFullscreen() },
-                            modifier = Modifier.size(30.dp).testTag("fullscreen_toggle_btn")
+                            modifier = Modifier.size(bottomBtnSize).testTag("fullscreen_toggle_btn")
                         ) {
                             Icon(
                                 imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
@@ -1798,7 +1813,7 @@ fun YouTubePlayerView(
                         imageVector = if (gestureBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (gestureBrightness > 0.25f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow,
                         contentDescription = "Brightness",
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(bottomBtnSize)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Box(
@@ -1850,7 +1865,7 @@ fun YouTubePlayerView(
                         imageVector = if (gestureVolumeFraction > 0.5f) Icons.Filled.VolumeUp else if (gestureVolumeFraction > 0.05f) Icons.Filled.VolumeDown else Icons.Filled.VolumeMute,
                         contentDescription = "Volume",
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(bottomBtnSize)
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Box(
@@ -2175,7 +2190,7 @@ fun YouTubePlayerView(
                                                         activeScreenshotFolder = "Default"
                                                     }
                                                 },
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(bottomIconSize)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Delete,
