@@ -553,170 +553,7 @@ fun YouTubePlayerView(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clipToBounds()
-            .pointerInput(videoId, zoomScale) {
-                if (zoomScale <= 1.05f) {
-                    var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
-                    var middleTotalDragY = 0f
-                    val swipeThresholdPx = 70f * density
-
-                    detectVerticalDragGestures(
-                        onDragStart = { offset ->
-                            val w = size.width.toFloat()
-                            middleTotalDragY = 0f
-                            if (offset.x < w * 0.46f) {
-                                // Left Side: Screen Brightness
-                                dragZone = 1
-                                val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
-                                gestureBrightness = if (currentLpBrightness >= 0f) {
-                                    currentLpBrightness
-                                } else {
-                                    try {
-                                        android.provider.Settings.System.getInt(
-                                            context.contentResolver,
-                                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                                            128
-                                        ) / 255f
-                                    } catch (e: Exception) { 0.5f }
-                                }
-                                isAdjustingBrightness = true
-                                isAdjustingVolume = false
-                            } else if (offset.x > w * 0.54f) {
-                                // Right Side: Device Volume (extends all the way to the right edge)
-                                dragZone = 2
-                                val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                                gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume.toFloat()
-                                isAdjustingVolume = true
-                                isAdjustingBrightness = false
-                            } else {
-                                // Middle (Next / Previous Video)
-                                dragZone = 3
-                                isAdjustingBrightness = false
-                                isAdjustingVolume = false
-                            }
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            when (dragZone) {
-                                1 -> {
-                                    val delta = -dragAmount / (size.height * 0.55f)
-                                    val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
-                                    gestureBrightness = newBrightness
-                                    activity?.let { act ->
-                                        val lp = act.window.attributes
-                                        lp.screenBrightness = newBrightness
-                                        act.window.attributes = lp
-                                    }
-                                }
-                                2 -> {
-                                    val delta = -dragAmount / (size.height * 0.55f)
-                                    val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
-                                    gestureVolumeFraction = newVolFraction
-                                    val targetVol = kotlin.math.round(newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
-                                    try {
-                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
-                                    } catch (e: Exception) { }
-                                }
-                                3 -> {
-                                    middleTotalDragY += dragAmount
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            if (dragZone == 3) {
-                                if (middleTotalDragY < -swipeThresholdPx) {
-                                    swipeVideoFeedback = "Next Video ⏭️"
-                                    onNextVideo()
-                                } else if (middleTotalDragY > swipeThresholdPx) {
-                                    swipeVideoFeedback = "Previous Video ⏮️"
-                                    onPreviousVideo()
-                                }
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(900)
-                                    swipeVideoFeedback = null
-                                }
-                            } else {
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(1200)
-                                    isAdjustingBrightness = false
-                                    isAdjustingVolume = false
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(800)
-                                isAdjustingBrightness = false
-                                isAdjustingVolume = false
-                            }
-                        }
-                    )
-                }
-            }
-            .pointerInput(videoId, zoomScale) {
-                detectTapGestures(
-                    onTap = {
-                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
-                            val willPlay = !exoPlayer.isPlaying
-                            if (willPlay) {
-                                exoPlayer.play()
-                                isPlayingState = true
-                                areControlsVisible = false // Instant hide when play is pressed
-                            } else {
-                                exoPlayer.pause()
-                                isPlayingState = false
-                                areControlsVisible = true // Show controls when paused (stay forever)
-                            }
-                        }
-                    },
-                    onDoubleTap = { offset ->
-                        val w = size.width.toFloat()
-                        if (offset.x < w * 0.38f) {
-                            // Double Tap Left: Fast Rewind 10s
-                            val currentPos = exoPlayer.currentPosition
-                            val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
-                            exoPlayer.seekTo(newPos)
-                            forwardRewindFeedback = "⏪ -10s"
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(750)
-                                forwardRewindFeedback = null
-                            }
-                        } else if (offset.x > w * 0.62f) {
-                            // Double Tap Right: Fast Forward 10s
-                            val currentPos = exoPlayer.currentPosition
-                            val dur = if (totalDurationMs > 0) totalDurationMs else Long.MAX_VALUE
-                            val newPos = (currentPos + 10_000L).coerceAtMost(dur)
-                            exoPlayer.seekTo(newPos)
-                            forwardRewindFeedback = "⏩ +10s"
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(750)
-                                forwardRewindFeedback = null
-                            }
-                        } else {
-                            // Double Tap Center: Fullscreen Toggle
-                            onToggleFullscreen()
-                        }
-                    }
-                )
-            }
-            .pointerInput(videoId) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    if (zoom != 1f || (zoomScale > 1f && (pan.x != 0f || pan.y != 0f))) {
-                        val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
-                        zoomScale = newScale
-                        if (newScale > 1f) {
-                            val maxPanX = (size.width * (newScale - 1f)) / 2f
-                            val maxPanY = (size.height * (newScale - 1f)) / 2f
-                            panOffsetX = (panOffsetX + pan.x * newScale).coerceIn(-maxPanX, maxPanX)
-                            panOffsetY = (panOffsetY + pan.y * newScale).coerceIn(-maxPanY, maxPanY)
-                        } else {
-                            panOffsetX = 0f
-                            panOffsetY = 0f
-                            zoomScale = 1f
-                        }
-                    }
-                }
-            },
+            .clipToBounds(),
         contentAlignment = Alignment.Center
     ) {
         // Video Surface Container with Pinch-to-Zoom and Pan Graphics Layer
@@ -1732,6 +1569,188 @@ fun YouTubePlayerView(
                     }
                 }
             }
+        }
+
+        // Dedicated Gesture Zones (Left = Brightness, Right = Volume, Global = Tap & Double-Tap)
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Left Half: Screen Brightness Zone
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.48f)
+                    .align(Alignment.CenterStart)
+                    .pointerInput(videoId) {
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                isAdjustingBrightness = true
+                                isAdjustingVolume = false
+                                val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+                                gestureBrightness = if (currentLpBrightness in 0.01f..1.0f) {
+                                    currentLpBrightness
+                                } else {
+                                    try {
+                                        android.provider.Settings.System.getInt(
+                                            context.contentResolver,
+                                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                                            128
+                                        ) / 255f
+                                    } catch (e: Exception) { 0.5f }
+                                }
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                isAdjustingBrightness = true
+                                val delta = -dragAmount / (size.height * 0.42f)
+                                val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
+                                gestureBrightness = newBrightness
+                                activity?.let { act ->
+                                    val lp = act.window.attributes
+                                    lp.screenBrightness = newBrightness
+                                    act.window.attributes = lp
+                                }
+                            },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    isAdjustingBrightness = false
+                                }
+                            },
+                            onDragCancel = {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(800)
+                                    isAdjustingBrightness = false
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(videoId) {
+                        detectTapGestures(
+                            onTap = {
+                                if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                                    val willPlay = !exoPlayer.isPlaying
+                                    if (willPlay) {
+                                        exoPlayer.play()
+                                        isPlayingState = true
+                                        areControlsVisible = false
+                                    } else {
+                                        exoPlayer.pause()
+                                        isPlayingState = false
+                                        areControlsVisible = true
+                                    }
+                                }
+                            },
+                            onDoubleTap = {
+                                val currentPos = exoPlayer.currentPosition
+                                val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
+                                exoPlayer.seekTo(newPos)
+                                forwardRewindFeedback = "⏪ -10s"
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(750)
+                                    forwardRewindFeedback = null
+                                }
+                            }
+                        )
+                    }
+            )
+
+            // Right Half: Device Volume Zone
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.48f)
+                    .align(Alignment.CenterEnd)
+                    .pointerInput(videoId) {
+                        detectVerticalDragGestures(
+                            onDragStart = {
+                                isAdjustingVolume = true
+                                isAdjustingBrightness = false
+                                val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                                gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume.toFloat()
+                            },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                isAdjustingVolume = true
+                                val delta = -dragAmount / (size.height * 0.42f)
+                                val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
+                                gestureVolumeFraction = newVolFraction
+                                val targetVol = kotlin.math.round(newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
+                                try {
+                                    audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
+                                } catch (e: Exception) { }
+                            },
+                            onDragEnd = {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    isAdjustingVolume = false
+                                }
+                            },
+                            onDragCancel = {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(800)
+                                    isAdjustingVolume = false
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(videoId) {
+                        detectTapGestures(
+                            onTap = {
+                                if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                                    val willPlay = !exoPlayer.isPlaying
+                                    if (willPlay) {
+                                        exoPlayer.play()
+                                        isPlayingState = true
+                                        areControlsVisible = false
+                                    } else {
+                                        exoPlayer.pause()
+                                        isPlayingState = false
+                                        areControlsVisible = true
+                                    }
+                                }
+                            },
+                            onDoubleTap = {
+                                val currentPos = exoPlayer.currentPosition
+                                val dur = if (totalDurationMs > 0) totalDurationMs else Long.MAX_VALUE
+                                val newPos = (currentPos + 10_000L).coerceAtMost(dur)
+                                exoPlayer.seekTo(newPos)
+                                forwardRewindFeedback = "⏩ +10s"
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(750)
+                                    forwardRewindFeedback = null
+                                }
+                            }
+                        )
+                    }
+            )
+
+            // Center Strip (Tap for Controls & Double-Tap Fullscreen)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.04f)
+                    .align(Alignment.Center)
+                    .pointerInput(videoId) {
+                        detectTapGestures(
+                            onTap = {
+                                if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                                    val willPlay = !exoPlayer.isPlaying
+                                    if (willPlay) {
+                                        exoPlayer.play()
+                                        isPlayingState = true
+                                        areControlsVisible = false
+                                    } else {
+                                        exoPlayer.pause()
+                                        isPlayingState = false
+                                        areControlsVisible = true
+                                    }
+                                }
+                            },
+                            onDoubleTap = {
+                                onToggleFullscreen()
+                            }
+                        )
+                    }
+            )
         }
 
         // Left Side Screen Brightness Gesture HUD Overlay
