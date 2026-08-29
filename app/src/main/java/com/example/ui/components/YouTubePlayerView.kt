@@ -548,6 +548,105 @@ fun YouTubePlayerView(
             .background(Color.Black)
             .clipToBounds()
             .pointerInput(videoId, zoomScale) {
+                if (zoomScale <= 1.05f) {
+                    var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
+                    var middleTotalDragY = 0f
+                    val swipeThresholdPx = 70f * density
+
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            val w = size.width.toFloat()
+                            middleTotalDragY = 0f
+                            if (offset.x < w * 0.46f) {
+                                // Left Side: Screen Brightness
+                                dragZone = 1
+                                val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
+                                gestureBrightness = if (currentLpBrightness >= 0f) {
+                                    currentLpBrightness
+                                } else {
+                                    try {
+                                        android.provider.Settings.System.getInt(
+                                            context.contentResolver,
+                                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                                            128
+                                        ) / 255f
+                                    } catch (e: Exception) { 0.5f }
+                                }
+                                isAdjustingBrightness = true
+                                isAdjustingVolume = false
+                            } else if (offset.x > w * 0.54f) {
+                                // Right Side: Device Volume (extends all the way to the right edge)
+                                dragZone = 2
+                                val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                                gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume.toFloat()
+                                isAdjustingVolume = true
+                                isAdjustingBrightness = false
+                            } else {
+                                // Middle (Next / Previous Video)
+                                dragZone = 3
+                                isAdjustingBrightness = false
+                                isAdjustingVolume = false
+                            }
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            when (dragZone) {
+                                1 -> {
+                                    val delta = -dragAmount / (size.height * 0.55f)
+                                    val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
+                                    gestureBrightness = newBrightness
+                                    activity?.let { act ->
+                                        val lp = act.window.attributes
+                                        lp.screenBrightness = newBrightness
+                                        act.window.attributes = lp
+                                    }
+                                }
+                                2 -> {
+                                    val delta = -dragAmount / (size.height * 0.55f)
+                                    val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
+                                    gestureVolumeFraction = newVolFraction
+                                    val targetVol = kotlin.math.round(newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
+                                    try {
+                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
+                                    } catch (e: Exception) { }
+                                }
+                                3 -> {
+                                    middleTotalDragY += dragAmount
+                                }
+                            }
+                        },
+                        onDragEnd = {
+                            if (dragZone == 3) {
+                                if (middleTotalDragY < -swipeThresholdPx) {
+                                    swipeVideoFeedback = "Next Video ⏭️"
+                                    onNextVideo()
+                                } else if (middleTotalDragY > swipeThresholdPx) {
+                                    swipeVideoFeedback = "Previous Video ⏮️"
+                                    onPreviousVideo()
+                                }
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(900)
+                                    swipeVideoFeedback = null
+                                }
+                            } else {
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(1200)
+                                    isAdjustingBrightness = false
+                                    isAdjustingVolume = false
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(800)
+                                isAdjustingBrightness = false
+                                isAdjustingVolume = false
+                            }
+                        }
+                    )
+                }
+            }
+            .pointerInput(videoId, zoomScale) {
                 detectTapGestures(
                     onTap = {
                         if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
@@ -614,105 +713,6 @@ fun YouTubePlayerView(
                             zoomScale = 1f
                         }
                     }
-                }
-            }
-            .pointerInput(videoId, zoomScale) {
-                if (zoomScale <= 1.05f) {
-                    var dragZone = 0 // 1 = Left (Brightness), 2 = Right (Volume), 3 = Middle (Next/Prev Video)
-                    var middleTotalDragY = 0f
-                    val swipeThresholdPx = 70f * density
-
-                    detectVerticalDragGestures(
-                        onDragStart = { offset ->
-                            val w = size.width.toFloat()
-                            middleTotalDragY = 0f
-                            if (offset.x < w * 0.28f) {
-                                // Far Left (Brightness)
-                                dragZone = 1
-                                val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
-                                gestureBrightness = if (currentLpBrightness >= 0f) {
-                                    currentLpBrightness
-                                } else {
-                                    try {
-                                        android.provider.Settings.System.getInt(
-                                            context.contentResolver,
-                                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                                            128
-                                        ) / 255f
-                                    } catch (e: Exception) { 0.5f }
-                                }
-                                isAdjustingBrightness = true
-                                isAdjustingVolume = false
-                            } else if (offset.x > w * 0.72f) {
-                                // Far Right (Volume)
-                                dragZone = 2
-                                val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                                gestureVolumeFraction = currentVol.toFloat() / maxAudioVolume
-                                isAdjustingVolume = true
-                                isAdjustingBrightness = false
-                            } else {
-                                // Middle (Next / Previous Video)
-                                dragZone = 3
-                                isAdjustingBrightness = false
-                                isAdjustingVolume = false
-                            }
-                        },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            when (dragZone) {
-                                1 -> {
-                                    val delta = -dragAmount / (size.height * 0.55f)
-                                    val newBrightness = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
-                                    gestureBrightness = newBrightness
-                                    activity?.let { act ->
-                                        val lp = act.window.attributes
-                                        lp.screenBrightness = newBrightness
-                                        act.window.attributes = lp
-                                    }
-                                }
-                                2 -> {
-                                    val delta = -dragAmount / (size.height * 0.55f)
-                                    val newVolFraction = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
-                                    gestureVolumeFraction = newVolFraction
-                                    val targetVol = (newVolFraction * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
-                                    try {
-                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
-                                    } catch (e: Exception) { }
-                                }
-                                3 -> {
-                                    middleTotalDragY += dragAmount
-                                }
-                            }
-                        },
-                        onDragEnd = {
-                            if (dragZone == 3) {
-                                if (middleTotalDragY < -swipeThresholdPx) {
-                                    swipeVideoFeedback = "Next Video ⏭️"
-                                    onNextVideo()
-                                } else if (middleTotalDragY > swipeThresholdPx) {
-                                    swipeVideoFeedback = "Previous Video ⏮️"
-                                    onPreviousVideo()
-                                }
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(900)
-                                    swipeVideoFeedback = null
-                                }
-                            } else {
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(1200)
-                                    isAdjustingBrightness = false
-                                    isAdjustingVolume = false
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(800)
-                                isAdjustingBrightness = false
-                                isAdjustingVolume = false
-                            }
-                        }
-                    )
                 }
             },
         contentAlignment = Alignment.Center
