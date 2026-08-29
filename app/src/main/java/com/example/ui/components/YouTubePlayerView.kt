@@ -531,6 +531,7 @@ fun YouTubePlayerView(
     var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
     var swipeVideoFeedback by remember { mutableStateOf<String?>(null) }
     var playPauseFeedbackState by remember { mutableStateOf<Boolean?>(null) }
+    var speedFeedbackState by remember { mutableStateOf<String?>(null) }
 
     Box(
         modifier = modifier
@@ -588,9 +589,12 @@ fun YouTubePlayerView(
                     }
                 )
             }
-            .pointerInput(videoId) {
+            .pointerInput(videoId, selectedSpeed, zoomScale) {
+                var twoFingerAccumulatedY = 0f
                 detectTransformGestures { _, pan, zoom, _ ->
-                    if (zoom != 1f || (zoomScale > 1f && (pan.x != 0f || pan.y != 0f))) {
+                    if (kotlin.math.abs(zoom - 1f) > 0.05f) {
+                        // Pinch to zoom
+                        twoFingerAccumulatedY = 0f
                         val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
                         zoomScale = newScale
                         if (newScale > 1f) {
@@ -602,6 +606,40 @@ fun YouTubePlayerView(
                             panOffsetX = 0f
                             panOffsetY = 0f
                             zoomScale = 1f
+                        }
+                    } else if (zoomScale > 1.05f && (kotlin.math.abs(pan.x) > kotlin.math.abs(pan.y) * 1.5f)) {
+                        // Horizontal pan while zoomed in
+                        val maxPanX = (size.width * (zoomScale - 1f)) / 2f
+                        panOffsetX = (panOffsetX + pan.x * zoomScale).coerceIn(-maxPanX, maxPanX)
+                    } else {
+                        // Two-finger vertical swipe to speed up / slow down
+                        twoFingerAccumulatedY += pan.y
+                        val threshold = 35f * density
+                        val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f)
+                        if (twoFingerAccumulatedY < -threshold) {
+                            twoFingerAccumulatedY = 0f
+                            val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
+                            if (next != selectedSpeed) {
+                                selectedSpeed = next
+                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(next)
+                                speedFeedbackState = "⚡ ${next}x Speed"
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(850)
+                                    speedFeedbackState = null
+                                }
+                            }
+                        } else if (twoFingerAccumulatedY > threshold) {
+                            twoFingerAccumulatedY = 0f
+                            val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
+                            if (prev != selectedSpeed) {
+                                selectedSpeed = prev
+                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(prev)
+                                speedFeedbackState = "🐢 ${prev}x Speed"
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(850)
+                                    speedFeedbackState = null
+                                }
+                            }
                         }
                     }
                 }
@@ -1707,6 +1745,39 @@ fun YouTubePlayerView(
                     fontSize = 17.sp,
                     modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
                 )
+            }
+        }
+
+        // Center Speed Adjustment 2-Finger Swipe Gesture HUD Overlay
+        androidx.compose.animation.AnimatedVisibility(
+            visible = speedFeedbackState != null,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF1E1E1E).copy(alpha = 0.92f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.75f))
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Speed,
+                        contentDescription = null,
+                        tint = YouTubeRed,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = speedFeedbackState ?: "",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
             }
         }
 
