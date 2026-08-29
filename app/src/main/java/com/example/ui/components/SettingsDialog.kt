@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,7 +33,7 @@ import com.example.ui.theme.YouTubeRed
 import com.example.util.LanguageManager
 import com.example.util.LocalAppStrings
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
     areAdvertsEnabled: Boolean,
@@ -272,9 +273,9 @@ fun SettingsDialog(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Spacer(modifier = Modifier.height(6.dp))
-                            FlowRow(
+                            Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                             ) {
                                 FilterChip(
                                     selected = selectedAiProvider == "gemini",
@@ -453,9 +454,9 @@ fun SettingsDialog(
                                     valueRange = 0.05f..0.60f,
                                     colors = SliderDefaults.colors(thumbColor = YouTubeRed, activeTrackColor = YouTubeRed)
                                 )
-                                FlowRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                                 ) {
                                     FilterChip(
                                         selected = discoveryPercent <= 15,
@@ -485,9 +486,9 @@ fun SettingsDialog(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
-                                FlowRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                                 ) {
                                     FilterChip(
                                         selected = algorithmSettings.freshnessDecay == "Fast",
@@ -523,9 +524,9 @@ fun SettingsDialog(
                                     fontSize = 11.sp
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                FlowRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                                 ) {
                                     FilterChip(
                                         selected = !autoPipEnabled,
@@ -556,9 +557,9 @@ fun SettingsDialog(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                FlowRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                                 ) {
                                     FilterChip(
                                         selected = algorithmSettings.downloadResolution == "1080p",
@@ -652,9 +653,9 @@ fun SettingsDialog(
                             }
                             if (algorithmSettings.blockedKeywords.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(8.dp))
-                                FlowRow(
+                                Row(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                                 ) {
                                     algorithmSettings.blockedKeywords.forEach { kw ->
                                         FilterChip(
