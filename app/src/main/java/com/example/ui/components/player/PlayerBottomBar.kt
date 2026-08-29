@@ -447,14 +447,16 @@ fun PlayerBottomBar(
 
                     // 7. Screen Rotation / Horizontal Flip Toggle [🔄 / ⛶]
                     IconButton(
-                        onClick = onToggleFullscreen,
-                        modifier = Modifier.size(bottomBtnSize)
+                        onClick = { onToggleFullscreen() },
+                        modifier = Modifier
+                            .size(if (isTablet) 44.dp else 36.dp)
+                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.ScreenRotation,
                             contentDescription = "Turn Screen Horizontal / Vertical",
                             tint = Color.White,
-                            modifier = Modifier.size(bottomIconSize + 2.dp)
+                            modifier = Modifier.size(if (isTablet) 24.dp else 20.dp)
                         )
                     }
                 }

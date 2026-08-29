@@ -119,17 +119,33 @@ fun PlayerScreen(
         }
     }
 
-        val toggleFullscreen: () -> Unit = {
+            val toggleFullscreen: () -> Unit = {
         val act = context.findActivity()
         if (act != null) {
+            val currentOrientation = act.requestedOrientation
             val isCurrentLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-            if (isCurrentLand) {
-                isMaximized = false
-                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            } else {
-                isMaximized = true
-                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+            val nextOrientation = when {
+                currentOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> {
+                    android.widget.Toast.makeText(context, "🔄 Reverse Horizontal (180°)", android.widget.Toast.LENGTH_SHORT).show()
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                }
+                currentOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> {
+                    android.widget.Toast.makeText(context, "📱 Portrait Mode", android.widget.Toast.LENGTH_SHORT).show()
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+                isCurrentLand -> {
+                    android.widget.Toast.makeText(context, "🔄 Reverse Horizontal (180°)", android.widget.Toast.LENGTH_SHORT).show()
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                }
+                else -> {
+                    android.widget.Toast.makeText(context, "📺 Landscape (Horizontal)", android.widget.Toast.LENGTH_SHORT).show()
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
             }
+
+            isMaximized = (nextOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+            act.requestedOrientation = nextOrientation
         } else {
             isMaximized = !isMaximized
         }
