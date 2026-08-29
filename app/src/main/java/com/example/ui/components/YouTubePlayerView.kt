@@ -1010,183 +1010,117 @@ fun YouTubePlayerView(
             }
         }
 
-        // Center White Action Card: Thumbs Up 👍, Thumbs Down 👎, Share ↗️, AI Summary ✨, Download ⬇️
+        // Sleek See-Through Frosted Action Strip: 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download
         if (!isPlayingState && !isLoading) {
             androidx.compose.animation.AnimatedVisibility(
                 visible = !isPlayingState && shouldShowControls,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.88f),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.88f),
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.92f),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.92f),
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .padding(bottom = 20.dp)
+                    .padding(bottom = 12.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(26.dp),
-                    color = Color.White.copy(alpha = 0.96f),
-                    shadowElevation = 10.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE0E0E0))
+                    shape = RoundedCornerShape(50.dp),
+                    color = Color.Black.copy(alpha = 0.58f),
+                    shadowElevation = 4.dp,
+                    border = androidx.compose.foundation.BorderStroke(0.75.dp, Color.White.copy(alpha = 0.25f))
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(0.dp),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                     ) {
-                        // 1. Thumbs Up 👍
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(18.dp))
-                                .clickable {
-                                    onFavoriteToggle()
-                                    android.widget.Toast.makeText(context, if (!isFavorite) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                                .background(if (isFavorite) YouTubeRed.copy(alpha = 0.14f) else Color.Transparent)
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        // 1. 👍 Like
+                        IconButton(
+                            onClick = {
+                                onFavoriteToggle()
+                                android.widget.Toast.makeText(context, if (!isFavorite) "Liked 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                 contentDescription = "Like",
-                                tint = if (isFavorite) YouTubeRed else Color(0xFF1E1E1E),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isFavorite) "Liked" else "Like",
-                                color = if (isFavorite) YouTubeRed else Color(0xFF1E1E1E),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                tint = if (isFavorite) YouTubeRed else Color.White,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(20.dp)
-                                .background(Color(0xFFE0E0E0))
-                        )
+                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
 
-                        // 2. Thumbs Down 👎
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(18.dp))
-                                .clickable {
-                                    onDislikeToggle()
-                                }
-                                .background(if (isDisliked) YouTubeRed.copy(alpha = 0.14f) else Color.Transparent)
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                        // 2. 👎 Dislike
+                        IconButton(
+                            onClick = { onDislikeToggle() },
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                                 contentDescription = "Dislike",
-                                tint = if (isDisliked) YouTubeRed else Color(0xFF1E1E1E),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isDisliked) "Disliked" else "Dislike",
-                                color = if (isDisliked) YouTubeRed else Color(0xFF1E1E1E),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                tint = if (isDisliked) YouTubeRed else Color.White,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(20.dp)
-                                .background(Color(0xFFE0E0E0))
-                        )
+                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
 
-                        // 3. Share ↗️
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(18.dp))
-                                .clickable {
-                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                        putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                    }
-                                    context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
+                        // 3. ↗️ Share
+                        IconButton(
+                            onClick = {
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
+                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
                                 }
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
+                            },
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Share,
                                 contentDescription = "Share",
-                                tint = Color(0xFF1E1E1E),
-                                modifier = Modifier.size(19.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Share",
-                                color = Color(0xFF1E1E1E),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                tint = Color.White,
+                                modifier = Modifier.size(17.dp)
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(20.dp)
-                                .background(Color(0xFFE0E0E0))
-                        )
+                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
 
                         // 4. ✨ AI Summary
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        IconButton(
+                            onClick = { onAiSummaryClick() },
                             modifier = Modifier
-                                .clip(RoundedCornerShape(18.dp))
-                                .clickable { onAiSummaryClick() }
-                                .background(Color(0xFF8E24AA).copy(alpha = 0.12f))
-                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .size(34.dp)
+                                .background(Color(0xFF8E24AA).copy(alpha = 0.28f), shape = CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.AutoAwesome,
                                 contentDescription = "AI Summary",
-                                tint = Color(0xFF8E24AA),
-                                modifier = Modifier.size(19.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "AI Summary",
-                                color = Color(0xFF8E24AA),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
+                                tint = Color(0xFFCE93D8),
+                                modifier = Modifier.size(17.dp)
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .width(1.dp)
-                                .height(20.dp)
-                                .background(Color(0xFFE0E0E0))
-                        )
+                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color.White.copy(alpha = 0.22f)))
 
                         // 5. ⬇️ Download
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
-                                }
-                                .padding(6.dp),
-                            contentAlignment = Alignment.Center
+                        IconButton(
+                            onClick = {
+                                if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
+                            },
+                            modifier = Modifier.size(34.dp)
                         ) {
                             if (isDownloaded) {
                                 Icon(
                                     imageVector = Icons.Filled.CheckCircle,
                                     contentDescription = "Downloaded",
                                     tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             } else if (downloadProgress in 1..99) {
                                 CircularProgressIndicator(
                                     progress = { downloadProgress / 100f },
-                                    modifier = Modifier.size(20.dp),
+                                    modifier = Modifier.size(18.dp),
                                     color = YouTubeRed,
                                     strokeWidth = 2.dp
                                 )
@@ -1194,8 +1128,8 @@ fun YouTubePlayerView(
                                 Icon(
                                     imageVector = Icons.Filled.Download,
                                     contentDescription = "Download Video",
-                                    tint = Color(0xFF1E1E1E),
-                                    modifier = Modifier.size(20.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
