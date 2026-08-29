@@ -403,32 +403,14 @@ fun VideoCard(
                                 }
                             )
 
-                            val currentLang = com.example.util.LocalAppLanguage.current
-                            val locViews = com.example.util.LanguageManager.localizeViewCount(video.viewCountText, currentLang)
-                            val locTime = com.example.util.LanguageManager.localizeRelativeTime(video.publishedTimeText, currentLang)
-
-                            if (locViews.isNotBlank()) {
+                            if (video.viewCountText.isNotBlank()) {
                                 Text(
                                     text = "•",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = locViews,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-
-                            if (locTime.isNotBlank()) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = locTime,
+                                    text = video.viewCountText,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1

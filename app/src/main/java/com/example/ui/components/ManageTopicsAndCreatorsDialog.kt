@@ -35,7 +35,6 @@ fun ManageTopicsAndCreatorsDialog(
     onDismiss: () -> Unit
 ) {
     var selectedTab by remember { mutableIntStateOf(initialTab) } // 0: Creators, 1: Topics
-    val strings = com.example.util.LocalAppStrings.current
 
     // Add / Search State
     var newCreatorName by remember { mutableStateOf("") }
@@ -63,7 +62,7 @@ fun ManageTopicsAndCreatorsDialog(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = strings.manageTopicsCreators,
+                    text = "Manage Topics & Creators",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -380,7 +379,7 @@ fun ManageTopicsAndCreatorsDialog(
                 onClick = onDismiss,
                 colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
             ) {
-                Text(strings.closeBtn)
+                Text("Done")
             }
         }
     )
@@ -431,7 +430,7 @@ fun ManageTopicsAndCreatorsDialog(
             },
             dismissButton = {
                 TextButton(onClick = { itemToRename = null }) {
-                    Text(strings.cancelBtn)
+                    Text("Cancel")
                 }
             }
         )

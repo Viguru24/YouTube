@@ -376,35 +376,32 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 3. Search: SWR Flow (Instant Local DB Matches -> Smooth Live Network Search with SP Filters)
+        // 3. Search: SWR Flow (Instant Local DB Matches -> Smooth Debounced Background Network Search)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
-            combine(searchQuery.debounce(350L), selectedTimeFilter) { query, timeFilter ->
-                Pair(query, timeFilter)
-            }.collectLatest { (query, timeFilter) ->
-                val trimmed = query.trim()
-                if (trimmed.isNotBlank()) {
-                    currentSearchBatchIndex = 0
-                    // Step A: Instant cached search results
-                    val cachedMatches = repository.searchVideosDirect(trimmed)
-                    if (cachedMatches.isNotEmpty()) {
-                        _liveSearchResults.value = cachedMatches
-                    }
+            searchQuery
+                .debounce(650L)
+                .collectLatest { query ->
+                    val trimmed = query.trim()
+                    if (trimmed.isNotBlank()) {
+                        currentSearchBatchIndex = 0
+                        // Step A: Instant cached search results
+                        val cachedMatches = repository.searchVideosDirect(trimmed)
+                        if (cachedMatches.isNotEmpty()) {
+                            _liveSearchResults.value = cachedMatches
+                        }
 
-                    // Step B: Smooth Live Network Search with exact SP filter
-                    val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(
-                        trimmed,
-                        timeFilter = if (timeFilter != "Any Time") timeFilter else null
-                    )
-                    if (realVideos.isNotEmpty()) {
-                        _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
-                        realVideos.forEach { v -> repository.saveVideo(v) }
+                        // Step B: Smooth Live Network Search without blocking typing
+                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = false)
+                        if (realVideos.isNotEmpty()) {
+                            _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
+                            realVideos.forEach { v -> repository.saveVideo(v) }
+                        }
+                    } else {
+                        currentSearchBatchIndex = 0
+                        _liveSearchResults.value = emptyList()
                     }
-                } else {
-                    currentSearchBatchIndex = 0
-                    _liveSearchResults.value = emptyList()
                 }
-            }
         }
 
         // 4. Category / Home: SWR Flow (Instant Local DB -> Silent Live Network Sync)
@@ -412,23 +409,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             selectedCategory.collectLatest { category ->
                 feedBatchIndex = 0
                 try {
-                    val isLast24h = category.contains("24h", ignoreCase = true) || category.contains("24 hours", ignoreCase = true) || category.contains("Last 24", ignoreCase = true) || category.equals("Today", ignoreCase = true)
-
                     // Step A: Instant 0ms cached videos for category
                     val cached = if (category == "All") {
                         repository.getAllVideosDirect()
-                    } else if (isLast24h) {
-                        val all = repository.getAllVideosDirect()
-                        val within24 = all.filter { v ->
-                            val sec = YouTubeUtils.parsePublishedTimeToSeconds(v.publishedTimeText)
-                            val tLower = v.publishedTimeText.lowercase()
-                            sec <= 86400L || tLower.contains("min") || tLower.contains("hour") || tLower.contains("today") || tLower.contains("1 day") || tLower.contains("just now")
-                        }
-                        if (within24.isNotEmpty()) {
-                            within24.sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-                        } else {
-                            all.sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }).take(30)
-                        }
                     } else {
                         repository.getVideosByCategoryDirect(category)
                     }
@@ -450,17 +433,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         } catch (e: Exception) { emptyList() }
 
                         (profileFeed + freshTechNews).distinctBy { it.youtubeId }
-                    } else if (isLast24h) {
-                        val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(batchIndex = 0, batchSize = 15, forceRefresh = true)
-                        } catch (e: Exception) { emptyList() }
-
-                        val fresh24h = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed("⏰ Last 24h", forceRefresh = true)
-                        } catch (e: Exception) { emptyList() }
-
-                        (profileFeed + fresh24h).distinctBy { it.youtubeId }
-                            .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                     } else {
                         com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category)
                     }

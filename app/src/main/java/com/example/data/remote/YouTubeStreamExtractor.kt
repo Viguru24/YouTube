@@ -161,69 +161,36 @@ object YouTubeStreamExtractor {
             try {
                 val playerJson = fetchInnertubePlayer(videoId, c)
                 if (playerJson != null) {
-                    val streamingData = playerJson.optJSONObject("streamingData")
-                    if (streamingData != null) {
-                        // A. Formats (Muxed combined video+audio streams like 720p / 360p)
-                        val formats = streamingData.optJSONArray("formats")
-                        if (formats != null) {
-                            for (i in 0 until formats.length()) {
-                                val f = formats.getJSONObject(i)
-                                val url = f.optString("url", "")
-                                val qLabel = f.optString("qualityLabel", "")
-                                val height = f.optInt("height", 0)
-                                if (url.isNotBlank() && url.startsWith("http")) {
-                                    val key = when {
-                                        qLabel.isNotBlank() -> if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p"
-                                        height > 0 -> "${height}p"
-                                        else -> "360p"
-                                    }
-                                    qualityMap[key] = url
-                                    muxedUrls.add(url)
-                                    if (bestCombinedUrl == null || height >= 720) {
-                                        bestCombinedUrl = url
-                                    }
-                                }
-                            }
+                    val streams = extractStreamsFromPlayerResponse(playerJson)
+                    if (!streams.first.isNullOrEmpty() && streams.first!!.startsWith("http")) {
+                        qualityMap["720p"] = streams.first!!
+                        qualityMap["Auto"] = streams.first!!
+                        if (streams.second != null && streams.second!!.startsWith("http")) {
+                            bestAudioUrl = streams.second
+                            videoOnlyUrls.add(streams.first!!)
+                            videoOnlyQualities.add("720p")
+                            videoOnlyQualities.add("Auto")
+                        } else {
+                            muxedUrls.add(streams.first!!)
+                            bestCombinedUrl = streams.first
                         }
-
-                        // B. Adaptive Formats (High-Res 1080p, 720p, 480p adaptive video + audio)
-                        val adaptive = streamingData.optJSONArray("adaptiveFormats")
+                        // Also parse other available adaptive formats (1080p, 480p, etc.)
+                        val streamingData = playerJson.optJSONObject("streamingData")
+                        val adaptive = streamingData?.optJSONArray("adaptiveFormats")
                         if (adaptive != null) {
-                            var bestAudioScore = -1000
                             for (i in 0 until adaptive.length()) {
                                 val f = adaptive.getJSONObject(i)
                                 val mime = f.optString("mimeType", "")
-                                val url = f.optString("url", "")
-                                if (url.isNotBlank() && url.startsWith("http")) {
-                                    if (mime.contains("video")) {
-                                        val qLabel = f.optString("qualityLabel", "")
-                                        val height = f.optInt("height", 0)
-                                        val key = when {
-                                            qLabel.isNotBlank() -> if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p"
-                                            height > 0 -> "${height}p"
-                                            else -> "720p"
-                                        }
-                                        qualityMap[key] = url
-                                        videoOnlyQualities.add(key)
-                                        videoOnlyUrls.add(url)
-                                    } else if (mime.contains("audio")) {
-                                        val audioTrack = f.optJSONObject("audioTrack")
-                                        val displayName = audioTrack?.optString("displayName", "").orEmpty().lowercase()
-                                        val isDefault = audioTrack?.optBoolean("audioIsDefault", false) == true
-                                        var score = 100
-                                        if (displayName.contains("english") || displayName.contains("original") || isDefault) score += 500
-                                        if (displayName.contains("dubbed") && !displayName.contains("english")) score -= 500
-                                        val bitrate = f.optInt("bitrate", 0)
-                                        score += (bitrate / 1000).coerceIn(0, 100)
-                                        if (score > bestAudioScore) {
-                                            bestAudioScore = score
-                                            bestAudioUrl = url
-                                        }
-                                    }
+                                val qLabel = f.optString("qualityLabel", "")
+                                val streamUrl = f.optString("url", "")
+                                if (streamUrl.isNotEmpty() && streamUrl.startsWith("http") && mime.contains("video")) {
+                                    val key = if (qLabel.isNotBlank()) (if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p") else "720p"
+                                    qualityMap[key] = streamUrl
+                                    videoOnlyQualities.add(key)
+                                    videoOnlyUrls.add(streamUrl)
                                 }
                             }
                         }
-
                         if (qualityMap.isNotEmpty()) {
                             logD("YouTubeStreamExtractor", "Extracted direct streams via Innertube ($c) for $videoId")
                             break
@@ -294,11 +261,6 @@ object YouTubeStreamExtractor {
                         }
                     }
                 }
-                val hlsUrl = try { extractor.hlsUrl } catch (e: Exception) { null }
-                if (!hlsUrl.isNullOrBlank() && hlsUrl.startsWith("http")) {
-                    qualityMap["HLS"] = hlsUrl
-                    logD("YouTubeStreamExtractor", "[NewPipe] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
-                }
             } catch (e: Exception) {
                 logD("YouTubeStreamExtractor", "[NewPipe] Extraction error for $videoId: ${e.message}")
             }
@@ -343,11 +305,12 @@ object YouTubeStreamExtractor {
         val sortedQualities = qualityMap.keys
             .filter { it != "HLS" && it != "Auto" }
 
-        // Prioritize Apple HLS Master adaptive streams (Zero-stall, no A/V desync), then HD muxed/adaptive
-        val bestUrl = qualityMap["HLS"]
-            ?: sortedQualities.firstOrNull { it == "1080p" || it == "720p" }?.let { qualityMap[it] }
+        // Prioritize reliable 1080p HD / 720p HD or combined muxed streams
+        val bestUrl = sortedQualities.firstOrNull { it == "1080p" || it == "720p" }?.let { qualityMap[it] }
             ?: bestCombinedUrl
             ?: sortedQualities.firstOrNull()?.let { qualityMap[it] }
+            ?: qualityMap["HLS"]
+            ?: qualityMap["Auto"]
             ?: qualityMap.values.firstOrNull()
 
         if (bestUrl != null) {

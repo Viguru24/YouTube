@@ -9,7 +9,6 @@ using YoutubeExplode.Videos.Streams;
 using VixzDesktop.Models;
 
 using System.Net.Http;
-using System.IO;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
@@ -30,59 +29,10 @@ namespace VixzDesktop.Services
             catch { }
         }
 
-        public static string? BuildSearchFilterSp(string? dateFilter, string? durationFilter, string? sortBy)
-        {
-            if (dateFilter == "today" && sortBy == "views") return "CAMSBAgCEAE%3D";
-            if (dateFilter == "today" && (sortBy == "latest" || sortBy == null)) return "CAISAggC";
-            if (dateFilter == "today") return "EgIIAg%3D%3D";
-
-            if (dateFilter == "week" && sortBy == "views") return "CAMSBAgDEAE%3D";
-            if (dateFilter == "week" && (sortBy == "latest" || sortBy == null)) return "CAISAggD";
-            if (dateFilter == "week") return "EgIIAw%3D%3D";
-
-            if (dateFilter == "month" && sortBy == "views") return "CAMSBAgEEAE%3D";
-            if (dateFilter == "month" && (sortBy == "latest" || sortBy == null)) return "CAISAggE";
-            if (dateFilter == "month") return "EgIIBA%3D%3D";
-
-            if (dateFilter == "hour" && sortBy == "views") return "CAMSBAgBEAE%3D";
-            if (dateFilter == "hour") return "EgIIAQ%3D%3D";
-
-            if (durationFilter == "short" && sortBy == "views") return "CAMSBAgBEAE%3D";
-            if (durationFilter == "short" && sortBy == "latest") return "CAISBAgBEAE%3D";
-            if (durationFilter == "short") return "EgQQARgB";
-
-            if (durationFilter == "medium" && sortBy == "views") return "CAMSBAgDEAE%3D";
-            if (durationFilter == "medium" && sortBy == "latest") return "CAISBAgDEAE%3D";
-            if (durationFilter == "medium") return "EgQQARgD";
-
-            if (durationFilter == "long" && sortBy == "views") return "CAMSBAgCEAE%3D";
-            if (durationFilter == "long" && sortBy == "latest") return "CAISBAgCEAE%3D";
-            if (durationFilter == "long") return "EgQQARgC";
-
-            if (sortBy == "latest") return "CAI%3D";
-            if (sortBy == "views") return "CAM%3D";
-            if (sortBy == "rating") return "CAE%3D";
-
-            return null;
-        }
-
-        public static async Task<List<VideoItem>> SearchVideosAsync(
-            string query, 
-            int maxResults = 50, 
-            string? spFilter = null, 
-            string? dateFilter = null, 
-            string? durationFilter = null, 
-            string? sortBy = null, 
-            bool sortByUploadDate = false)
+        public static async Task<List<VideoItem>> SearchVideosAsync(string query, int maxResults = 50, string? spFilter = null, bool sortByUploadDate = false)
         {
             var results = new List<VideoItem>();
             var seenIds = new HashSet<string>();
-
-            // Auto-compute spFilter if not explicitly provided but filter options are present
-            if (string.IsNullOrWhiteSpace(spFilter) && (!string.IsNullOrWhiteSpace(dateFilter) || !string.IsNullOrWhiteSpace(durationFilter) || !string.IsNullOrWhiteSpace(sortBy)))
-            {
-                spFilter = BuildSearchFilterSp(dateFilter, durationFilter, sortBy);
-            }
 
             // 1. High-fidelity extraction via ytInitialData JSON
             try
@@ -111,7 +61,7 @@ namespace VixzDesktop.Services
                 {
                     var jsonStr = match.Groups[1].Value;
                     var jObj = JObject.Parse(jsonStr);
-                    WalkJsonTree(jObj, results, seenIds, 150);
+                    WalkJsonTree(jObj, results, seenIds, maxResults);
                 }
             }
             catch (Exception ex)
@@ -119,11 +69,8 @@ namespace VixzDesktop.Services
                 System.Diagnostics.Debug.WriteLine($"ytInitialData parse error: {ex.Message}");
             }
 
-            // Apply filter to the first batch
-            var filteredResults = ApplyLocalFilters(results, dateFilter, durationFilter, sortBy);
-
-            // 2. YoutubeExplode stream pagination to ensure we reach the requested maxResults of MATCHING items
-            if (filteredResults.Count < maxResults)
+            // 2. YoutubeExplode stream pagination to fill up to maxResults
+            if (results.Count < maxResults)
             {
                 try
                 {
@@ -133,7 +80,7 @@ namespace VixzDesktop.Services
                         if (!seenIds.Contains(video.Id.Value))
                         {
                             seenIds.Add(video.Id.Value);
-                            var item = new VideoItem
+                            results.Add(new VideoItem
                             {
                                 Id = video.Id.Value,
                                 Title = video.Title,
@@ -143,18 +90,10 @@ namespace VixzDesktop.Services
                                 Duration = video.Duration,
                                 DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
                                 UploadDateText = ""
-                            };
-
-                            // Quick duration filter check
-                            if (durationFilter == "short" && item.Duration.HasValue && item.Duration.Value.TotalMinutes >= 4) continue;
-                            if (durationFilter == "medium" && item.Duration.HasValue && (item.Duration.Value.TotalMinutes < 4 || item.Duration.Value.TotalMinutes > 20)) continue;
-                            if (durationFilter == "long" && item.Duration.HasValue && item.Duration.Value.TotalMinutes <= 20) continue;
-
-                            results.Add(item);
-                            filteredResults = ApplyLocalFilters(results, dateFilter, durationFilter, sortBy);
-
-                            if (filteredResults.Count >= maxResults) break;
+                            });
                         }
+
+                        if (results.Count >= maxResults) break;
                     }
                 }
                 catch (Exception ex)
@@ -163,16 +102,10 @@ namespace VixzDesktop.Services
                 }
             }
 
-            return filteredResults.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
         }
 
-        public static async Task<List<VideoItem>> FetchNextSearchBatchAsync(
-            string query, 
-            HashSet<string> existingIds, 
-            int takeCount = 35,
-            string? dateFilter = null,
-            string? durationFilter = null,
-            string? sortBy = null)
+        public static async Task<List<VideoItem>> FetchNextSearchBatchAsync(string query, HashSet<string> existingIds, int takeCount = 35)
         {
             var results = new List<VideoItem>();
             try
@@ -183,7 +116,7 @@ namespace VixzDesktop.Services
                     if (!existingIds.Contains(video.Id.Value))
                     {
                         existingIds.Add(video.Id.Value);
-                        var item = new VideoItem
+                        results.Add(new VideoItem
                         {
                             Id = video.Id.Value,
                             Title = video.Title,
@@ -193,13 +126,7 @@ namespace VixzDesktop.Services
                             Duration = video.Duration,
                             DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
                             UploadDateText = ""
-                        };
-
-                        if (durationFilter == "short" && item.Duration.HasValue && item.Duration.Value.TotalMinutes >= 4) continue;
-                        if (durationFilter == "medium" && item.Duration.HasValue && (item.Duration.Value.TotalMinutes < 4 || item.Duration.Value.TotalMinutes > 20)) continue;
-                        if (durationFilter == "long" && item.Duration.HasValue && item.Duration.Value.TotalMinutes <= 20) continue;
-
-                        results.Add(item);
+                        });
 
                         if (results.Count >= takeCount) break;
                     }
@@ -209,7 +136,7 @@ namespace VixzDesktop.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Error fetching next search batch: {ex.Message}");
             }
-            return ApplyLocalFilters(results, dateFilter, durationFilter, sortBy).Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
         }
 
         private static void WalkJsonTree(JToken token, List<VideoItem> results, HashSet<string> seenIds, int maxResults)
@@ -284,37 +211,6 @@ namespace VixzDesktop.Services
                             }
                         }
 
-                        // Accessibility Fallback for Published Time & View Count
-                        var accessLabel = obj["title"]?["accessibility"]?["accessibilityData"]?["label"]?.ToString()
-                                       ?? obj["accessibility"]?["accessibilityData"]?["label"]?.ToString()
-                                       ?? "";
-
-                        if (string.IsNullOrEmpty(pubTime) && !string.IsNullOrEmpty(accessLabel))
-                        {
-                            var matchDate = Regex.Match(accessLabel, @"(\d+\s+(?:second|minute|hour|day|week|month|year)s?\s+ago)", RegexOptions.IgnoreCase);
-                            if (matchDate.Success)
-                            {
-                                pubTime = matchDate.Groups[1].Value;
-                            }
-                            else if (accessLabel.IndexOf("yesterday", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                pubTime = "Yesterday";
-                            }
-                            else if (accessLabel.IndexOf("today", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                pubTime = "Today";
-                            }
-                        }
-
-                        if (string.IsNullOrEmpty(viewCount) && !string.IsNullOrEmpty(accessLabel))
-                        {
-                            var matchViews = Regex.Match(accessLabel, @"([\d,]+)\s+views", RegexOptions.IgnoreCase);
-                            if (matchViews.Success)
-                            {
-                                viewCount = $"{matchViews.Groups[1].Value} views";
-                            }
-                        }
-
                         // 5. Duration
                         string duration = obj["lengthText"]?["simpleText"]?.ToString() ?? "";
                         if (string.IsNullOrEmpty(duration))
@@ -369,29 +265,23 @@ namespace VixzDesktop.Services
             var channels = WillRyanProfileData.SubscribedChannels;
             if (!string.IsNullOrWhiteSpace(channelName))
             {
-                return await SearchVideosAsync(channelName, 50, spFilter: "CAI%3D", sortByUploadDate: true);
+                return await SearchVideosAsync(channelName, 30, sortByUploadDate: true);
             }
 
             var list = new List<VideoItem>();
-            var seenIds = new HashSet<string>();
             var rand = new Random();
-            var sampled = channels.OrderBy(_ => rand.Next()).Take(16).ToList();
-            var tasks = sampled.Select(c => SearchVideosAsync(c, 10, spFilter: "CAI%3D", sortByUploadDate: true)).ToList();
+            var sampled = channels.OrderBy(_ => rand.Next()).Take(8).ToList();
+            var tasks = sampled.Select(c => SearchVideosAsync(c, 5, sortByUploadDate: true)).ToList();
             var batchResults = await Task.WhenAll(tasks);
 
             foreach (var b in batchResults)
             {
-                foreach (var v in b)
-                {
-                    if (seenIds.Add(v.Id))
-                    {
-                        list.Add(v);
-                    }
-                }
+                list.AddRange(b);
             }
 
+            var uniqueVideos = list.GroupBy(v => v.Id).Select(g => g.First()).ToList();
             return RecommendationEngine.ScoreAndRankVideos(
-                list,
+                uniqueVideos,
                 StorageService.Settings.Favorites,
                 StorageService.Settings.WatchHistory,
                 channels
@@ -401,35 +291,28 @@ namespace VixzDesktop.Services
         public static async Task<List<VideoItem>> GetHomeFeedAsync()
         {
             var rawList = new List<VideoItem>();
-            var seenIds = new HashSet<string>();
             var channels = WillRyanProfileData.SubscribedChannels;
 
             var rand = new Random();
-            var sampledChannels = channels.OrderBy(_ => rand.Next()).Take(14).ToList();
-            var channelTasks = sampledChannels.Select(c => SearchVideosAsync(c, 10, sortByUploadDate: true)).ToList();
+            var sampledChannels = channels.OrderBy(_ => rand.Next()).Take(4).ToList();
+            var channelTasks = sampledChannels.Select(c => SearchVideosAsync(c, 5)).ToList();
 
-            var topics = new[] { "Trending Worldwide", "Tech & Science News", "World News Today", "Podcasts & Interviews", "Viral Highlights" };
-            var topicTasks = topics.Select(t => SearchVideosAsync(t, 15)).ToList();
+            var topics = new[] { "Tech News", "AI Breakthroughs", "World News Today", "Trending Music" };
+            var topicTask = SearchVideosAsync(topics[rand.Next(topics.Length)], 12);
 
-            var allTasks = new List<Task<List<VideoItem>>>(channelTasks);
-            allTasks.AddRange(topicTasks);
-
+            var allTasks = new List<Task<List<VideoItem>>>(channelTasks) { topicTask };
             var allResults = await Task.WhenAll(allTasks);
 
             foreach (var res in allResults)
             {
-                foreach (var v in res)
-                {
-                    if (seenIds.Add(v.Id))
-                    {
-                        rawList.Add(v);
-                    }
-                }
+                rawList.AddRange(res);
             }
+
+            var uniqueVideos = rawList.GroupBy(v => v.Id).Select(g => g.First()).ToList();
 
             // Run exact recommendation engine scoring & ranking
             return RecommendationEngine.ScoreAndRankVideos(
-                rawList,
+                uniqueVideos,
                 StorageService.Settings.Favorites,
                 StorageService.Settings.WatchHistory,
                 channels
@@ -524,37 +407,34 @@ namespace VixzDesktop.Services
                 if (dateFilter == "hour")
                 {
                     list = list.Where(v => {
-                        var dt = (v.UploadDateText ?? "").Trim();
-                        if (string.IsNullOrWhiteSpace(dt)) return false;
-                        var sec = ParsePublishedTimeToSeconds(dt);
-                        return sec <= 3600; // Within 1 hour
+                        var dt = (v.UploadDateText ?? "").ToLowerInvariant();
+                        return dt.Contains("minute") || dt.Contains("second") || dt.Contains("moment") || dt.Contains("1 hour");
                     }).ToList();
                 }
                 else if (dateFilter == "today")
                 {
+                    // Strict Today: less than 24h (seconds, minutes, hours, moments, today). Excludes "1 day ago", "2 days ago", etc.
                     list = list.Where(v => {
-                        var dt = (v.UploadDateText ?? "").Trim();
-                        if (string.IsNullOrWhiteSpace(dt)) return false;
-                        var sec = ParsePublishedTimeToSeconds(dt);
-                        return sec <= 86400 * 1.5; // Within 36 hours (e.g. seconds, minutes, hours, 1 day, yesterday)
+                        var dt = (v.UploadDateText ?? "").ToLowerInvariant();
+                        if (dt.Contains("minute") || dt.Contains("second") || dt.Contains("hour") || dt.Contains("moment") || dt.Contains("today"))
+                        {
+                            return true;
+                        }
+                        return false;
                     }).ToList();
                 }
                 else if (dateFilter == "week")
                 {
                     list = list.Where(v => {
-                        var dt = (v.UploadDateText ?? "").Trim();
-                        if (string.IsNullOrWhiteSpace(dt)) return false;
-                        var sec = ParsePublishedTimeToSeconds(dt);
-                        return sec <= 86400 * 7.5; // Within 7 days
+                        var dt = (v.UploadDateText ?? "").ToLowerInvariant();
+                        return !dt.Contains("month") && !dt.Contains("year");
                     }).ToList();
                 }
                 else if (dateFilter == "month")
                 {
                     list = list.Where(v => {
-                        var dt = (v.UploadDateText ?? "").Trim();
-                        if (string.IsNullOrWhiteSpace(dt)) return false;
-                        var sec = ParsePublishedTimeToSeconds(dt);
-                        return sec <= 86400 * 31; // Within 31 days
+                        var dt = (v.UploadDateText ?? "").ToLowerInvariant();
+                        return !dt.Contains("year");
                     }).ToList();
                 }
             }
@@ -580,15 +460,20 @@ namespace VixzDesktop.Services
             var aggregated = new List<VideoItem>();
             var seenIds = new HashSet<string>();
 
-            string? spParam = BuildSearchFilterSp(dateFilter, durationFilter, sortBy);
+            string? spParam = null;
+            if (sortBy == "latest") spParam = "CAI%3D";
+            else if (sortBy == "views") spParam = "CAM%3D";
+            else if (dateFilter == "today") spParam = "EgIIAg%3D%3D";
+            else if (dateFilter == "week") spParam = "EgIIAw%3D%3D";
+            else if (dateFilter == "month") spParam = "EgIIBA%3D%3D";
 
-            var searchQueries = new[] { "trending worldwide", "breaking news", "tech news", "popular podcast", "viral videos", "music hits" };
-            var tasks = searchQueries.Select(q => SearchVideosAsync(q, 30, spFilter: spParam, dateFilter: dateFilter, durationFilter: durationFilter, sortBy: sortBy)).ToList();
+            var searchQueries = new[] { "breaking news", "trending today", "latest podcast", "technology news", "viral" };
+            var tasks = searchQueries.Select(q => SearchVideosAsync(q, 25, spFilter: spParam)).ToList();
 
-            // Also query top 10 subscribed channels
-            foreach (var ch in WillRyanProfileData.SubscribedChannels.Take(10))
+            // Also query top subscribed channels with sort by upload date
+            foreach (var ch in WillRyanProfileData.SubscribedChannels.Take(5))
             {
-                tasks.Add(SearchVideosAsync(ch, 15, spFilter: spParam, dateFilter: dateFilter, durationFilter: durationFilter, sortBy: sortBy, sortByUploadDate: (sortBy != "views")));
+                tasks.Add(GetSubscribedFeedAsync(ch));
             }
 
             try

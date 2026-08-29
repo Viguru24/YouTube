@@ -6,7 +6,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.TvOff
@@ -22,11 +21,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.MutedChannelEntity
 import com.example.data.repository.AlgorithmSettings
 import com.example.ui.theme.YouTubeRed
-import com.example.util.AppLanguage
-import com.example.util.LanguageManager
-import com.example.util.LocalAppStrings
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
     areAdvertsEnabled: Boolean,
@@ -38,9 +34,6 @@ fun SettingsDialog(
     onOpenManageTopicsAndCreators: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
-    val strings = LocalAppStrings.current
-    val currentLang by LanguageManager.currentLanguage.collectAsState()
-    var isLanguageExpanded by remember { mutableStateOf(true) }
     var newBlockedKeyword by remember { mutableStateOf("") }
     var newBoostedTopic by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
@@ -57,7 +50,7 @@ fun SettingsDialog(
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
-                Text(strings.settingsTitle, fontWeight = FontWeight.Bold)
+                Text("App Settings & Algorithm", fontWeight = FontWeight.Bold)
             }
         },
         text = {
@@ -67,82 +60,7 @@ fun SettingsDialog(
                     .fillMaxWidth()
                     .verticalScroll(scrollState)
             ) {
-                // 1. App Language Selection Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Language,
-                                    contentDescription = null,
-                                    tint = Color(0xFF00ACC1),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = strings.appLanguageTitle,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = currentLang.displayName,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF00ACC1),
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
-                            TextButton(onClick = { isLanguageExpanded = !isLanguageExpanded }) {
-                                Text(if (isLanguageExpanded) "▲" else "▼ Change")
-                            }
-                        }
-
-                        if (isLanguageExpanded) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            FlowRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                AppLanguage.entries.forEach { lang ->
-                                    val isSelected = lang == currentLang
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = {
-                                            LanguageManager.setLanguage(context, lang)
-                                        },
-                                        label = {
-                                            Text(
-                                                text = lang.displayName,
-                                                fontSize = 12.sp,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = YouTubeRed.copy(alpha = 0.2f),
-                                            selectedLabelColor = YouTubeRed
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 2. Adverts Toggle Card
+                // Adverts Toggle Card
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant
@@ -710,7 +628,7 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "Vixz YouTube Player • v1.9.6",
+                                text = "Personal YouTube Player • v1.0.0",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -730,7 +648,7 @@ fun SettingsDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
                 modifier = Modifier.testTag("settings_close_btn")
             ) {
-                Text(strings.closeBtn)
+                Text("Save & Close")
             }
         }
     )

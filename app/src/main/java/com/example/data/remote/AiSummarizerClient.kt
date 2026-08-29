@@ -111,7 +111,7 @@ object AiSummarizerClient {
         transcript: String,
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? {
-        val models = listOf("gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-lite")
+        val models = listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite", "gemini-1.5-flash-latest", "gemini-1.5-pro-latest")
         val prompt = """
             You are an elite, highly intelligent executive video analyst and summarizer.
             Analyze the following YouTube video and provide a comprehensive, deep, and beautifully written executive summary.

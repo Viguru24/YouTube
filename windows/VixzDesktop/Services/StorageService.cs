@@ -32,7 +32,6 @@ namespace VixzDesktop.Services
         public double Volume { get; set; } = 1.0;
         public string PreferredQuality { get; set; } = "hd1080";
         public UserAccount UserAccount { get; set; } = new UserAccount();
-        public string AppLanguage { get; set; } = "EN";
         public string? GeminiApiKey { get; set; } = null;
         public bool IsAmbientGlowEnabled { get; set; } = true;
         public bool IsSidebarCollapsed { get; set; } = false;

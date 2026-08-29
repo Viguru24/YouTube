@@ -9,8 +9,7 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="#0B0B0E"
-        PreviewKeyDown="Window_PreviewKeyDown"
-        PreviewMouseDown="Window_PreviewMouseDown">
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0"
@@ -29,15 +28,15 @@
         <Grid>
             <Grid.RowDefinitions>
                 <!-- Title Bar -->
-                <RowDefinition Height="46" x:Name="TitleBarRow"/>
-                <!-- Main App Area -->
+                <RowDefinition x:Name="TitleBarRow" Height="46"/>
+                <!-- Main Content Area -->
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 1. TOP HEADER & TITLE BAR (Persistent Drag Area) -->
+            <!-- 1. CUSTOM FRAMELESS TITLE BAR -->
             <Border x:Name="TitleBarBorder"
                     Grid.Row="0"
-                    Background="#101016"
+                    Background="{StaticResource BgDarkSecondary}"
                     BorderBrush="{StaticResource BorderSubtle}"
                     BorderThickness="0,0,0,1"
                     CornerRadius="14,14,0,0"
@@ -52,9 +51,8 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- App Logo & Brand + Fold Toggle + Back Button -->
+                    <!-- App Logo & Brand + Fold Toggle -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button x:Name="TopBackBtn" Content="◀ Back" Style="{StaticResource GlassButton}" Padding="10,4" Margin="0,0,10,0" ToolTip="Back to Search Results / Feed (Alt+Left / Esc)" Visibility="Collapsed" Click="BackToFeed_Click"/>
                         <Button x:Name="SidebarToggleBtn" Content="☰" Style="{StaticResource IconActionButton}" Width="30" Height="30" FontSize="14" Margin="0,0,8,0" ToolTip="Fold / Expand Sidebar Menu" Click="SidebarToggle_Click"/>
                         <Border CornerRadius="8" ClipToBounds="True" Width="30" Height="30">
                             <Image Source="App.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>
@@ -114,8 +112,7 @@
                                      CaretBrush="{StaticResource AccentRed}"/>
 
                             <!-- Watermark Placeholder -->
-                            <TextBlock x:Name="SearchPlaceholderText"
-                                       Grid.Column="1"
+                            <TextBlock Grid.Column="1"
                                        Text="Search videos, channels, topics..." 
                                        Foreground="#70708C" 
                                        FontSize="13" 
@@ -203,14 +200,6 @@
 
                     <!-- Window Action Controls -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- 🌐 Language Selector Button -->
-                        <Button x:Name="LanguageBtn"
-                                Content="🌐 English"
-                                Style="{StaticResource GlassButton}"
-                                Padding="10,4" Margin="0,0,8,0"
-                                ToolTip="Change App Language (12 Languages)"
-                                Click="LanguageBtn_Click"/>
-
                         <!-- 👤 Account / Google Sign-In Button -->
                         <Button x:Name="AccountBtn"
                                 Content="👤 Sign In"
@@ -341,29 +330,17 @@
                             </Grid>
                         </Border>
 
-                        <!-- Active Saved Folder & Try Our Other Products Section -->
-                        <StackPanel Grid.Row="2">
-                            <!-- Save Destination -->
-                            <Border Background="#16161F" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,6">
-                                <StackPanel>
-                                    <TextBlock x:Name="SaveDestTitle" Text="📁 Save Destination" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold"/>
-                                    <TextBlock x:Name="CurrentFolderText" Text="Pictures\Vixz\Default" Foreground="{StaticResource TextSecondary}" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,2,0,6"/>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Button x:Name="ChangeFolderBtn" Content="Change" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Click="ChangeFolder_Click"/>
-                                        <Button x:Name="OpenFolderBtn" Content="Open ↗" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,3" Margin="4,0,0,0" Click="OpenFolder_Click"/>
-                                    </StackPanel>
+                        <!-- Active Saved Folder Section -->
+                        <Border Grid.Row="2" Background="#16161F" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="📁 Save Destination" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="Bold"/>
+                                <TextBlock x:Name="CurrentFolderText" Text="Pictures\Vixz\Default" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,4,0,8"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Change" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Click="ChangeFolder_Click"/>
+                                    <Button Content="Open ↗" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="6,0,0,0" Click="OpenFolder_Click"/>
                                 </StackPanel>
-                            </Border>
-
-                            <!-- Try Our Other Products -->
-                            <Border Background="#14101A" BorderBrush="#358E24AA" BorderThickness="1" CornerRadius="8" Padding="8,6" Margin="0,2,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="✨ Other Products" Foreground="#CE93D8" FontSize="10" FontWeight="Bold" Margin="0,0,0,4"/>
-                                    <Button Content="🎙️ Cosmo Whisper ↗" Style="{StaticResource GlassButton}" FontSize="10" HorizontalContentAlignment="Left" Padding="6,2.5" Margin="0,0,0,3" ToolTip="Cosmo Whisper - AI Speech-to-Text" Click="OpenCosmoWhisper_Click"/>
-                                    <Button Content="🎬 Cosmo Symphony ↗" Style="{StaticResource GlassButton}" FontSize="10" HorizontalContentAlignment="Left" Padding="6,2.5" ToolTip="Cosmo Symphony - Video &amp; Picture Studio on Microsoft Store" Click="OpenCosmoSymphony_Click"/>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
+                            </StackPanel>
+                        </Border>
                     </Grid>
                 </Border>
 
@@ -394,7 +371,7 @@
                                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <!-- 📅 Upload Date Filter -->
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
-                                        <TextBlock x:Name="DateFilterLabel" Text="📅 Date:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="📅 Date:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <ComboBox x:Name="DateFilterCombo" Width="115" Height="26" Style="{StaticResource ModernComboBoxStyle}" SelectionChanged="FilterOrSort_Changed">
                                             <ComboBoxItem Content="Any Time" IsSelected="True" Tag=""/>
                                             <ComboBoxItem Content="Last Hour" Tag="hour"/>
@@ -406,7 +383,7 @@
 
                                     <!-- ⏱️ Duration Filter -->
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
-                                        <TextBlock x:Name="LengthFilterLabel" Text="⏱️ Length:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="⏱️ Length:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <ComboBox x:Name="DurationFilterCombo" Width="125" Height="26" Style="{StaticResource ModernComboBoxStyle}" SelectionChanged="FilterOrSort_Changed">
                                             <ComboBoxItem Content="Any Duration" IsSelected="True" Tag=""/>
                                             <ComboBoxItem Content="&lt; 4 min (Short)" Tag="short"/>
@@ -417,7 +394,7 @@
 
                                     <!-- ⚡ Sort By Filter -->
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
-                                        <TextBlock x:Name="SortFilterLabel" Text="⚡ Sort:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <TextBlock Text="⚡ Sort:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <ComboBox x:Name="SortByFilterCombo" Width="120" Height="26" Style="{StaticResource ModernComboBoxStyle}" SelectionChanged="FilterOrSort_Changed">
                                             <ComboBoxItem Content="Relevance" IsSelected="True" Tag=""/>
                                             <ComboBoxItem Content="Newest First" Tag="latest"/>
@@ -426,8 +403,8 @@
                                     </StackPanel>
 
                                     <!-- Filter Buttons -->
-                                    <Button x:Name="ApplyFiltersBtn" Content="Apply Filters" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,2,6,2" Click="ApplyFiltersBtn_Click"/>
-                                    <Button x:Name="ResetFiltersBtn" Content="Reset" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,2,0,2" Click="ResetFiltersBtn_Click"/>
+                                    <Button Content="Apply Filters" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,2,6,2" Click="ApplyFiltersBtn_Click"/>
+                                    <Button Content="Reset" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,2,0,2" Click="ResetFiltersBtn_Click"/>
                                 </WrapPanel>
                             </Border>
                         </Grid>

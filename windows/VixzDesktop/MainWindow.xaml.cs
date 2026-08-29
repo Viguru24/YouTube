@@ -2,12 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -42,9 +40,7 @@ namespace VixzDesktop
         public MainWindow()
         {
             InitializeComponent();
-            SetupMouseHook();
             Loaded += MainWindow_Loaded;
-            Closing += (s, e) => CleanupMouseHook();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -60,7 +56,6 @@ namespace VixzDesktop
             ApplySidebarState();
             ApplyAmbientGlowState();
             UpdateFolderChipHighlights();
-            ApplyLanguage(StorageService.Settings.AppLanguage ?? "EN");
 
             await InitializeWebViewAsync();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
@@ -155,6 +150,17 @@ namespace VixzDesktop
         }
 
         #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
+        
+        #click-detector {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 50px);
+            z-index: 10;
+            cursor: pointer;
+            background: transparent;
+        }
     </style>
 </head>
 <body>
@@ -163,6 +169,7 @@ namespace VixzDesktop
     </div>
     <div id=""player-wrapper"">
         <div id=""player""></div>
+        <div id=""click-detector""></div>
     </div>
     <script>
         var tag = document.createElement('script');
@@ -426,6 +433,32 @@ namespace VixzDesktop
             }
         }
 
+        // Intelligent Click / Double-Click Interceptor
+        var clickTimer = null;
+        var clickDetector = document.getElementById('click-detector');
+        if (clickDetector) {
+            clickDetector.addEventListener('click', function(e) {
+                if (clickTimer) {
+                    // Second click arrived -> DOUBLE CLICK!
+                    clearTimeout(clickTimer);
+                    clickTimer = null;
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
+                    }
+                } else {
+                    // First click: wait 260ms before toggling play/pause
+                    clickTimer = setTimeout(function() {
+                        clickTimer = null;
+                        togglePlay();
+                    }, 260);
+                }
+            });
+
+            clickDetector.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        }
     </script>
 </body>
 </html>";
@@ -622,8 +655,6 @@ namespace VixzDesktop
 
         private async Task LoadFeedAsync(string title, Func<Task<List<VideoItem>>> fetcher)
         {
-            _lastFeedScrollOffset = 0;
-            FeedScrollViewer?.ScrollToTop();
             FeedTitleText.Text = title;
             LoadingSpinner.Visibility = Visibility.Visible;
             VideoItemsControl.ItemsSource = null;
@@ -632,10 +663,6 @@ namespace VixzDesktop
             {
                 _rawUnfilteredFeed = await fetcher();
                 ApplyCurrentFilters();
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    FeedScrollViewer?.ScrollToTop();
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
             catch (Exception ex)
             {
@@ -674,8 +701,6 @@ namespace VixzDesktop
             ApplyCurrentFilters();
         }
 
-        private string? _currentChannel = null;
-
         private async void ApplyFiltersBtn_Click(object sender, RoutedEventArgs e)
         {
             var query = SearchBox.Text.Trim();
@@ -688,29 +713,6 @@ namespace VixzDesktop
             var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-
-            if (!string.IsNullOrWhiteSpace(_currentChannel))
-            {
-                LoadingSpinner.Visibility = Visibility.Visible;
-                SwitchToFeedView(restoreScroll: false);
-                FeedScrollViewer?.ScrollToTop();
-                FeedTitleText.Text = $"🔔 {_currentChannel}";
-
-                var results = await YouTubeService.SearchVideosAsync(
-                    _currentChannel,
-                    maxResults: 50,
-                    dateFilter: dateTag,
-                    durationFilter: durationTag,
-                    sortBy: sortByTag ?? "latest",
-                    sortByUploadDate: (sortByTag != "views"));
-
-                _rawUnfilteredFeed = results;
-                _currentFeed = results;
-                VideoItemsControl.ItemsSource = _currentFeed;
-                LoadingSpinner.Visibility = Visibility.Collapsed;
-                ShowToast($"⚡ Found {_currentFeed.Count} videos for {_currentChannel}");
-                return;
-            }
 
             if (!string.IsNullOrWhiteSpace(dateTag) || !string.IsNullOrWhiteSpace(durationTag) || sortByTag == "latest" || sortByTag == "views")
             {
@@ -744,39 +746,30 @@ namespace VixzDesktop
 
         private async void NavHome_Click(object sender, RoutedEventArgs e)
         {
-            _currentChannel = null;
             SwitchToFeedView();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
         }
 
         private async void NavSubscriptions_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
-            _currentChannel = null;
             SwitchToFeedView();
-            await LoadFeedAsync($"🔔 {strings.FeedSubscriptions}", () => YouTubeService.GetSubscribedFeedAsync());
+            await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
         }
 
         private async void ChannelFilter_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Content is string channelName)
             {
-                _currentChannel = channelName;
-                _currentSearchQuery = null;
-                _lastFeedScrollOffset = 0;
-                SearchBox.Text = "";
-                SwitchToFeedView(restoreScroll: false);
-                FeedScrollViewer?.ScrollToTop();
+                SwitchToFeedView();
                 await LoadFeedAsync($"🔔 {channelName}", () => YouTubeService.GetSubscribedFeedAsync(channelName));
             }
         }
 
         private void RefreshSubscribedChannelsUi()
         {
-            var strings = DesktopLocalizationService.GetStrings();
             SubscribedChannelsList.ItemsSource = null;
             SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
-            SubscribersHeader.Text = $"👤 {strings.Subscriptions} ({WillRyanProfileData.SubscribedChannels.Count})";
+            SubscribersHeader.Text = $"👤 Subscriptions ({WillRyanProfileData.SubscribedChannels.Count})";
             UpdateSubscribeToggleBtn();
         }
 
@@ -792,10 +785,9 @@ namespace VixzDesktop
 
         private void AddChannelBtn_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
             var prompt = new Window
             {
-                Title = $"➕ {strings.AddChannel}",
+                Title = "➕ Add Subscribed Channel",
                 Width = 420,
                 Height = 220,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -809,7 +801,7 @@ namespace VixzDesktop
             var sp = new StackPanel { Margin = new Thickness(18) };
             var heading = new TextBlock
             {
-                Text = $"➕ {strings.AddChannel}",
+                Text = "➕ Add Channel / Creator",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
@@ -817,7 +809,7 @@ namespace VixzDesktop
             };
             var desc = new TextBlock
             {
-                Text = strings.AddChannelDesc,
+                Text = "Enter any YouTube channel name or handle to add to your custom subscriptions feed:",
                 FontSize = 11.5,
                 Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
                 TextWrapping = TextWrapping.Wrap,
@@ -837,7 +829,7 @@ namespace VixzDesktop
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancelBtn = new Button
             {
-                Content = strings.Cancel,
+                Content = "Cancel",
                 Style = (Style)FindResource("GlassButton"),
                 Padding = new Thickness(12, 6, 12, 6),
                 Margin = new Thickness(0, 0, 8, 0)
@@ -846,7 +838,7 @@ namespace VixzDesktop
 
             var addBtn = new Button
             {
-                Content = strings.Add,
+                Content = "Add Channel",
                 Style = (Style)FindResource("GlassButton"),
                 Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
                 Foreground = System.Windows.Media.Brushes.Black,
@@ -887,10 +879,9 @@ namespace VixzDesktop
 
         private void ManageChannelsBtn_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
             var prompt = new Window
             {
-                Title = $"⚙️ {strings.ManageSubscriptions}",
+                Title = "⚙️ Manage Subscriptions",
                 Width = 480,
                 Height = 440,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -908,7 +899,7 @@ namespace VixzDesktop
 
             var heading = new TextBlock
             {
-                Text = strings.ManageSubscriptionsHeading,
+                Text = "⚙️ Manage Your Subscribed Channels",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
@@ -926,7 +917,7 @@ namespace VixzDesktop
                 {
                     listStack.Children.Add(new TextBlock
                     {
-                        Text = strings.NoSubscriptionsYet,
+                        Text = "No subscribed channels yet. Click '➕' in the sidebar to add your favorites!",
                         Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
                         FontSize = 12,
                         Margin = new Thickness(0, 30, 0, 0),
@@ -952,7 +943,7 @@ namespace VixzDesktop
 
                     var del = new Button
                     {
-                        Content = $"{strings.Delete} ✕",
+                        Content = "Remove ✕",
                         Style = (Style)FindResource("GlassButton"),
                         FontSize = 10,
                         Padding = new Thickness(8, 3, 8, 3),
@@ -986,7 +977,7 @@ namespace VixzDesktop
             var leftBtns = new StackPanel { Orientation = Orientation.Horizontal };
             var clearAllBtn = new Button
             {
-                Content = strings.ClearAll,
+                Content = "Clear All Channels",
                 Style = (Style)FindResource("GlassButton"),
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentRed"),
                 FontSize = 11,
@@ -1003,7 +994,7 @@ namespace VixzDesktop
 
             var restoreBtn = new Button
             {
-                Content = strings.ResetToDefault,
+                Content = "Reset Defaults",
                 Style = (Style)FindResource("GlassButton"),
                 FontSize = 11,
                 Padding = new Thickness(10, 6, 10, 6)
@@ -1022,7 +1013,7 @@ namespace VixzDesktop
 
             var closeBtn = new Button
             {
-                Content = strings.Close,
+                Content = "Done",
                 Style = (Style)FindResource("GlassButton"),
                 Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
                 Foreground = System.Windows.Media.Brushes.Black,
@@ -1071,96 +1062,55 @@ namespace VixzDesktop
                 return;
             }
 
-            var strings = DesktopLocalizationService.GetStrings();
             SubscribeToggleBtn.Visibility = Visibility.Visible;
             bool isSubbed = WillRyanProfileData.IsSubscribed(_currentVideo.ChannelTitle);
             if (isSubbed)
             {
-                SubscribeToggleBtn.Content = $"✓ {strings.Subscribed}";
+                SubscribeToggleBtn.Content = "✓ Subscribed";
                 SubscribeToggleBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
             }
             else
             {
-                SubscribeToggleBtn.Content = $"+ {strings.Subscribe}";
+                SubscribeToggleBtn.Content = "+ Subscribe";
                 SubscribeToggleBtn.Foreground = System.Windows.Media.Brushes.White;
             }
         }
 
         private async void NavTrending_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
             SwitchToFeedView();
-            await LoadFeedAsync($"🔥 {strings.FeedTrending}", () => YouTubeService.SearchVideosAsync("Trending Worldwide", 30));
+            await LoadFeedAsync("🔥 Trending Videos", () => YouTubeService.SearchVideosAsync("Trending Worldwide", 30));
         }
 
         private void NavFavorites_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
-            _lastFeedScrollOffset = 0;
-            SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = $"⭐ {strings.FeedFavorites}";
+            SwitchToFeedView();
+            FeedTitleText.Text = "⭐ Favorite Videos";
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
             ApplyCurrentFilters();
-            FeedScrollViewer?.ScrollToTop();
         }
 
         private void NavWatchLater_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
-            _lastFeedScrollOffset = 0;
-            SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = $"🕒 {strings.FeedWatchLater}";
+            SwitchToFeedView();
+            FeedTitleText.Text = "🕒 Watch Later Queue";
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
             ApplyCurrentFilters();
-            FeedScrollViewer?.ScrollToTop();
         }
 
         private void NavHistory_Click(object sender, RoutedEventArgs e)
         {
-            var strings = DesktopLocalizationService.GetStrings();
-            _lastFeedScrollOffset = 0;
-            SwitchToFeedView(restoreScroll: false);
-            FeedTitleText.Text = $"📜 {strings.FeedHistory}";
+            SwitchToFeedView();
+            FeedTitleText.Text = "📜 Watch History";
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
             ApplyCurrentFilters();
-            FeedScrollViewer?.ScrollToTop();
         }
 
-        private double _lastFeedScrollOffset = 0;
-
-        private async void SwitchToFeedView(bool restoreScroll = true)
+        private async void SwitchToFeedView()
         {
-            if (_isCustomFullscreen)
-            {
-                ToggleFullscreen();
-            }
-
             PlayerView.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Visible;
-            if (TopBackBtn != null) TopBackBtn.Visibility = Visibility.Collapsed;
             _sponsorBlockTimer?.Stop();
-
-            // Rebind and restore scroll position so the user returns exactly to the search/feed results
-            if (VideoItemsControl != null && _currentFeed != null)
-            {
-                if (VideoItemsControl.ItemsSource != _currentFeed)
-                {
-                    VideoItemsControl.ItemsSource = _currentFeed;
-                }
-            }
-
-            if (restoreScroll && FeedScrollViewer != null && _lastFeedScrollOffset > 0)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    FeedScrollViewer.ScrollToVerticalOffset(_lastFeedScrollOffset);
-                }), System.Windows.Threading.DispatcherPriority.Loaded);
-            }
-            else if (!restoreScroll && FeedScrollViewer != null)
-            {
-                _lastFeedScrollOffset = 0;
-                FeedScrollViewer.ScrollToTop();
-            }
 
             try
             {
@@ -1188,13 +1138,8 @@ namespace VixzDesktop
 
         private void SwitchToPlayerView()
         {
-            if (FeedScrollViewer != null && FeedView.Visibility == Visibility.Visible)
-            {
-                _lastFeedScrollOffset = FeedScrollViewer.VerticalOffset;
-            }
             FeedView.Visibility = Visibility.Collapsed;
             PlayerView.Visibility = Visibility.Visible;
-            if (TopBackBtn != null) TopBackBtn.Visibility = Visibility.Visible;
         }
 
         private async void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -1310,36 +1255,30 @@ namespace VixzDesktop
             if (string.IsNullOrWhiteSpace(query)) return;
 
             _currentSearchQuery = query;
-            _lastFeedScrollOffset = 0;
 
             var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
-            string? spParam = YouTubeService.BuildSearchFilterSp(dateTag, durationTag, sortByTag);
+            string? spParam = null;
+            if (sortByTag == "latest") spParam = "CAI%3D";
+            else if (sortByTag == "views") spParam = "CAM%3D";
+            else if (dateTag == "today") spParam = "EgIIAg%3D%3D";
+            else if (dateTag == "week") spParam = "EgIIAw%3D%3D";
+            else if (dateTag == "month") spParam = "EgIIBA%3D%3D";
+            else if (durationTag == "short") spParam = "EgQQARgB";
+            else if (durationTag == "medium") spParam = "EgQQARgD";
+            else if (durationTag == "long") spParam = "EgQQARgC";
 
             LoadingSpinner.Visibility = Visibility.Visible;
-            SwitchToFeedView(restoreScroll: false);
-            FeedScrollViewer?.ScrollToTop();
+            SwitchToFeedView();
             FeedTitleText.Text = $"🔍 Search: \"{query}\"";
 
-            var results = await YouTubeService.SearchVideosAsync(
-                query, 
-                maxResults: 50, 
-                spFilter: spParam, 
-                dateFilter: dateTag, 
-                durationFilter: durationTag, 
-                sortBy: sortByTag);
-
+            var results = await YouTubeService.SearchVideosAsync(query, 50, spFilter: spParam);
             _rawUnfilteredFeed = results;
-            _currentFeed = results;
+            _currentFeed = YouTubeService.ApplyLocalFilters(results, dateTag, durationTag, sortByTag);
             VideoItemsControl.ItemsSource = _currentFeed;
             LoadingSpinner.Visibility = Visibility.Collapsed;
-
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                FeedScrollViewer?.ScrollToTop();
-            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private async void FeedScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1371,17 +1310,13 @@ namespace VixzDesktop
                 var existingIds = new HashSet<string>(_rawUnfilteredFeed.Select(v => v.Id));
                 List<VideoItem> moreVideos = new List<VideoItem>();
 
-                var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-                var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-                var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-
                 if (!string.IsNullOrWhiteSpace(_currentSearchQuery))
                 {
-                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35, dateTag, durationTag, sortByTag);
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35);
                 }
                 else
                 {
-                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync("Trending Worldwide", existingIds, 35, dateTag, durationTag, sortByTag);
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync("Trending Worldwide", existingIds, 35);
                 }
 
                 if (moreVideos.Count > 0)
@@ -1486,7 +1421,8 @@ namespace VixzDesktop
             FavBtn.Foreground = video.IsFavorite ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.White;
             WatchLaterBtn.Foreground = video.IsWatchLater ? (System.Windows.Media.Brush)FindResource("AccentRed") : System.Windows.Media.Brushes.White;
 
-            SwitchToPlayerView();
+            FeedView.Visibility = Visibility.Collapsed;
+            PlayerView.Visibility = Visibility.Visible;
             UpdateAmbientGlowFromVideo(video);
             AnimateBottomBar(1.0);
             _bottomBarHideTimer?.Stop();
@@ -2143,6 +2079,18 @@ namespace VixzDesktop
                     : await DownloadService.DownloadAudioAsync(_currentVideo.Id, _currentVideo.Title, progressHandler);
 
                 ShowToast(isVideo ? "✅ Video Download Complete!" : "✅ Audio Download Complete!");
+
+                var typeName = isVideo ? "Video" : "Audio";
+                var result = MessageBox.Show($"{typeName} downloaded successfully!\n\nSaved to: {filePath}\n\nWould you like to open the folder?", "Download Complete", MessageBoxButton.YesNo, MessageBoxImage.Information);
+                if (result == MessageBoxResult.Yes)
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = $"/select,\"{filePath}\"",
+                        UseShellExecute = true
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -2296,32 +2244,6 @@ namespace VixzDesktop
         private void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
             ScreenshotService.OpenFolderInExplorer();
-        }
-
-        private void OpenCosmoWhisper_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "https://cosmowhisper.com",
-                    UseShellExecute = true
-                });
-            }
-            catch { }
-        }
-
-        private void OpenCosmoSymphony_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare",
-                    UseShellExecute = true
-                });
-            }
-            catch { }
         }
 
         private void UpdateFolderUi()
@@ -2499,7 +2421,7 @@ namespace VixzDesktop
         {
             if (e.ClickCount == 2)
             {
-                ToggleFullscreen();
+                MaximizeToggle();
             }
         }
 
@@ -2535,154 +2457,9 @@ namespace VixzDesktop
             }
         }
 
-        #region Low-Level Mouse Hook (Reliable Video Double-Click Fullscreen Without Blocking Scrubber)
-
-        [DllImport("user32.dll")]
-        private static extern uint GetDoubleClickTime();
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        private static extern IntPtr GetModuleHandle(string lpModuleName);
-
-        private const int WH_MOUSE_LL = 14;
-        private const int WM_LBUTTONDOWN = 0x0201;
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
-        {
-            public int x;
-            public int y;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MSLLHOOKSTRUCT
-        {
-            public POINT pt;
-            public uint mouseData;
-            public uint flags;
-            public uint time;
-            public IntPtr dwExtraInfo;
-        }
-
-        private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
-
-        private IntPtr _mouseHookHandle = IntPtr.Zero;
-        private LowLevelMouseProc? _mouseProc;
-        private DateTime _lastMouseClickTime = DateTime.MinValue;
-        private Point _lastMouseClickPoint = new Point(0, 0);
-
-        private void SetupMouseHook()
-        {
-            try
-            {
-                _mouseProc = MouseHookCallback;
-                using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
-                using var curModule = curProcess.MainModule;
-                if (curModule != null)
-                {
-                    _mouseHookHandle = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, GetModuleHandle(curModule.ModuleName), 0);
-                }
-            }
-            catch { }
-        }
-
-        private void CleanupMouseHook()
-        {
-            if (_mouseHookHandle != IntPtr.Zero)
-            {
-                UnhookWindowsHookEx(_mouseHookHandle);
-                _mouseHookHandle = IntPtr.Zero;
-            }
-        }
-
-        private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
-        {
-            if (nCode >= 0 && wParam == (IntPtr)WM_LBUTTONDOWN)
-            {
-                try
-                {
-                    var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-                    var now = DateTime.Now;
-                    var doubleClickTime = GetDoubleClickTime();
-                    var diff = (now - _lastMouseClickTime).TotalMilliseconds;
-
-                    var dx = Math.Abs(hookStruct.pt.x - _lastMouseClickPoint.X);
-                    var dy = Math.Abs(hookStruct.pt.y - _lastMouseClickPoint.Y);
-
-                    if (diff <= doubleClickTime && dx <= 14 && dy <= 14)
-                    {
-                        // Reset click time to avoid triple-click triggers
-                        _lastMouseClickTime = DateTime.MinValue;
-
-                        Dispatcher.InvokeAsync(() =>
-                        {
-                            try
-                            {
-                                var helper = new WindowInteropHelper(this);
-                                if (GetForegroundWindow() != helper.Handle) return;
-                                if (PlayerView.Visibility != Visibility.Visible) return;
-                                if (VideoWebView == null || !VideoWebView.IsVisible) return;
-
-                                var topLeft = VideoWebView.PointToScreen(new Point(0, 0));
-                                var width = VideoWebView.ActualWidth;
-                                var height = VideoWebView.ActualHeight;
-
-                                // Check if click is inside the video player screen rect
-                                if (hookStruct.pt.x >= topLeft.X && hookStruct.pt.x <= (topLeft.X + width) &&
-                                    hookStruct.pt.y >= topLeft.Y && hookStruct.pt.y <= (topLeft.Y + height))
-                                {
-                                    // Protect the bottom 52px area so scrubbing/clicking controls doesn't toggle fullscreen
-                                    if (hookStruct.pt.y <= (topLeft.Y + height - 52))
-                                    {
-                                        ToggleFullscreen();
-                                    }
-                                }
-                            }
-                            catch { }
-                        });
-                    }
-                    else
-                    {
-                        _lastMouseClickTime = now;
-                        _lastMouseClickPoint = new Point(hookStruct.pt.x, hookStruct.pt.y);
-                    }
-                }
-                catch { }
-            }
-
-            return CallNextHookEx(_mouseHookHandle, nCode, wParam, lParam);
-        }
-
-        #endregion
-
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             // Do not intercept hotkeys if typing inside any input text box
-            // Back navigation hotkeys: Alt+Left, BrowserBack, Backspace (when not typing in a text field)
-            if ((Keyboard.Modifiers == ModifierKeys.Alt && (e.SystemKey == Key.Left || e.Key == Key.Left)) || 
-                e.Key == Key.BrowserBack || 
-                (e.Key == Key.Back && !(Keyboard.FocusedElement is TextBox || Keyboard.FocusedElement is PasswordBox || SearchBox.IsFocused || (AiPromptBox != null && AiPromptBox.IsFocused) || (NewFolderInput != null && NewFolderInput.IsFocused))))
-            {
-                if (PlayerView.Visibility == Visibility.Visible)
-                {
-                    e.Handled = true;
-                    SwitchToFeedView();
-                    return;
-                }
-            }
-
             if (Keyboard.FocusedElement is TextBox || 
                 Keyboard.FocusedElement is PasswordBox || 
                 SearchBox.IsFocused || 
@@ -2758,29 +2535,8 @@ namespace VixzDesktop
                     e.Handled = true;
                     if (SleepTimerPopup.IsOpen) SleepTimerPopup.IsOpen = false;
                     if (FolderPopup.IsOpen) FolderPopup.IsOpen = false;
-                    if (SharePopup != null && SharePopup.IsOpen) SharePopup.IsOpen = false;
-                    if (SearchHistoryPopup != null && SearchHistoryPopup.IsOpen) SearchHistoryPopup.IsOpen = false;
-                    if (_isCustomFullscreen)
-                    {
-                        ToggleFullscreen();
-                    }
-                    else if (PlayerView.Visibility == Visibility.Visible)
-                    {
-                        SwitchToFeedView();
-                    }
+                    if (_isCustomFullscreen) ToggleFullscreen();
                     break;
-            }
-        }
-
-        private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ChangedButton == MouseButton.XButton1)
-            {
-                if (PlayerView.Visibility == Visibility.Visible)
-                {
-                    e.Handled = true;
-                    SwitchToFeedView();
-                }
             }
         }
 
@@ -3605,156 +3361,6 @@ namespace VixzDesktop
 
             AiMessageStack.Children.Add(mainContainer);
             AiChatScrollViewer.ScrollToEnd();
-        }
-
-        #endregion
-
-        #region Language & Localization
-
-        private void LanguageBtn_Click(object sender, RoutedEventArgs e)
-        {
-            var menu = new ContextMenu
-            {
-                Background = (System.Windows.Media.Brush)FindResource("BgDarkSecondary"),
-                Foreground = System.Windows.Media.Brushes.White,
-                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle")
-            };
-
-            foreach (var kvp in DesktopLocalizationService.AvailableLanguages)
-            {
-                var langCode = kvp.Key;
-                var (displayName, flag, nativeName) = kvp.Value;
-                var isCurrent = string.Equals(StorageService.Settings.AppLanguage, langCode, StringComparison.OrdinalIgnoreCase);
-
-                var item = new MenuItem
-                {
-                    Header = $"{flag}  {nativeName} ({displayName})",
-                    IsChecked = isCurrent,
-                    Foreground = System.Windows.Media.Brushes.White
-                };
-
-                item.Click += (s, args) =>
-                {
-                    ApplyLanguage(langCode);
-                };
-
-                menu.Items.Add(item);
-            }
-
-            menu.PlacementTarget = LanguageBtn;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
-        }
-
-        public void ApplyLanguage(string langCode)
-        {
-            if (string.IsNullOrEmpty(langCode)) langCode = "EN";
-            StorageService.Settings.AppLanguage = langCode;
-            StorageService.Save();
-
-            DesktopLocalizationService.CurrentLanguageCode = langCode;
-            var strings = DesktopLocalizationService.GetStrings(langCode);
-            var (displayName, flag, nativeName) = DesktopLocalizationService.AvailableLanguages.TryGetValue(langCode, out var val) 
-                ? val 
-                : ("English", "🇺🇸", "English");
-
-            LanguageBtn.Content = $"🌐 {flag} {nativeName}";
-            NavHomeBtn.Content = $"🏠   {strings.HomeFeed}";
-            NavSubscribedBtn.Content = $"🔔   {strings.Subscriptions}";
-            NavTrendingBtn.Content = $"🔥   {strings.Trending}";
-            NavFavBtn.Content = $"⭐   {strings.Favorites}";
-            NavWatchLaterBtn.Content = $"🕒   {strings.WatchLater}";
-            NavHistoryBtn.Content = $"📜   {strings.History}";
-
-            SearchPlaceholderText.Text = strings.SearchPlaceholder;
-            DateFilterLabel.Text = $"📅 {strings.DateLabel}";
-            LengthFilterLabel.Text = $"⏱️ {strings.LengthLabel}";
-            SortFilterLabel.Text = $"⚡ {strings.SortLabel}";
-            ApplyFiltersBtn.Content = strings.ApplyFilters;
-            ResetFiltersBtn.Content = strings.Reset;
-
-            // DateFilterCombo options
-            if (DateFilterCombo != null && DateFilterCombo.Items.Count >= 5)
-            {
-                if (DateFilterCombo.Items[0] is ComboBoxItem i0) i0.Content = strings.DateAnyTime;
-                if (DateFilterCombo.Items[1] is ComboBoxItem i1) i1.Content = strings.DateLastHour;
-                if (DateFilterCombo.Items[2] is ComboBoxItem i2) i2.Content = strings.DateToday;
-                if (DateFilterCombo.Items[3] is ComboBoxItem i3) i3.Content = strings.DateThisWeek;
-                if (DateFilterCombo.Items[4] is ComboBoxItem i4) i4.Content = strings.DateThisMonth;
-            }
-
-            // DurationFilterCombo options
-            if (DurationFilterCombo != null && DurationFilterCombo.Items.Count >= 4)
-            {
-                if (DurationFilterCombo.Items[0] is ComboBoxItem d0) d0.Content = strings.DurationAny;
-                if (DurationFilterCombo.Items[1] is ComboBoxItem d1) d1.Content = strings.DurationShort;
-                if (DurationFilterCombo.Items[2] is ComboBoxItem d2) d2.Content = strings.DurationMedium;
-                if (DurationFilterCombo.Items[3] is ComboBoxItem d3) d3.Content = strings.DurationLong;
-            }
-
-            // SortByFilterCombo options
-            if (SortByFilterCombo != null && SortByFilterCombo.Items.Count >= 3)
-            {
-                if (SortByFilterCombo.Items[0] is ComboBoxItem s0) s0.Content = strings.SortRelevance;
-                if (SortByFilterCombo.Items[1] is ComboBoxItem s1) s1.Content = strings.SortNewest;
-                if (SortByFilterCombo.Items[2] is ComboBoxItem s2) s2.Content = strings.SortMostViewed;
-            }
-
-            // Save Destination Sidebar
-            if (SaveDestTitle != null) SaveDestTitle.Text = $"📁 {strings.SaveDestination}";
-            if (ChangeFolderBtn != null) ChangeFolderBtn.Content = strings.ChangeFolder;
-            if (OpenFolderBtn != null) OpenFolderBtn.Content = strings.OpenFolder;
-
-            // Subscriptions Sidebar Section
-            if (SubscribersHeader != null) SubscribersHeader.Text = $"👤 {strings.Subscriptions} ({WillRyanProfileData.SubscribedChannels.Count})";
-            if (AddChannelBtn != null) AddChannelBtn.ToolTip = strings.AddChannel;
-            if (ManageChannelsBtn != null) ManageChannelsBtn.ToolTip = strings.ManageSubscriptions;
-
-            // Subscription Folder Chips
-            if (FolderChipAll != null) FolderChipAll.Content = strings.FolderAll;
-            if (FolderChipAi != null) FolderChipAi.Content = strings.FolderAi;
-            if (FolderChipPodcasts != null) FolderChipPodcasts.Content = strings.FolderPodcasts;
-            if (FolderChipGaming != null) FolderChipGaming.Content = strings.FolderGaming;
-            if (FolderChipMusic != null) FolderChipMusic.Content = strings.FolderMusic;
-
-            UpdateSubscribeToggleBtn();
-
-            // Update Feed Title dynamically based on current screen
-            if (FeedTitleText != null && !string.IsNullOrWhiteSpace(FeedTitleText.Text))
-            {
-                var cur = FeedTitleText.Text.Trim();
-                if (cur.Contains("Recommended") || cur.Contains("Recomendado") || cur.Contains("Recommandé") || cur.Contains("Empfohlener") || cur.Contains("Рекомендации") || cur.Contains("おすすめ") || cur.Contains("맞춤") || cur.Contains("为你推荐") || cur.Contains("सुझाई") || cur.Contains("المقترحة") || cur.Contains("Consigliato"))
-                {
-                    FeedTitleText.Text = strings.RecommendedFeed;
-                }
-                else if (cur.Contains("Subscription") || cur.Contains("Suscrip") || cur.Contains("Abonn") || cur.Contains("Inscri") || cur.Contains("Iscri") || cur.Contains("подписк") || cur.Contains("登録チャンネル") || cur.Contains("구독") || cur.Contains("订阅") || cur.Contains("सदस्यता") || cur.Contains("الاشتراك"))
-                {
-                    FeedTitleText.Text = $"🔔 {strings.FeedSubscriptions}";
-                }
-                else if (cur.Contains("Trending") || cur.Contains("Tendencia") || cur.Contains("Tendances") || cur.Contains("Trends") || cur.Contains("Alta") || cur.Contains("тренде") || cur.Contains("急上昇") || cur.Contains("인기") || cur.Contains("时下") || cur.Contains("ट्रेंडिंग") || cur.Contains("الرائجة"))
-                {
-                    FeedTitleText.Text = $"🔥 {strings.FeedTrending}";
-                }
-                else if (cur.Contains("Favorite") || cur.Contains("Favorit") || cur.Contains("Favori") || cur.Contains("Избран") || cur.Contains("お気に入り") || cur.Contains("좋아요") || cur.Contains("收藏") || cur.Contains("पसंदीदा") || cur.Contains("المفضلة"))
-                {
-                    FeedTitleText.Text = $"⭐ {strings.FeedFavorites}";
-                }
-                else if (cur.Contains("Watch Later") || cur.Contains("Ver Más Tarde") || cur.Contains("regarder plus tard") || cur.Contains("Später ansehen") || cur.Contains("Assistir Mais Tarde") || cur.Contains("Guarda Più Tardi") || cur.Contains("Смотреть позже") || cur.Contains("後で見る") || cur.Contains("나중에") || cur.Contains("稍后") || cur.Contains("المشاهدة لاحقاً"))
-                {
-                    FeedTitleText.Text = $"🕒 {strings.FeedWatchLater}";
-                }
-                else if (cur.Contains("History") || cur.Contains("Historial") || cur.Contains("Historique") || cur.Contains("Verlauf") || cur.Contains("Histórico") || cur.Contains("Cronologia") || cur.Contains("История") || cur.Contains("履歴") || cur.Contains("기록") || cur.Contains("历史") || cur.Contains("इतिहास") || cur.Contains("السجل"))
-                {
-                    FeedTitleText.Text = $"📜 {strings.FeedHistory}";
-                }
-            }
-
-            // Instantly refresh current feed items so dynamic timestamps & views re-render in the target language
-            if (VideoItemsControl != null && _currentFeed != null && _currentFeed.Count > 0)
-            {
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
-            }
         }
 
         #endregion

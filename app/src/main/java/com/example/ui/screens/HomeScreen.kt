@@ -88,14 +88,12 @@ fun HomeScreen(
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
     var showAddChannelDialog by remember { mutableStateOf(false) }
-    var showLanguageDialog by remember { mutableStateOf(false) }
     var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
     var selectedSort by remember { mutableStateOf("Default") }
     val sortCycle = listOf("Default", "Newest", "Oldest")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
-    val strings = com.example.util.LocalAppStrings.current
 
     val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.WillRyanProfileData.subscribedChannels
 
@@ -238,7 +236,7 @@ fun HomeScreen(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else strings.subscribed,
+                                            text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else "Subscribed",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface,
@@ -261,7 +259,7 @@ fun HomeScreen(
                                     modifier = Modifier.heightIn(max = 400.dp).widthIn(min = 220.dp)
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("⭐ ${strings.allFeedVideos}", fontWeight = FontWeight.Bold, color = YouTubeRed) },
+                                        text = { Text("⭐ All Feed Videos", fontWeight = FontWeight.Bold, color = YouTubeRed) },
                                         onClick = {
                                             showSubscribedChannelsMenu = false
                                             onSubscribedChannelSelected("")
@@ -269,7 +267,7 @@ fun HomeScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⚙️ ${strings.manageCreators} (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                                        text = { Text("⚙️ Manage Creators (${subscribedChannelsList.size})", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                                         onClick = {
                                             showSubscribedChannelsMenu = false
                                             onOpenManageTopicsAndCreators(0)
@@ -300,19 +298,9 @@ fun HomeScreen(
                 },
                 actions = {
                     if (!isSearchExpanded) {
-                        val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
-
                         // 1. Search 🔍
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
-                        }
-
-                        // 2. Direct 1-Click Language Switcher 🌐
-                        IconButton(
-                            onClick = { showLanguageDialog = true },
-                            modifier = Modifier.testTag("top_language_btn")
-                        ) {
-                            Text("🌐", fontSize = 18.sp)
                         }
 
                         // 3. LS Profile Button (Opens Settings & Full Menu Options)
@@ -360,42 +348,35 @@ fun HomeScreen(
                                 onDismissRequest = { showProfileMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("🌐 ${strings.appLanguageTitle} (${currentLang.flagEmoji} ${currentLang.nativeName})", fontWeight = FontWeight.SemiBold) },
-                                    onClick = {
-                                        showProfileMenu = false
-                                        showLanguageDialog = true
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("⚙️ ${strings.settingsTitle}", fontWeight = FontWeight.SemiBold) },
+                                    text = { Text("⚙️ Settings & Algorithm", fontWeight = FontWeight.SemiBold) },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenSettings()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 ${strings.profileAccount}") },
+                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 Sign In / Account") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenGoogleAuth()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("➕ ${strings.addVideoUrl}") },
+                                    text = { Text("➕ Add Video URL / ID") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenAddVideoDialog()
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🔀 ${strings.sortFeed} (${selectedSort})") },
+                                    text = { Text("🔀 Sort Feed (${selectedSort})") },
                                     onClick = {
                                         showProfileMenu = false
                                         showSortSubMenu = true
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🏷️ ${strings.manageTopicsCreators}") },
+                                    text = { Text("🏷️ Manage Topics & Creators") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenManageTopicsAndCreators(0)
@@ -672,26 +653,14 @@ fun HomeScreen(
                          (vCh.contains("youtube") && subSet.any { sub -> vTitle.contains(sub) })) &&
                         !isVideoHidden(video, allowWatched = true)
                     }.distinctBy { it.youtubeId }
-                } else if (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("24 hours", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true) || selectedCategory.equals("Today", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
-                    val within24h = allCandidate
+                } else if (selectedCategory == "⏰ Last 24h") {
+                    candidateList
                         .filter {
                             val timeLower = it.publishedTimeText.lowercase()
-                            val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                            (sec <= 86400L || timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day") || timeLower.contains("just now")) &&
-                            !isVideoHidden(it, allowWatched = true)
+                            (timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day")) &&
+                            !isVideoHidden(it)
                         }
-                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
-
-                    if (within24h.isNotEmpty()) {
-                        within24h
-                    } else {
-                        allCandidate
-                            .filter { !isVideoHidden(it, allowWatched = true) }
-                            .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-                            .take(25)
-                    }
                 } else if (selectedCategory != "All") {
                     candidateList
                         .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
@@ -712,18 +681,17 @@ fun HomeScreen(
 
                 // Apply Upload Date Time Selector Filter to Search Results
                 val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
-                    val maxSeconds = when (selectedTimeFilter.lowercase().trim()) {
-                        "last hour", "1 hour" -> 3600L
-                        "today", "last 24h", "last 24 hours", "24 hours", "24h" -> 86400L
-                        "this week", "week" -> 604800L
-                        "this month", "month" -> 2592000L
-                        "this year", "year" -> 31536000L
+                    val maxSeconds = when (selectedTimeFilter) {
+                        "Last Hour" -> 3600L
+                        "Today" -> 86400L
+                        "This Week" -> 604800L
+                        "This Month" -> 2592000L
+                        "This Year" -> 31536000L
                         else -> Long.MAX_VALUE
                     }
                     rawDisplayList.filter { video ->
                         val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
-                        val tLower = video.publishedTimeText.lowercase()
-                        sec <= maxSeconds || (maxSeconds == 86400L && (tLower.contains("min") || tLower.contains("hour") || tLower.contains("today") || tLower.contains("1 day") || tLower.contains("just now")))
+                        sec <= maxSeconds
                     }
                 } else {
                     rawDisplayList
@@ -1057,12 +1025,6 @@ fun HomeScreen(
                         Text("Cancel")
                     }
                 }
-            )
-        }
-
-        if (showLanguageDialog) {
-            com.example.ui.components.LanguageSelectionDialog(
-                onDismiss = { showLanguageDialog = false }
             )
         }
     }

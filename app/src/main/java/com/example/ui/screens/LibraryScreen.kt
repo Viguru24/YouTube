@@ -49,41 +49,25 @@ fun LibraryScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Subjects, 1: Downloads, 2: Favorites, 3: Watch Later, 4: History
-    var showLanguageDialog by remember { mutableStateOf(false) }
-    val strings = com.example.util.LocalAppStrings.current
-
-    if (showLanguageDialog) {
-        com.example.ui.components.LanguageSelectionDialog(
-            onDismiss = { showLanguageDialog = false }
-        )
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = strings.libraryTitle,
+                        text = "Library & Downloads",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                 },
                 actions = {
-                    // 1-Click Direct Language Selector 🌐
-                    IconButton(
-                        onClick = { showLanguageDialog = true },
-                        modifier = Modifier.testTag("library_language_btn")
-                    ) {
-                        Text("🌐", fontSize = 18.sp)
-                    }
-
                     IconButton(
                         onClick = onOpenHistory,
                         modifier = Modifier.testTag("library_history_top_btn")
                     ) {
                         Icon(
                             imageVector = Icons.Filled.History,
-                            contentDescription = strings.tabHistory,
+                            contentDescription = "Watch History",
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -94,7 +78,7 @@ fun LibraryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.CreateNewFolder,
-                            contentDescription = strings.addCategory,
+                            contentDescription = "New Subject",
                             tint = YouTubeRed
                         )
                     }
@@ -142,21 +126,21 @@ fun LibraryScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("${strings.tabSubjects} (${categories.size})") },
+                    text = { Text("Subjects (${categories.size})") },
                     icon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                     modifier = Modifier.testTag("tab_categories")
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("📥 ${strings.tabDownloads} (${downloadedVideos.size})") },
+                    text = { Text("📥 Downloads (${downloadedVideos.size})") },
                     icon = { Icon(Icons.Filled.DownloadDone, contentDescription = null, tint = if (selectedTab == 1) Color(0xFF4CAF50) else LocalContentColor.current) },
                     modifier = Modifier.testTag("tab_downloads")
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("${strings.tabFavorites} (${favoriteVideos.size})") },
+                    text = { Text("Favorites (${favoriteVideos.size})") },
                     icon = {
                         Icon(
                             imageVector = if (selectedTab == 2) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -169,14 +153,14 @@ fun LibraryScreen(
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("${strings.tabWatchLater} (${watchLaterVideos.size})") },
+                    text = { Text("Watch Later (${watchLaterVideos.size})") },
                     icon = { Icon(Icons.Outlined.WatchLater, contentDescription = null) },
                     modifier = Modifier.testTag("tab_watch_later")
                 )
                 Tab(
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 },
-                    text = { Text("${strings.tabHistory} (${historyVideos.size})") },
+                    text = { Text("History (${historyVideos.size})") },
                     icon = { Icon(Icons.Filled.History, contentDescription = null) },
                     modifier = Modifier.testTag("tab_history")
                 )
@@ -200,8 +184,8 @@ fun LibraryScreen(
                     onDeleteDownload = onDeleteDownload
                 )
                 2 -> VideoListTabContent(
-                    title = strings.tabFavorites,
-                    emptyText = strings.noFavoritesText,
+                    title = "Favorite Videos",
+                    emptyText = "No favorite videos saved yet. Tap the star icon on any video to bookmark it here!",
                     videos = favoriteVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -209,8 +193,8 @@ fun LibraryScreen(
                     onDeleteVideo = onDeleteVideo
                 )
                 3 -> VideoListTabContent(
-                    title = strings.tabWatchLater,
-                    emptyText = strings.noWatchLaterText,
+                    title = "Watch Later List",
+                    emptyText = "Your Watch Later queue is empty. Add videos from the home feed to save them for later!",
                     videos = watchLaterVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -218,8 +202,8 @@ fun LibraryScreen(
                     onDeleteVideo = onDeleteVideo
                 )
                 4 -> VideoListTabContent(
-                    title = strings.tabHistory,
-                    emptyText = strings.noHistoryText,
+                    title = "Watch History",
+                    emptyText = "No watch history recorded yet. Videos you watch will automatically appear here!",
                     videos = historyVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -433,25 +417,20 @@ private fun CategoriesTabContent(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                TryOurOtherProductsCard()
-            }
-
-            item {
-                val strings = com.example.util.LocalAppStrings.current
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = strings.customPlaylists,
+                        text = "Custom Playlists",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     TextButton(onClick = onOpenAddCategoryDialog) {
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(strings.addCategory)
+                        Text("Add Category")
                     }
                 }
             }
@@ -565,101 +544,6 @@ private fun VideoListTabContent(
                     onWatchLaterToggle = onWatchLaterToggle,
                     onDeleteClick = onDeleteVideo
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TryOurOtherProductsCard() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val strings = com.example.util.LocalAppStrings.current
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = strings.tryOurOtherProducts,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // 1. Cosmo Whisper (Speech-to-Text)
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF8E24AA).copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF8E24AA).copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            try {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://cosmowhisper.com"))
-                                context.startActivity(intent)
-                            } catch (e: Exception) { }
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text("🎙️", fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Cosmo Whisper ↗",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFCE93D8),
-                            maxLines = 1
-                        )
-                    }
-                }
-
-                // 2. Cosmo Symphony (Video & Photo Studio Organizer)
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xFF0078D4).copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0078D4).copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            try {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare"))
-                                context.startActivity(intent)
-                            } catch (e: Exception) { }
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text("🎬", fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Cosmo Symphony ↗",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF90CAF9),
-                            maxLines = 1
-                        )
-                    }
-                }
             }
         }
     }

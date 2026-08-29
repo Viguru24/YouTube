@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using VixzDesktop.Services;
 
 namespace VixzDesktop.Models
 {
@@ -24,25 +22,16 @@ namespace VixzDesktop.Models
         public string RecommendationReason { get; set; } = string.Empty;
         public float AlgorithmScore { get; set; } = 0;
 
-        public string LocalizedUploadDate => DesktopLocalizationService.LocalizeRelativeTime(UploadDateText);
-        public string LocalizedViewCount => DesktopLocalizationService.LocalizeViewCount(ViewCountText);
-
         public string SubtitleText
         {
             get
             {
-                var parts = new List<string>();
+                var parts = new System.Collections.Generic.List<string>();
                 if (!string.IsNullOrWhiteSpace(ChannelTitle)) parts.Add(ChannelTitle);
-                
-                string locDate = LocalizedUploadDate;
-                if (!string.IsNullOrWhiteSpace(locDate) && locDate != "YouTube") parts.Add(locDate);
-                
-                string locViews = LocalizedViewCount;
-                if (!string.IsNullOrWhiteSpace(locViews)) parts.Add(locViews);
-                
+                if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube") parts.Add(UploadDateText);
+                if (!string.IsNullOrWhiteSpace(ViewCountText)) parts.Add(ViewCountText);
                 return string.Join(" • ", parts);
             }
         }
     }
 }
-
