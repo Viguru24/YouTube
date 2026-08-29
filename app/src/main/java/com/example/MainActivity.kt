@@ -33,6 +33,8 @@ import com.example.ui.screens.PlayerScreen
 import com.example.ui.theme.YouTubePlayerTheme
 import com.example.ui.theme.YouTubeRed
 import com.example.ui.viewmodel.YouTubeViewModel
+import com.example.util.LanguageManager
+import com.example.util.LocalAppStrings
 
 class MainActivity : ComponentActivity() {
 
@@ -76,6 +78,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        com.example.util.LanguageManager.init(this)
 
         // Ensure status bar icons (battery, wifi, reception, volume) are crisp white on dark background
         androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -344,161 +348,165 @@ fun MainAppContent(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        val isPlayingAsShort by viewModel.isPlayingAsShort.collectAsState()
+    val currentLang by LanguageManager.currentLanguage.collectAsStateWithLifecycle()
+    val strings = LanguageManager.getStrings(currentLang)
 
-        if (activeVideo != null) {
-            val isShort = isPlayingAsShort == true
-            if (isShort) {
-                // Full Screen Portrait Shorts Player View with swipe gestures
-                com.example.ui.components.ShortsPlayerView(
-                    videoId = activeVideo!!.youtubeId,
-                    videoTitle = activeVideo!!.title,
-                    channelName = activeVideo!!.channelName,
-                    isFavorite = activeVideo!!.isFavorite,
-                    isWatchLater = activeVideo!!.isWatchLater,
-                    isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
-                    isInPipMode = isInPipMode,
-                    onEnterPip = onEnterPip,
-                    playerCommandFlow = viewModel.playerCommand,
-                    onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
-                    onBackClick = { viewModel.clearActiveVideo() },
-                    onNextShort = {
-                        viewModel.playNextShort(activeVideo!!.youtubeId)
-                    },
-                    onPreviousShort = {
-                        viewModel.playPreviousShort(activeVideo!!.youtubeId)
-                    },
-                    onThumbsUp = { viewModel.thumbsUpShort(activeVideo!!) },
-                    onThumbsDown = {
-                        val v = activeVideo!!
-                        viewModel.thumbsDownShort(v)
-                        android.widget.Toast.makeText(context, "Disliked & removed from feed 👎", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                    onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
-                    onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },
-                    onPositionUpdate = { _ -> }
-                )
-            } else {
-                val isDownloadedVideo = activeVideo!!.isDownloaded || downloadedVideos.any { it.youtubeId == activeVideo!!.youtubeId }
-                val currentProgress = downloadProgressMap[activeVideo!!.youtubeId] ?: 0
+    CompositionLocalProvider(LocalAppStrings provides strings) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            val isPlayingAsShort by viewModel.isPlayingAsShort.collectAsState()
 
-                // Standard Landscape/Portrait Video Player Screen
-                PlayerScreen(
-                    video = activeVideo!!,
-                    notes = activeNotes,
-                    playlistVideos = videos,
-                    googleAccount = googleAccount,
-                    isInPipMode = isInPipMode,
-                    onEnterPip = onEnterPip,
-                    playerCommandFlow = viewModel.playerCommand,
-                    onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
-                    onBackClick = { viewModel.clearActiveVideo() },
-                    onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
-                    onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
-                    onAddNote = { timeSec, timeStr, noteText ->
-                        viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
-                    },
-                    onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
-                    onSelectOtherVideo = { v -> viewModel.playVideo(v) },
-                    onOpenGoogleAuth = { showGoogleAuthDialog = true },
-                    areAdvertsEnabled = areAdvertsEnabled,
-                    onNotInterested = { v -> viewModel.deleteVideo(v) },
-                    isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
-                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
-                    isDownloaded = isDownloadedVideo,
-                    downloadProgress = currentProgress,
-                    onDownloadClick = {
-                        viewModel.downloadVideo(activeVideo!!, onComplete = {
-                            android.widget.Toast.makeText(context, "Video Downloaded for Offline Watching! ✈️", android.widget.Toast.LENGTH_LONG).show()
-                        }, onError = { err ->
-                            android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
-                        })
-                    },
-                    onDeleteDownloadClick = {
-                        viewModel.deleteDownloadedVideo(activeVideo!!)
-                        android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                    subscribedCreators = subscribedCreators,
-                    onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) },
-                    onSelectChannel = { channelName ->
-                        viewModel.selectSubscribedChannel(channelName)
-                        viewModel.clearActiveVideo()
-                        selectedNavIndex = 0
-                    }
-                )
-            }
-        } else if (!isInPipMode) {
-            // Main Bottom Bar Layout Screen (Only render when NOT in PiP)
-            Scaffold(
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .height(52.dp)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .testTag("bottom_nav_bar")
-                    ) {
-                        NavigationBarItem(
-                            selected = selectedNavIndex == 0,
-                            onClick = { selectedNavIndex = 0 },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selectedNavIndex == 0) Icons.Filled.Home else Icons.Outlined.Home,
-                                    contentDescription = "Home",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            label = { Text("Home", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
-                            ),
-                            modifier = Modifier.testTag("nav_item_home")
-                        )
+            if (activeVideo != null) {
+                val isShort = isPlayingAsShort == true
+                if (isShort) {
+                    // Full Screen Portrait Shorts Player View with swipe gestures
+                    com.example.ui.components.ShortsPlayerView(
+                        videoId = activeVideo!!.youtubeId,
+                        videoTitle = activeVideo!!.title,
+                        channelName = activeVideo!!.channelName,
+                        isFavorite = activeVideo!!.isFavorite,
+                        isWatchLater = activeVideo!!.isWatchLater,
+                        isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
+                        isInPipMode = isInPipMode,
+                        onEnterPip = onEnterPip,
+                        playerCommandFlow = viewModel.playerCommand,
+                        onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
+                        onBackClick = { viewModel.clearActiveVideo() },
+                        onNextShort = {
+                            viewModel.playNextShort(activeVideo!!.youtubeId)
+                        },
+                        onPreviousShort = {
+                            viewModel.playPreviousShort(activeVideo!!.youtubeId)
+                        },
+                        onThumbsUp = { viewModel.thumbsUpShort(activeVideo!!) },
+                        onThumbsDown = {
+                            val v = activeVideo!!
+                            viewModel.thumbsDownShort(v)
+                            android.widget.Toast.makeText(context, "Disliked & removed from feed 👎", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
+                        onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },
+                        onPositionUpdate = { _ -> }
+                    )
+                } else {
+                    val isDownloadedVideo = activeVideo!!.isDownloaded || downloadedVideos.any { it.youtubeId == activeVideo!!.youtubeId }
+                    val currentProgress = downloadProgressMap[activeVideo!!.youtubeId] ?: 0
 
-                        NavigationBarItem(
-                            selected = selectedNavIndex == 1,
-                            onClick = { selectedNavIndex = 1 },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selectedNavIndex == 1) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
-                                    contentDescription = "Library",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            label = { Text("Library", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
-                            ),
-                            modifier = Modifier.testTag("nav_item_library")
-                        )
-
-                        NavigationBarItem(
-                            selected = selectedNavIndex == 2,
-                            onClick = { selectedNavIndex = 2 },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selectedNavIndex == 2) Icons.Filled.History else Icons.Outlined.History,
-                                    contentDescription = "History",
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            label = { Text("History", fontSize = 10.sp, fontWeight = FontWeight.Medium) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = YouTubeRed,
-                                indicatorColor = YouTubeRed.copy(alpha = 0.8f)
-                            ),
-                            modifier = Modifier.testTag("nav_item_history")
-                        )
-                    }
+                    // Standard Landscape/Portrait Video Player Screen
+                    PlayerScreen(
+                        video = activeVideo!!,
+                        notes = activeNotes,
+                        playlistVideos = videos,
+                        googleAccount = googleAccount,
+                        isInPipMode = isInPipMode,
+                        onEnterPip = onEnterPip,
+                        playerCommandFlow = viewModel.playerCommand,
+                        onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
+                        onBackClick = { viewModel.clearActiveVideo() },
+                        onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
+                        onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
+                        onAddNote = { timeSec, timeStr, noteText ->
+                            viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
+                        },
+                        onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
+                        onSelectOtherVideo = { v -> viewModel.playVideo(v) },
+                        onOpenGoogleAuth = { showGoogleAuthDialog = true },
+                        areAdvertsEnabled = areAdvertsEnabled,
+                        onNotInterested = { v -> viewModel.deleteVideo(v) },
+                        isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
+                        onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
+                        isDownloaded = isDownloadedVideo,
+                        downloadProgress = currentProgress,
+                        onDownloadClick = {
+                            viewModel.downloadVideo(activeVideo!!, onComplete = {
+                                android.widget.Toast.makeText(context, "Video Downloaded for Offline Watching! ✈️", android.widget.Toast.LENGTH_LONG).show()
+                            }, onError = { err ->
+                                android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                            })
+                        },
+                        onDeleteDownloadClick = {
+                            viewModel.deleteDownloadedVideo(activeVideo!!)
+                            android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        subscribedCreators = subscribedCreators,
+                        onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) },
+                        onSelectChannel = { channelName ->
+                            viewModel.selectSubscribedChannel(channelName)
+                            viewModel.clearActiveVideo()
+                            selectedNavIndex = 0
+                        }
+                    )
                 }
+            } else if (!isInPipMode) {
+                // Main Bottom Bar Layout Screen (Only render when NOT in PiP)
+                Scaffold(
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    bottomBar = {
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier
+                                .height(52.dp)
+                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                .testTag("bottom_nav_bar")
+                        ) {
+                            NavigationBarItem(
+                                selected = selectedNavIndex == 0,
+                                onClick = { selectedNavIndex = 0 },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selectedNavIndex == 0) Icons.Filled.Home else Icons.Outlined.Home,
+                                        contentDescription = strings.navHome,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text(strings.navHome, fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color.White,
+                                    selectedTextColor = YouTubeRed,
+                                    indicatorColor = YouTubeRed.copy(alpha = 0.8f)
+                                ),
+                                modifier = Modifier.testTag("nav_item_home")
+                            )
+
+                            NavigationBarItem(
+                                selected = selectedNavIndex == 1,
+                                onClick = { selectedNavIndex = 1 },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selectedNavIndex == 1) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
+                                        contentDescription = strings.navLibrary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text(strings.navLibrary, fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color.White,
+                                    selectedTextColor = YouTubeRed,
+                                    indicatorColor = YouTubeRed.copy(alpha = 0.8f)
+                                ),
+                                modifier = Modifier.testTag("nav_item_library")
+                            )
+
+                            NavigationBarItem(
+                                selected = selectedNavIndex == 2,
+                                onClick = { selectedNavIndex = 2 },
+                                icon = {
+                                    Icon(
+                                        imageVector = if (selectedNavIndex == 2) Icons.Filled.History else Icons.Outlined.History,
+                                        contentDescription = strings.tabHistory,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                label = { Text(strings.tabHistory, fontSize = 10.sp, fontWeight = FontWeight.Medium) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = Color.White,
+                                    selectedTextColor = YouTubeRed,
+                                    indicatorColor = YouTubeRed.copy(alpha = 0.8f)
+                                ),
+                                modifier = Modifier.testTag("nav_item_history")
+                            )
+                        }
+                    }
             ) { innerPadding ->
                 Box(
                     modifier = Modifier
@@ -657,4 +665,5 @@ fun MainAppContent(
             )
         }
     }
+}
 }

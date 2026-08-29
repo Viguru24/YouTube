@@ -49,13 +49,14 @@ fun LibraryScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Subjects, 1: Downloads, 2: Favorites, 3: Watch Later, 4: History
+    val strings = com.example.util.LocalAppStrings.current
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "Library & Downloads",
+                        text = strings.libraryTitle,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -67,7 +68,7 @@ fun LibraryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.History,
-                            contentDescription = "Watch History",
+                            contentDescription = strings.tabHistory,
                             tint = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -78,7 +79,7 @@ fun LibraryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.CreateNewFolder,
-                            contentDescription = "New Subject",
+                            contentDescription = strings.addCategory,
                             tint = YouTubeRed
                         )
                     }
@@ -126,21 +127,21 @@ fun LibraryScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("Subjects (${categories.size})") },
+                    text = { Text("${strings.tabSubjects} (${categories.size})") },
                     icon = { Icon(Icons.Filled.Folder, contentDescription = null) },
                     modifier = Modifier.testTag("tab_categories")
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("📥 Downloads (${downloadedVideos.size})") },
+                    text = { Text("📥 ${strings.tabDownloads} (${downloadedVideos.size})") },
                     icon = { Icon(Icons.Filled.DownloadDone, contentDescription = null, tint = if (selectedTab == 1) Color(0xFF4CAF50) else LocalContentColor.current) },
                     modifier = Modifier.testTag("tab_downloads")
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("Favorites (${favoriteVideos.size})") },
+                    text = { Text("${strings.tabFavorites} (${favoriteVideos.size})") },
                     icon = {
                         Icon(
                             imageVector = if (selectedTab == 2) Icons.Filled.Star else Icons.Outlined.StarBorder,
@@ -153,14 +154,14 @@ fun LibraryScreen(
                 Tab(
                     selected = selectedTab == 3,
                     onClick = { selectedTab = 3 },
-                    text = { Text("Watch Later (${watchLaterVideos.size})") },
+                    text = { Text("${strings.tabWatchLater} (${watchLaterVideos.size})") },
                     icon = { Icon(Icons.Outlined.WatchLater, contentDescription = null) },
                     modifier = Modifier.testTag("tab_watch_later")
                 )
                 Tab(
                     selected = selectedTab == 4,
                     onClick = { selectedTab = 4 },
-                    text = { Text("History (${historyVideos.size})") },
+                    text = { Text("${strings.tabHistory} (${historyVideos.size})") },
                     icon = { Icon(Icons.Filled.History, contentDescription = null) },
                     modifier = Modifier.testTag("tab_history")
                 )
@@ -184,8 +185,8 @@ fun LibraryScreen(
                     onDeleteDownload = onDeleteDownload
                 )
                 2 -> VideoListTabContent(
-                    title = "Favorite Videos",
-                    emptyText = "No favorite videos saved yet. Tap the star icon on any video to bookmark it here!",
+                    title = strings.tabFavorites,
+                    emptyText = strings.noFavoritesText,
                     videos = favoriteVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -193,8 +194,8 @@ fun LibraryScreen(
                     onDeleteVideo = onDeleteVideo
                 )
                 3 -> VideoListTabContent(
-                    title = "Watch Later List",
-                    emptyText = "Your Watch Later queue is empty. Add videos from the home feed to save them for later!",
+                    title = strings.tabWatchLater,
+                    emptyText = strings.noWatchLaterText,
                     videos = watchLaterVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -202,8 +203,8 @@ fun LibraryScreen(
                     onDeleteVideo = onDeleteVideo
                 )
                 4 -> VideoListTabContent(
-                    title = "Watch History",
-                    emptyText = "No watch history recorded yet. Videos you watch will automatically appear here!",
+                    title = strings.tabHistory,
+                    emptyText = strings.noHistoryText,
                     videos = historyVideos,
                     onVideoClick = onVideoClick,
                     onFavoriteToggle = onFavoriteToggle,
@@ -421,20 +422,21 @@ private fun CategoriesTabContent(
             }
 
             item {
+                val strings = com.example.util.LocalAppStrings.current
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Custom Playlists",
+                        text = strings.customPlaylists,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     TextButton(onClick = onOpenAddCategoryDialog) {
                         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Category")
+                        Text(strings.addCategory)
                     }
                 }
             }
@@ -554,29 +556,28 @@ private fun VideoListTabContent(
 }
 
 @Composable
-fun TryOurOtherProductsCard() {
+private fun TryOurOtherProductsCard() {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val strings = com.example.util.LocalAppStrings.current
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF8E24AA).copy(alpha = 0.35f))
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Filled.AutoAwesome,
-                    contentDescription = "Other Products",
-                    tint = Color(0xFFAB47BC),
-                    modifier = Modifier.size(22.dp)
+                Text(
+                    text = "✨",
+                    fontSize = 18.sp
                 )
                 Text(
-                    text = "Try Our Other Products ✨",
+                    text = strings.tryOurOtherProducts,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -585,7 +586,7 @@ fun TryOurOtherProductsCard() {
 
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Discover more powerful tools created by our team:",
+                text = strings.otherProductsSub,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -650,7 +651,7 @@ fun TryOurOtherProductsCard() {
                             } catch (e: Exception) { }
                         }
                     ) {
-                        Text("Visit Website 🌐", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFAB47BC))
+                        Text(strings.visitWebsite, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFFAB47BC))
                     }
                 }
             }
@@ -715,7 +716,7 @@ fun TryOurOtherProductsCard() {
                             } catch (e: Exception) { }
                         }
                     ) {
-                        Text("Get on Store 🛒", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0078D4))
+                        Text(strings.getOnStore, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0078D4))
                     }
                 }
             }
