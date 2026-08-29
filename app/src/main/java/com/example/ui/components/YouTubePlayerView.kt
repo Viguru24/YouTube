@@ -1576,6 +1576,7 @@ fun YouTubePlayerView(
         // Master Unified Touch Coordinator (1-Finger: Left=Brightness, Right=Volume, Center Swipe=Next/Prev Video, Tap=Play/Pause, Double-Tap=Seek | 2-Fingers: Pinch-to-Zoom & Pan)
         var lastTapTime by remember { mutableLongStateOf(0L) }
         var lastTapX by remember { mutableFloatStateOf(0f) }
+        var singleTapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
         Box(
             modifier = Modifier
@@ -1647,12 +1648,14 @@ fun YouTubePlayerView(
 
                                     if (!isDrag && (java.lang.Math.abs(dy) > 18f || java.lang.Math.abs(dx) > 18f)) {
                                         isDrag = true
-                                        if (dragZone == 1 && zoomScale <= 1.05f) {
+                                        if (dragZone == 1) {
+                                            // Brightness works in normal AND zoomed-in mode
                                             isAdjustingBrightness = true
                                             isAdjustingVolume = false
                                             val currentLp = activity?.window?.attributes?.screenBrightness ?: -1f
                                             gestureBrightness = if (currentLp in 0.01f..1.0f) currentLp else 0.5f
-                                        } else if (dragZone == 2 && zoomScale <= 1.05f) {
+                                        } else if (dragZone == 2) {
+                                            // Volume works in normal AND zoomed-in mode
                                             isAdjustingVolume = true
                                             isAdjustingBrightness = false
                                             val curVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
@@ -1665,7 +1668,7 @@ fun YouTubePlayerView(
                                         val deltaX = p.position.x - p.previousPosition.x
                                         p.consume()
 
-                                        if (dragZone == 1 && zoomScale <= 1.05f) {
+                                        if (dragZone == 1) {
                                             val delta = deltaY / (h * 0.40f)
                                             val newB = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
                                             gestureBrightness = newB
@@ -1674,7 +1677,7 @@ fun YouTubePlayerView(
                                                 lp.screenBrightness = newB
                                                 act.window.attributes = lp
                                             }
-                                        } else if (dragZone == 2 && zoomScale <= 1.05f) {
+                                        } else if (dragZone == 2) {
                                             val delta = deltaY / (h * 0.40f)
                                             val newV = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
                                             gestureVolumeFraction = newV
@@ -1683,7 +1686,7 @@ fun YouTubePlayerView(
                                                 audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
                                             } catch (e: Exception) { }
                                         } else if (zoomScale > 1.02f) {
-                                            // Pan zoomed video with 1 finger
+                                            // Pan zoomed video with 1 finger in center
                                             val maxPanX = (w * (zoomScale - 1f)) / 2f
                                             val maxPanY = (h * (zoomScale - 1f)) / 2f
                                             panOffsetX = (panOffsetX + deltaX).coerceIn(-maxPanX, maxPanX)
@@ -1697,8 +1700,9 @@ fun YouTubePlayerView(
                             val duration = System.currentTimeMillis() - startTime
                             if (!isDrag && !isPinch && duration < 320) {
                                 val now = System.currentTimeMillis()
-                                val isDouble = (now - lastTapTime < 320L) && (java.lang.Math.abs(startX - lastTapX) < 120f)
+                                val isDouble = (now - lastTapTime < 280L) && (java.lang.Math.abs(startX - lastTapX) < 120f)
                                 if (isDouble) {
+                                    singleTapJob?.cancel()
                                     lastTapTime = 0L
                                     if (startX < w * 0.35f) {
                                         val currentPos = exoPlayer.currentPosition
@@ -1723,16 +1727,20 @@ fun YouTubePlayerView(
                                 } else {
                                     lastTapTime = now
                                     lastTapX = startX
-                                    if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
-                                        val willPlay = !exoPlayer.isPlaying
-                                        if (willPlay) {
-                                            exoPlayer.play()
-                                            isPlayingState = true
-                                            areControlsVisible = false
-                                        } else {
-                                            exoPlayer.pause()
-                                            isPlayingState = false
-                                            areControlsVisible = true
+                                    singleTapJob?.cancel()
+                                    singleTapJob = coroutineScope.launch {
+                                        kotlinx.coroutines.delay(240)
+                                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                                            val willPlay = !exoPlayer.isPlaying
+                                            if (willPlay) {
+                                                exoPlayer.play()
+                                                isPlayingState = true
+                                                areControlsVisible = false
+                                            } else {
+                                                exoPlayer.pause()
+                                                isPlayingState = false
+                                                areControlsVisible = true
+                                            }
                                         }
                                     }
                                 }
