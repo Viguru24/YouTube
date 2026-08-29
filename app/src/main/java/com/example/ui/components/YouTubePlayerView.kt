@@ -589,12 +589,9 @@ fun YouTubePlayerView(
                     }
                 )
             }
-            .pointerInput(videoId, selectedSpeed, zoomScale) {
-                var twoFingerAccumulatedY = 0f
+            .pointerInput(videoId) {
                 detectTransformGestures { _, pan, zoom, _ ->
-                    if (kotlin.math.abs(zoom - 1f) > 0.05f) {
-                        // Pinch to zoom
-                        twoFingerAccumulatedY = 0f
+                    if (zoom != 1f || (zoomScale > 1f && (pan.x != 0f || pan.y != 0f))) {
                         val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
                         zoomScale = newScale
                         if (newScale > 1f) {
@@ -606,40 +603,6 @@ fun YouTubePlayerView(
                             panOffsetX = 0f
                             panOffsetY = 0f
                             zoomScale = 1f
-                        }
-                    } else if (zoomScale > 1.05f && (kotlin.math.abs(pan.x) > kotlin.math.abs(pan.y) * 1.5f)) {
-                        // Horizontal pan while zoomed in
-                        val maxPanX = (size.width * (zoomScale - 1f)) / 2f
-                        panOffsetX = (panOffsetX + pan.x * zoomScale).coerceIn(-maxPanX, maxPanX)
-                    } else {
-                        // Two-finger vertical swipe to speed up / slow down
-                        twoFingerAccumulatedY += pan.y
-                        val threshold = 35f * density
-                        val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f)
-                        if (twoFingerAccumulatedY < -threshold) {
-                            twoFingerAccumulatedY = 0f
-                            val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
-                            if (next != selectedSpeed) {
-                                selectedSpeed = next
-                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(next)
-                                speedFeedbackState = "⚡ ${next}x Speed"
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(850)
-                                    speedFeedbackState = null
-                                }
-                            }
-                        } else if (twoFingerAccumulatedY > threshold) {
-                            twoFingerAccumulatedY = 0f
-                            val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
-                            if (prev != selectedSpeed) {
-                                selectedSpeed = prev
-                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(prev)
-                                speedFeedbackState = "🐢 ${prev}x Speed"
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(850)
-                                    speedFeedbackState = null
-                                }
-                            }
                         }
                     }
                 }
@@ -1197,11 +1160,91 @@ fun YouTubePlayerView(
                         }
                     }
 
-                    // Right side: Screenshot + Folder + Sleep Timer + CC + Settings Gear
+                    // Right side: Discreet Speed Pill + Screenshot + Folder + Sleep Timer + CC + Settings Gear
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        // Discreet Speed Controls [ - ] 1.0x [ + ]
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color.Black.copy(alpha = 0.65f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedSpeed != 1.0f) YouTubeRed.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.25f))
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)
+                            ) {
+                                // Slower [ - ]
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
+                                            val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
+                                            if (prev != selectedSpeed) {
+                                                selectedSpeed = prev
+                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(prev)
+                                                speedFeedbackState = "🐢 ${prev}x Speed"
+                                                coroutineScope.launch {
+                                                    kotlinx.coroutines.delay(750)
+                                                    speedFeedbackState = null
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("–", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+
+                                // Speed Label (Tap to reset to 1.0x)
+                                Text(
+                                    text = "${selectedSpeed}x",
+                                    color = if (selectedSpeed == 1.0f) Color.White else YouTubeRed,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier
+                                        .padding(horizontal = 3.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable {
+                                            if (selectedSpeed != 1.0f) {
+                                                selectedSpeed = 1.0f
+                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
+                                                speedFeedbackState = "⚡ 1.0x Speed (Normal)"
+                                                coroutineScope.launch {
+                                                    kotlinx.coroutines.delay(750)
+                                                    speedFeedbackState = null
+                                                }
+                                            }
+                                        }
+                                )
+
+                                // Faster [ + ]
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
+                                            val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
+                                            if (next != selectedSpeed) {
+                                                selectedSpeed = next
+                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(next)
+                                                speedFeedbackState = "⚡ ${next}x Speed"
+                                                coroutineScope.launch {
+                                                    kotlinx.coroutines.delay(750)
+                                                    speedFeedbackState = null
+                                                }
+                                            }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("+", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                            }
+                        }
+
                         // 1. Screenshot Button [📸]
                         IconButton(
                             onClick = { takeScreenshot() },
