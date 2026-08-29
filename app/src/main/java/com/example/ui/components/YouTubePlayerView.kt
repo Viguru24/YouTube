@@ -1196,37 +1196,11 @@ fun YouTubePlayerView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left side: Play/Pause + Favorites + Subject + Watch Later + Timestamp
+                    // Left side: Favorites + Subject + Watch Later + Timestamp
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        // 0. Quick Play / Pause Button in Bottom Bar
-                        IconButton(
-                            onClick = {
-                                if (exoPlayer.isPlaying) {
-                                    exoPlayer.pause()
-                                    isPlayingState = false
-                                    playPauseFeedbackState = false
-                                } else {
-                                    exoPlayer.play()
-                                    isPlayingState = true
-                                    playPauseFeedbackState = true
-                                }
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(650)
-                                    playPauseFeedbackState = null
-                                }
-                            },
-                            modifier = Modifier.size(32.dp).testTag("bottom_bar_play_pause_btn")
-                        ) {
-                            Icon(
-                                imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (isPlayingState) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
 
                         // On-Screen Direct Star (Favorite) Button
                         IconButton(
