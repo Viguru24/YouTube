@@ -9,7 +9,8 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="#0B0B0E"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewMouseDown="Window_PreviewMouseDown">
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0"
@@ -28,15 +29,15 @@
         <Grid>
             <Grid.RowDefinitions>
                 <!-- Title Bar -->
-                <RowDefinition x:Name="TitleBarRow" Height="46"/>
-                <!-- Main Content Area -->
+                <RowDefinition Height="46" x:Name="TitleBarRow"/>
+                <!-- Main App Area -->
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 1. CUSTOM FRAMELESS TITLE BAR -->
+            <!-- 1. TOP HEADER & TITLE BAR (Persistent Drag Area) -->
             <Border x:Name="TitleBarBorder"
                     Grid.Row="0"
-                    Background="{StaticResource BgDarkSecondary}"
+                    Background="#101016"
                     BorderBrush="{StaticResource BorderSubtle}"
                     BorderThickness="0,0,0,1"
                     CornerRadius="14,14,0,0"
@@ -51,8 +52,9 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- App Logo & Brand + Fold Toggle -->
+                    <!-- App Logo & Brand + Fold Toggle + Back Button -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="TopBackBtn" Content="◀ Back" Style="{StaticResource GlassButton}" Padding="10,4" Margin="0,0,10,0" ToolTip="Back to Search Results / Feed (Alt+Left / Esc)" Visibility="Collapsed" Click="BackToFeed_Click"/>
                         <Button x:Name="SidebarToggleBtn" Content="☰" Style="{StaticResource IconActionButton}" Width="30" Height="30" FontSize="14" Margin="0,0,8,0" ToolTip="Fold / Expand Sidebar Menu" Click="SidebarToggle_Click"/>
                         <Border CornerRadius="8" ClipToBounds="True" Width="30" Height="30">
                             <Image Source="App.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality"/>

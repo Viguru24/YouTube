@@ -376,32 +376,35 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 3. Search: SWR Flow (Instant Local DB Matches -> Smooth Debounced Background Network Search)
+        // 3. Search: SWR Flow (Instant Local DB Matches -> Smooth Live Network Search with SP Filters)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
-            searchQuery
-                .debounce(650L)
-                .collectLatest { query ->
-                    val trimmed = query.trim()
-                    if (trimmed.isNotBlank()) {
-                        currentSearchBatchIndex = 0
-                        // Step A: Instant cached search results
-                        val cachedMatches = repository.searchVideosDirect(trimmed)
-                        if (cachedMatches.isNotEmpty()) {
-                            _liveSearchResults.value = cachedMatches
-                        }
-
-                        // Step B: Smooth Live Network Search without blocking typing
-                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = false)
-                        if (realVideos.isNotEmpty()) {
-                            _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
-                            realVideos.forEach { v -> repository.saveVideo(v) }
-                        }
-                    } else {
-                        currentSearchBatchIndex = 0
-                        _liveSearchResults.value = emptyList()
+            combine(searchQuery.debounce(350L), selectedTimeFilter) { query, timeFilter ->
+                Pair(query, timeFilter)
+            }.collectLatest { (query, timeFilter) ->
+                val trimmed = query.trim()
+                if (trimmed.isNotBlank()) {
+                    currentSearchBatchIndex = 0
+                    // Step A: Instant cached search results
+                    val cachedMatches = repository.searchVideosDirect(trimmed)
+                    if (cachedMatches.isNotEmpty()) {
+                        _liveSearchResults.value = cachedMatches
                     }
+
+                    // Step B: Smooth Live Network Search with exact SP filter
+                    val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(
+                        trimmed,
+                        timeFilter = if (timeFilter != "Any Time") timeFilter else null
+                    )
+                    if (realVideos.isNotEmpty()) {
+                        _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
+                        realVideos.forEach { v -> repository.saveVideo(v) }
+                    }
+                } else {
+                    currentSearchBatchIndex = 0
+                    _liveSearchResults.value = emptyList()
                 }
+            }
         }
 
         // 4. Category / Home: SWR Flow (Instant Local DB -> Silent Live Network Sync)

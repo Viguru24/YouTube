@@ -96,7 +96,7 @@ class MediaPlaybackService : Service() {
             .setContentTitle(title)
             .setContentText(channel)
             .setSubText("Continuous Background Audio Active")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentIntent(pendingOpenApp)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

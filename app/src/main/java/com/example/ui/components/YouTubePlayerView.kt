@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -197,13 +198,14 @@ fun YouTubePlayerView(
 
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 120_000,
-                /* maxBufferMs = */ 360_000,
-                /* bufferForPlaybackMs = */ 2_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_500
+                /* minBufferMs = */ 50_000,
+                /* maxBufferMs = */ 120_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
             )
+            .setTargetBufferBytes(androidx.media3.common.C.LENGTH_UNSET)
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(60_000, true)
+            .setBackBuffer(30_000, true)
             .build()
 
         ExoPlayer.Builder(context)
@@ -477,16 +479,14 @@ fun YouTubePlayerView(
                 requestProps["Cookie"] = effectiveCookies
             }
 
-            val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            val okHttpClient = com.example.data.remote.NetworkClient.client
+            val httpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient)
                 .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
                 .setDefaultRequestProperties(requestProps)
-                .setConnectTimeoutMs(15000)
-                .setReadTimeoutMs(30000)
-                .setAllowCrossProtocolRedirects(true)
 
             val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
 
-            val isHls = url.contains(".m3u8") || url.contains("manifest/hls_variant") || selectedQuality == "HLS"
+            val isHls = url.contains(".m3u8") || url.contains("manifest/hls_variant") || selectedQuality == "HLS" || url == streamResult?.qualityUrlMap?.get("HLS")
             if (isHls) {
                 val hlsSource = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory)
                     .setAllowChunklessPreparation(true)
@@ -497,7 +497,12 @@ fun YouTubePlayerView(
                     .createMediaSource(MediaItem.fromUri(url))
                 val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(audioUrl))
-                val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(false, false, videoSource, audioSource)
+                val mergingSource = androidx.media3.exoplayer.source.MergingMediaSource(
+                    /* adjustPeriodTimeOffsets = */ true,
+                    /* clipDurations = */ true,
+                    videoSource,
+                    audioSource
+                )
                 exoPlayer.setMediaSource(mergingSource)
             } else {
                 val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -525,15 +530,67 @@ fun YouTubePlayerView(
 
     var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
     var swipeVideoFeedback by remember { mutableStateOf<String?>(null) }
+    var playPauseFeedbackState by remember { mutableStateOf<Boolean?>(null) }
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
             .clipToBounds()
+            .pointerInput(videoId, zoomScale) {
+                detectTapGestures(
+                    onTap = {
+                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                            val willPlay = !exoPlayer.isPlaying
+                            if (willPlay) {
+                                exoPlayer.play()
+                                isPlayingState = true
+                                areControlsVisible = true
+                            } else {
+                                exoPlayer.pause()
+                                isPlayingState = false
+                                areControlsVisible = true
+                            }
+                            playPauseFeedbackState = willPlay
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(650)
+                                playPauseFeedbackState = null
+                            }
+                        }
+                    },
+                    onDoubleTap = { offset ->
+                        val w = size.width.toFloat()
+                        if (offset.x < w * 0.38f) {
+                            // Double Tap Left: Fast Rewind 10s
+                            val currentPos = exoPlayer.currentPosition
+                            val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
+                            exoPlayer.seekTo(newPos)
+                            forwardRewindFeedback = "⏪ -10s"
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(750)
+                                forwardRewindFeedback = null
+                            }
+                        } else if (offset.x > w * 0.62f) {
+                            // Double Tap Right: Fast Forward 10s
+                            val currentPos = exoPlayer.currentPosition
+                            val dur = if (totalDurationMs > 0) totalDurationMs else Long.MAX_VALUE
+                            val newPos = (currentPos + 10_000L).coerceAtMost(dur)
+                            exoPlayer.seekTo(newPos)
+                            forwardRewindFeedback = "⏩ +10s"
+                            coroutineScope.launch {
+                                kotlinx.coroutines.delay(750)
+                                forwardRewindFeedback = null
+                            }
+                        } else {
+                            // Double Tap Center: Fullscreen Toggle
+                            onToggleFullscreen()
+                        }
+                    }
+                )
+            }
             .pointerInput(videoId) {
                 detectTransformGestures { _, pan, zoom, _ ->
-                    if (zoom != 1f || zoomScale > 1f) {
+                    if (zoom != 1f || (zoomScale > 1f && (pan.x != 0f || pan.y != 0f))) {
                         val newScale = (zoomScale * zoom).coerceIn(1f, 5f)
                         zoomScale = newScale
                         if (newScale > 1f) {
@@ -548,48 +605,6 @@ fun YouTubePlayerView(
                         }
                     }
                 }
-            }
-            .pointerInput(videoId, zoomScale) {
-                detectTapGestures(
-                    onTap = {
-                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
-                            if (exoPlayer.isPlaying) {
-                                exoPlayer.pause()
-                                isPlayingState = false
-                                areControlsVisible = true // Always reveal controls when pausing
-                            } else {
-                                exoPlayer.play()
-                                isPlayingState = true
-                                areControlsVisible = true // Reveal controls when playing
-                            }
-                        }
-                    },
-                    onDoubleTap = { offset: Offset ->
-                        if (zoomScale > 1.05f) {
-                            // Quick reset zoom on double tap
-                            zoomScale = 1f
-                            panOffsetX = 0f
-                            panOffsetY = 0f
-                        } else if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
-                            areControlsVisible = true
-                            val w = size.width
-                            if (offset.x < w / 2f) {
-                                val target = (exoPlayer.currentPosition - 10000L).coerceAtLeast(0L)
-                                exoPlayer.seekTo(target)
-                                forwardRewindFeedback = "-10s ⏪"
-                            } else {
-                                val dur = if (exoPlayer.duration > 0) exoPlayer.duration else Long.MAX_VALUE
-                                val target = (exoPlayer.currentPosition + 10000L).coerceAtMost(dur)
-                                exoPlayer.seekTo(target)
-                                forwardRewindFeedback = "+10s ⏩"
-                            }
-                            coroutineScope.launch {
-                                kotlinx.coroutines.delay(750)
-                                forwardRewindFeedback = null
-                            }
-                        }
-                    }
-                )
             }
             .pointerInput(videoId, zoomScale) {
                 if (zoomScale <= 1.05f) {
@@ -707,8 +722,7 @@ fun YouTubePlayerView(
             if (streamUrl != null && !useWebPlayerFallback) {
                 AndroidView(
                     factory = { ctx ->
-                        val inflater = android.view.LayoutInflater.from(ctx)
-                        (inflater.inflate(com.example.R.layout.exo_texture_player_view, null) as PlayerView).apply {
+                        PlayerView(ctx).apply {
                             player = exoPlayer
                             useController = false
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -963,6 +977,29 @@ fun YouTubePlayerView(
             }
         }
 
+        // Quick Animated Play / Pause Center Bubble Indicator
+        androidx.compose.animation.AnimatedVisibility(
+            visible = playPauseFeedbackState != null,
+            enter = androidx.compose.animation.scaleIn(initialScale = 0.6f) + androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.scaleOut(targetScale = 1.2f) + androidx.compose.animation.fadeOut(),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(68.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (playPauseFeedbackState == true) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = if (playPauseFeedbackState == true) "Playing" else "Paused",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        }
+
         // Sleek YouTube Bottom Utility Bar (Scrubber + Volume + Timestamp + CC + Settings) - Auto-vanishes & Reappears on Touch
         androidx.compose.animation.AnimatedVisibility(
             visible = shouldShowControls,
@@ -1013,7 +1050,7 @@ fun YouTubePlayerView(
                     )
                 }
 
-                // 2. Utility Row: [🔊 Volume] [08:28 / 16:52] ---------- [[CC] Captions] [⚙️ Settings]
+                // 2. Utility Row: [▶ Play/Pause] [🔊 Volume] [08:28 / 16:52] ---------- [[CC] Captions] [⚙️ Settings]
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1021,11 +1058,38 @@ fun YouTubePlayerView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Left side: Volume + Timestamp
+                    // Left side: Play/Pause + Favorites + Subject + Watch Later + Timestamp
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        // 0. Quick Play / Pause Button in Bottom Bar
+                        IconButton(
+                            onClick = {
+                                if (exoPlayer.isPlaying) {
+                                    exoPlayer.pause()
+                                    isPlayingState = false
+                                    playPauseFeedbackState = false
+                                } else {
+                                    exoPlayer.play()
+                                    isPlayingState = true
+                                    playPauseFeedbackState = true
+                                }
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(650)
+                                    playPauseFeedbackState = null
+                                }
+                            },
+                            modifier = Modifier.size(32.dp).testTag("bottom_bar_play_pause_btn")
+                        ) {
+                            Icon(
+                                imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = if (isPlayingState) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
                         // On-Screen Direct Star (Favorite) Button
                         IconButton(
                             onClick = { onFavoriteToggle() },
@@ -1417,7 +1481,7 @@ fun YouTubePlayerView(
             }
         }
 
-        // Floating Zoom Level & Quick Reset Badge
+        // Tiny Out-of-the-Way Bottom-Right Floating Zoom Reset Button
         if (zoomScale > 1.05f) {
             Surface(
                 onClick = {
@@ -1425,29 +1489,20 @@ fun YouTubePlayerView(
                     panOffsetX = 0f
                     panOffsetY = 0f
                 },
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.8f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.75f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 14.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = if (shouldShowControls) 72.dp else 20.dp, end = 16.dp)
+                    .size(36.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "🔍 ${(zoomScale * 10).toInt() / 10f}x Zoom",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "• Tap to Reset",
-                        color = YouTubeRed,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.ZoomOutMap,
+                        contentDescription = "Reset Zoom",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }

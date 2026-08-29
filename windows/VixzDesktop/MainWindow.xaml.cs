@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -40,7 +42,9 @@ namespace VixzDesktop
         public MainWindow()
         {
             InitializeComponent();
+            SetupMouseHook();
             Loaded += MainWindow_Loaded;
+            Closing += (s, e) => CleanupMouseHook();
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -150,17 +154,6 @@ namespace VixzDesktop
         }
 
         #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
-        
-        #click-detector {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: calc(100% - 50px);
-            z-index: 10;
-            cursor: pointer;
-            background: transparent;
-        }
     </style>
 </head>
 <body>
@@ -169,7 +162,6 @@ namespace VixzDesktop
     </div>
     <div id=""player-wrapper"">
         <div id=""player""></div>
-        <div id=""click-detector""></div>
     </div>
     <script>
         var tag = document.createElement('script');
@@ -433,32 +425,6 @@ namespace VixzDesktop
             }
         }
 
-        // Intelligent Click / Double-Click Interceptor
-        var clickTimer = null;
-        var clickDetector = document.getElementById('click-detector');
-        if (clickDetector) {
-            clickDetector.addEventListener('click', function(e) {
-                if (clickTimer) {
-                    // Second click arrived -> DOUBLE CLICK!
-                    clearTimeout(clickTimer);
-                    clickTimer = null;
-                    if (window.chrome && window.chrome.webview) {
-                        window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
-                    }
-                } else {
-                    // First click: wait 260ms before toggling play/pause
-                    clickTimer = setTimeout(function() {
-                        clickTimer = null;
-                        togglePlay();
-                    }, 260);
-                }
-            });
-
-            clickDetector.addEventListener('dblclick', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            });
-        }
     </script>
 </body>
 </html>";
@@ -655,6 +621,8 @@ namespace VixzDesktop
 
         private async Task LoadFeedAsync(string title, Func<Task<List<VideoItem>>> fetcher)
         {
+            _lastFeedScrollOffset = 0;
+            FeedScrollViewer?.ScrollToTop();
             FeedTitleText.Text = title;
             LoadingSpinner.Visibility = Visibility.Visible;
             VideoItemsControl.ItemsSource = null;
@@ -663,6 +631,10 @@ namespace VixzDesktop
             {
                 _rawUnfilteredFeed = await fetcher();
                 ApplyCurrentFilters();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    FeedScrollViewer?.ScrollToTop();
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
             }
             catch (Exception ex)
             {
@@ -701,6 +673,8 @@ namespace VixzDesktop
             ApplyCurrentFilters();
         }
 
+        private string? _currentChannel = null;
+
         private async void ApplyFiltersBtn_Click(object sender, RoutedEventArgs e)
         {
             var query = SearchBox.Text.Trim();
@@ -713,6 +687,29 @@ namespace VixzDesktop
             var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+
+            if (!string.IsNullOrWhiteSpace(_currentChannel))
+            {
+                LoadingSpinner.Visibility = Visibility.Visible;
+                SwitchToFeedView(restoreScroll: false);
+                FeedScrollViewer?.ScrollToTop();
+                FeedTitleText.Text = $"🔔 {_currentChannel}";
+
+                var results = await YouTubeService.SearchVideosAsync(
+                    _currentChannel,
+                    maxResults: 50,
+                    dateFilter: dateTag,
+                    durationFilter: durationTag,
+                    sortBy: sortByTag ?? "latest",
+                    sortByUploadDate: (sortByTag != "views"));
+
+                _rawUnfilteredFeed = results;
+                _currentFeed = results;
+                VideoItemsControl.ItemsSource = _currentFeed;
+                LoadingSpinner.Visibility = Visibility.Collapsed;
+                ShowToast($"⚡ Found {_currentFeed.Count} videos for {_currentChannel}");
+                return;
+            }
 
             if (!string.IsNullOrWhiteSpace(dateTag) || !string.IsNullOrWhiteSpace(durationTag) || sortByTag == "latest" || sortByTag == "views")
             {
@@ -746,12 +743,14 @@ namespace VixzDesktop
 
         private async void NavHome_Click(object sender, RoutedEventArgs e)
         {
+            _currentChannel = null;
             SwitchToFeedView();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
         }
 
         private async void NavSubscriptions_Click(object sender, RoutedEventArgs e)
         {
+            _currentChannel = null;
             SwitchToFeedView();
             await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
         }
@@ -760,7 +759,12 @@ namespace VixzDesktop
         {
             if (sender is Button btn && btn.Content is string channelName)
             {
-                SwitchToFeedView();
+                _currentChannel = channelName;
+                _currentSearchQuery = null;
+                _lastFeedScrollOffset = 0;
+                SearchBox.Text = "";
+                SwitchToFeedView(restoreScroll: false);
+                FeedScrollViewer?.ScrollToTop();
                 await LoadFeedAsync($"🔔 {channelName}", () => YouTubeService.GetSubscribedFeedAsync(channelName));
             }
         }
@@ -1084,33 +1088,69 @@ namespace VixzDesktop
 
         private void NavFavorites_Click(object sender, RoutedEventArgs e)
         {
-            SwitchToFeedView();
+            _lastFeedScrollOffset = 0;
+            SwitchToFeedView(restoreScroll: false);
             FeedTitleText.Text = "⭐ Favorite Videos";
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
             ApplyCurrentFilters();
+            FeedScrollViewer?.ScrollToTop();
         }
 
         private void NavWatchLater_Click(object sender, RoutedEventArgs e)
         {
-            SwitchToFeedView();
+            _lastFeedScrollOffset = 0;
+            SwitchToFeedView(restoreScroll: false);
             FeedTitleText.Text = "🕒 Watch Later Queue";
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
             ApplyCurrentFilters();
+            FeedScrollViewer?.ScrollToTop();
         }
 
         private void NavHistory_Click(object sender, RoutedEventArgs e)
         {
-            SwitchToFeedView();
+            _lastFeedScrollOffset = 0;
+            SwitchToFeedView(restoreScroll: false);
             FeedTitleText.Text = "📜 Watch History";
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
             ApplyCurrentFilters();
+            FeedScrollViewer?.ScrollToTop();
         }
 
-        private async void SwitchToFeedView()
+        private double _lastFeedScrollOffset = 0;
+
+        private async void SwitchToFeedView(bool restoreScroll = true)
         {
+            if (_isCustomFullscreen)
+            {
+                ToggleFullscreen();
+            }
+
             PlayerView.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Visible;
+            if (TopBackBtn != null) TopBackBtn.Visibility = Visibility.Collapsed;
             _sponsorBlockTimer?.Stop();
+
+            // Rebind and restore scroll position so the user returns exactly to the search/feed results
+            if (VideoItemsControl != null && _currentFeed != null)
+            {
+                if (VideoItemsControl.ItemsSource != _currentFeed)
+                {
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                }
+            }
+
+            if (restoreScroll && FeedScrollViewer != null && _lastFeedScrollOffset > 0)
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    FeedScrollViewer.ScrollToVerticalOffset(_lastFeedScrollOffset);
+                }), System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+            else if (!restoreScroll && FeedScrollViewer != null)
+            {
+                _lastFeedScrollOffset = 0;
+                FeedScrollViewer.ScrollToTop();
+            }
 
             try
             {
@@ -1138,8 +1178,13 @@ namespace VixzDesktop
 
         private void SwitchToPlayerView()
         {
+            if (FeedScrollViewer != null && FeedView.Visibility == Visibility.Visible)
+            {
+                _lastFeedScrollOffset = FeedScrollViewer.VerticalOffset;
+            }
             FeedView.Visibility = Visibility.Collapsed;
             PlayerView.Visibility = Visibility.Visible;
+            if (TopBackBtn != null) TopBackBtn.Visibility = Visibility.Visible;
         }
 
         private async void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -1255,30 +1300,36 @@ namespace VixzDesktop
             if (string.IsNullOrWhiteSpace(query)) return;
 
             _currentSearchQuery = query;
+            _lastFeedScrollOffset = 0;
 
             var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
-            string? spParam = null;
-            if (sortByTag == "latest") spParam = "CAI%3D";
-            else if (sortByTag == "views") spParam = "CAM%3D";
-            else if (dateTag == "today") spParam = "EgIIAg%3D%3D";
-            else if (dateTag == "week") spParam = "EgIIAw%3D%3D";
-            else if (dateTag == "month") spParam = "EgIIBA%3D%3D";
-            else if (durationTag == "short") spParam = "EgQQARgB";
-            else if (durationTag == "medium") spParam = "EgQQARgD";
-            else if (durationTag == "long") spParam = "EgQQARgC";
+            string? spParam = YouTubeService.BuildSearchFilterSp(dateTag, durationTag, sortByTag);
 
             LoadingSpinner.Visibility = Visibility.Visible;
-            SwitchToFeedView();
+            SwitchToFeedView(restoreScroll: false);
+            FeedScrollViewer?.ScrollToTop();
             FeedTitleText.Text = $"🔍 Search: \"{query}\"";
 
-            var results = await YouTubeService.SearchVideosAsync(query, 50, spFilter: spParam);
+            var results = await YouTubeService.SearchVideosAsync(
+                query, 
+                maxResults: 50, 
+                spFilter: spParam, 
+                dateFilter: dateTag, 
+                durationFilter: durationTag, 
+                sortBy: sortByTag);
+
             _rawUnfilteredFeed = results;
-            _currentFeed = YouTubeService.ApplyLocalFilters(results, dateTag, durationTag, sortByTag);
+            _currentFeed = results;
             VideoItemsControl.ItemsSource = _currentFeed;
             LoadingSpinner.Visibility = Visibility.Collapsed;
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                FeedScrollViewer?.ScrollToTop();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private async void FeedScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -1310,13 +1361,17 @@ namespace VixzDesktop
                 var existingIds = new HashSet<string>(_rawUnfilteredFeed.Select(v => v.Id));
                 List<VideoItem> moreVideos = new List<VideoItem>();
 
+                var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+                var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+                var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+
                 if (!string.IsNullOrWhiteSpace(_currentSearchQuery))
                 {
-                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35);
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35, dateTag, durationTag, sortByTag);
                 }
                 else
                 {
-                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync("Trending Worldwide", existingIds, 35);
+                    moreVideos = await YouTubeService.FetchNextSearchBatchAsync("Trending Worldwide", existingIds, 35, dateTag, durationTag, sortByTag);
                 }
 
                 if (moreVideos.Count > 0)
@@ -1421,8 +1476,7 @@ namespace VixzDesktop
             FavBtn.Foreground = video.IsFavorite ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.White;
             WatchLaterBtn.Foreground = video.IsWatchLater ? (System.Windows.Media.Brush)FindResource("AccentRed") : System.Windows.Media.Brushes.White;
 
-            FeedView.Visibility = Visibility.Collapsed;
-            PlayerView.Visibility = Visibility.Visible;
+            SwitchToPlayerView();
             UpdateAmbientGlowFromVideo(video);
             AnimateBottomBar(1.0);
             _bottomBarHideTimer?.Stop();
@@ -2079,18 +2133,6 @@ namespace VixzDesktop
                     : await DownloadService.DownloadAudioAsync(_currentVideo.Id, _currentVideo.Title, progressHandler);
 
                 ShowToast(isVideo ? "✅ Video Download Complete!" : "✅ Audio Download Complete!");
-
-                var typeName = isVideo ? "Video" : "Audio";
-                var result = MessageBox.Show($"{typeName} downloaded successfully!\n\nSaved to: {filePath}\n\nWould you like to open the folder?", "Download Complete", MessageBoxButton.YesNo, MessageBoxImage.Information);
-                if (result == MessageBoxResult.Yes)
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = $"/select,\"{filePath}\"",
-                        UseShellExecute = true
-                    });
-                }
             }
             catch (Exception ex)
             {
@@ -2421,7 +2463,7 @@ namespace VixzDesktop
         {
             if (e.ClickCount == 2)
             {
-                MaximizeToggle();
+                ToggleFullscreen();
             }
         }
 
@@ -2457,9 +2499,154 @@ namespace VixzDesktop
             }
         }
 
+        #region Low-Level Mouse Hook (Reliable Video Double-Click Fullscreen Without Blocking Scrubber)
+
+        [DllImport("user32.dll")]
+        private static extern uint GetDoubleClickTime();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        private const int WH_MOUSE_LL = 14;
+        private const int WM_LBUTTONDOWN = 0x0201;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int x;
+            public int y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MSLLHOOKSTRUCT
+        {
+            public POINT pt;
+            public uint mouseData;
+            public uint flags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        private IntPtr _mouseHookHandle = IntPtr.Zero;
+        private LowLevelMouseProc? _mouseProc;
+        private DateTime _lastMouseClickTime = DateTime.MinValue;
+        private Point _lastMouseClickPoint = new Point(0, 0);
+
+        private void SetupMouseHook()
+        {
+            try
+            {
+                _mouseProc = MouseHookCallback;
+                using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
+                using var curModule = curProcess.MainModule;
+                if (curModule != null)
+                {
+                    _mouseHookHandle = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, GetModuleHandle(curModule.ModuleName), 0);
+                }
+            }
+            catch { }
+        }
+
+        private void CleanupMouseHook()
+        {
+            if (_mouseHookHandle != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(_mouseHookHandle);
+                _mouseHookHandle = IntPtr.Zero;
+            }
+        }
+
+        private IntPtr MouseHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+        {
+            if (nCode >= 0 && wParam == (IntPtr)WM_LBUTTONDOWN)
+            {
+                try
+                {
+                    var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                    var now = DateTime.Now;
+                    var doubleClickTime = GetDoubleClickTime();
+                    var diff = (now - _lastMouseClickTime).TotalMilliseconds;
+
+                    var dx = Math.Abs(hookStruct.pt.x - _lastMouseClickPoint.X);
+                    var dy = Math.Abs(hookStruct.pt.y - _lastMouseClickPoint.Y);
+
+                    if (diff <= doubleClickTime && dx <= 14 && dy <= 14)
+                    {
+                        // Reset click time to avoid triple-click triggers
+                        _lastMouseClickTime = DateTime.MinValue;
+
+                        Dispatcher.InvokeAsync(() =>
+                        {
+                            try
+                            {
+                                var helper = new WindowInteropHelper(this);
+                                if (GetForegroundWindow() != helper.Handle) return;
+                                if (PlayerView.Visibility != Visibility.Visible) return;
+                                if (VideoWebView == null || !VideoWebView.IsVisible) return;
+
+                                var topLeft = VideoWebView.PointToScreen(new Point(0, 0));
+                                var width = VideoWebView.ActualWidth;
+                                var height = VideoWebView.ActualHeight;
+
+                                // Check if click is inside the video player screen rect
+                                if (hookStruct.pt.x >= topLeft.X && hookStruct.pt.x <= (topLeft.X + width) &&
+                                    hookStruct.pt.y >= topLeft.Y && hookStruct.pt.y <= (topLeft.Y + height))
+                                {
+                                    // Protect the bottom 52px area so scrubbing/clicking controls doesn't toggle fullscreen
+                                    if (hookStruct.pt.y <= (topLeft.Y + height - 52))
+                                    {
+                                        ToggleFullscreen();
+                                    }
+                                }
+                            }
+                            catch { }
+                        });
+                    }
+                    else
+                    {
+                        _lastMouseClickTime = now;
+                        _lastMouseClickPoint = new Point(hookStruct.pt.x, hookStruct.pt.y);
+                    }
+                }
+                catch { }
+            }
+
+            return CallNextHookEx(_mouseHookHandle, nCode, wParam, lParam);
+        }
+
+        #endregion
+
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             // Do not intercept hotkeys if typing inside any input text box
+            // Back navigation hotkeys: Alt+Left, BrowserBack, Backspace (when not typing in a text field)
+            if ((Keyboard.Modifiers == ModifierKeys.Alt && (e.SystemKey == Key.Left || e.Key == Key.Left)) || 
+                e.Key == Key.BrowserBack || 
+                (e.Key == Key.Back && !(Keyboard.FocusedElement is TextBox || Keyboard.FocusedElement is PasswordBox || SearchBox.IsFocused || (AiPromptBox != null && AiPromptBox.IsFocused) || (NewFolderInput != null && NewFolderInput.IsFocused))))
+            {
+                if (PlayerView.Visibility == Visibility.Visible)
+                {
+                    e.Handled = true;
+                    SwitchToFeedView();
+                    return;
+                }
+            }
+
             if (Keyboard.FocusedElement is TextBox || 
                 Keyboard.FocusedElement is PasswordBox || 
                 SearchBox.IsFocused || 
@@ -2535,8 +2722,29 @@ namespace VixzDesktop
                     e.Handled = true;
                     if (SleepTimerPopup.IsOpen) SleepTimerPopup.IsOpen = false;
                     if (FolderPopup.IsOpen) FolderPopup.IsOpen = false;
-                    if (_isCustomFullscreen) ToggleFullscreen();
+                    if (SharePopup != null && SharePopup.IsOpen) SharePopup.IsOpen = false;
+                    if (SearchHistoryPopup != null && SearchHistoryPopup.IsOpen) SearchHistoryPopup.IsOpen = false;
+                    if (_isCustomFullscreen)
+                    {
+                        ToggleFullscreen();
+                    }
+                    else if (PlayerView.Visibility == Visibility.Visible)
+                    {
+                        SwitchToFeedView();
+                    }
                     break;
+            }
+        }
+
+        private void Window_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.XButton1)
+            {
+                if (PlayerView.Visibility == Visibility.Visible)
+                {
+                    e.Handled = true;
+                    SwitchToFeedView();
+                }
             }
         }
 
