@@ -62,6 +62,22 @@ fun LibraryScreen(
                     )
                 },
                 actions = {
+                    var showLanguageDialog by remember { mutableStateOf(false) }
+
+                    // 1-Click Direct Language Selector 🌐
+                    IconButton(
+                        onClick = { showLanguageDialog = true },
+                        modifier = Modifier.testTag("library_language_btn")
+                    ) {
+                        Text("🌐", fontSize = 18.sp)
+                    }
+
+                    if (showLanguageDialog) {
+                        com.example.ui.components.LanguageSelectionDialog(
+                            onDismiss = { showLanguageDialog = false }
+                        )
+                    }
+
                     IconButton(
                         onClick = onOpenHistory,
                         modifier = Modifier.testTag("library_history_top_btn")

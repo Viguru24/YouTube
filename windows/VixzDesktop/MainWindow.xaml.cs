@@ -60,6 +60,7 @@ namespace VixzDesktop
             ApplySidebarState();
             ApplyAmbientGlowState();
             UpdateFolderChipHighlights();
+            ApplyLanguage(StorageService.Settings.AppLanguage ?? "EN");
 
             await InitializeWebViewAsync();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
@@ -3595,6 +3596,86 @@ namespace VixzDesktop
 
             AiMessageStack.Children.Add(mainContainer);
             AiChatScrollViewer.ScrollToEnd();
+        }
+
+        #endregion
+
+        #region Language & Localization
+
+        private void LanguageBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var menu = new ContextMenu
+            {
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkSecondary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle")
+            };
+
+            foreach (var kvp in DesktopLocalizationService.AvailableLanguages)
+            {
+                var langCode = kvp.Key;
+                var (displayName, flag, nativeName) = kvp.Value;
+                var isCurrent = string.Equals(StorageService.Settings.AppLanguage, langCode, StringComparison.OrdinalIgnoreCase);
+
+                var item = new MenuItem
+                {
+                    Header = $"{flag}  {nativeName} ({displayName})",
+                    IsChecked = isCurrent,
+                    Foreground = System.Windows.Media.Brushes.White
+                };
+
+                item.Click += (s, args) =>
+                {
+                    ApplyLanguage(langCode);
+                };
+
+                menu.Items.Add(item);
+            }
+
+            menu.PlacementTarget = LanguageBtn;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        public void ApplyLanguage(string langCode)
+        {
+            if (string.IsNullOrEmpty(langCode)) langCode = "EN";
+            StorageService.Settings.AppLanguage = langCode;
+            StorageService.Save();
+
+            var strings = DesktopLocalizationService.GetStrings(langCode);
+            var (displayName, flag, nativeName) = DesktopLocalizationService.AvailableLanguages.TryGetValue(langCode, out var val) 
+                ? val 
+                : ("English", "🇺🇸", "English");
+
+            LanguageBtn.Content = $"🌐 {flag} {nativeName}";
+            NavHomeBtn.Content = $"🏠   {strings.HomeFeed}";
+            NavSubscribedBtn.Content = $"🔔   {strings.Subscriptions}";
+            NavTrendingBtn.Content = $"🔥   {strings.Trending}";
+            NavFavBtn.Content = $"⭐   {strings.Favorites}";
+            NavWatchLaterBtn.Content = $"🕒   {strings.WatchLater}";
+            NavHistoryBtn.Content = $"📜   {strings.History}";
+
+            SearchPlaceholderText.Text = strings.SearchPlaceholder;
+            DateFilterLabel.Text = $"📅 {strings.DateLabel}";
+            LengthFilterLabel.Text = $"⏱️ {strings.LengthLabel}";
+            SortFilterLabel.Text = $"⚡ {strings.SortLabel}";
+            ApplyFiltersBtn.Content = strings.ApplyFilters;
+            ResetFiltersBtn.Content = strings.Reset;
+
+            if (FeedTitleText.Text == "Recommended Feed" || 
+                FeedTitleText.Text == "Feed Recomendado" || 
+                FeedTitleText.Text == "Flux Recommandé" ||
+                FeedTitleText.Text == "Empfohlener Feed" ||
+                FeedTitleText.Text == "Рекомендации" ||
+                FeedTitleText.Text == "おすすめフィード" ||
+                FeedTitleText.Text == "맞춤 추천 피드" ||
+                FeedTitleText.Text == "为你推荐" ||
+                FeedTitleText.Text == "सुझाई गई फ़ीड" ||
+                FeedTitleText.Text == "الفيديوهات المقترحة")
+            {
+                FeedTitleText.Text = strings.RecommendedFeed;
+            }
         }
 
         #endregion

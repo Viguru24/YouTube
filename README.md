@@ -4,7 +4,7 @@
 
 **Native ExoPlayer Performance • 100% Commercial Ad-Free • Auto SponsorBlock • Gemini AI Summaries • Offline Downloads**
 
-[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.5-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.5/Vixz-YouTube-Player-v1.9.5.apk)
+[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.6-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)
 [![GitHub Release](https://img.shields.io/github/v/release/Viguru24/YouTube?style=for-the-badge&color=2ea44f)](https://github.com/Viguru24/YouTube/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
+  <a href="#-whats-new-in-v196">🆕 <b>What's New</b></a> •
   <a href="#-key-features">✨ <b>Features</b></a> •
   <a href="#-feature-comparison">📊 <b>Comparison</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -22,11 +23,20 @@
 
 ---
 
+## 🆕 What's New in v1.9.6
+
+- 🌐 **12-Language In-App Localization:** Complete UI translations for **English, Español, Français, Deutsch, Português, Italiano, Русский, 日本語, 한국어, 简体中文, हिन्दी, العربية**.
+- ⚡ **0ms Instant Live UI Switching:** Change languages in Settings with instant zero-reload UI updates without interrupting video playback.
+- ✨ **Ecosystem Spotlight:** Seamless 1-tap discovery of **Cosmo Whisper** (*AI Transcription*) and **Cosmo Symphony** (*Microsoft Store Media Tool*).
+- ⏰ **Optimized "Last 24h" Filter:** Enhanced real-time upload parsing and creator feed synchronization.
+
+---
+
 ## ⚡ Quick Install Guide
 
 Installing Vixz takes less than 60 seconds:
 
-1. **[📥 Download the Latest Vixz APK (v1.9.5)](https://github.com/Viguru24/YouTube/releases/download/v1.9.5/Vixz-YouTube-Player-v1.9.5.apk)** directly to your Android device.
+1. **[📥 Download the Latest Vixz APK (v1.9.6)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)** directly to your Android device.
 2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Launch **Vixz** and enjoy uninterrupted, lightning-fast video playback with zero ads!

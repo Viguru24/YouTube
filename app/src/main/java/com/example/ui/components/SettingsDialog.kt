@@ -40,7 +40,7 @@ fun SettingsDialog(
 ) {
     val strings = LocalAppStrings.current
     val currentLang by LanguageManager.currentLanguage.collectAsState()
-    var isLanguageExpanded by remember { mutableStateOf(false) }
+    var isLanguageExpanded by remember { mutableStateOf(true) }
     var newBlockedKeyword by remember { mutableStateOf("") }
     var newBoostedTopic by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
@@ -710,7 +710,7 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
-                                text = "Personal YouTube Player • v1.0.0",
+                                text = "Vixz YouTube Player • v1.9.6",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold
                             )

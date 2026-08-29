@@ -298,9 +298,26 @@ fun HomeScreen(
                 },
                 actions = {
                     if (!isSearchExpanded) {
+                        var showLanguageDialog by remember { mutableStateOf(false) }
+                        val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
+
                         // 1. Search 🔍
                         IconButton(onClick = { isSearchExpanded = true }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
+                        }
+
+                        // 2. Direct 1-Click Language Switcher 🌐
+                        IconButton(
+                            onClick = { showLanguageDialog = true },
+                            modifier = Modifier.testTag("top_language_btn")
+                        ) {
+                            Text("🌐", fontSize = 18.sp)
+                        }
+
+                        if (showLanguageDialog) {
+                            com.example.ui.components.LanguageSelectionDialog(
+                                onDismiss = { showLanguageDialog = false }
+                            )
                         }
 
                         // 3. LS Profile Button (Opens Settings & Full Menu Options)
@@ -347,6 +364,13 @@ fun HomeScreen(
                                 expanded = showProfileMenu,
                                 onDismissRequest = { showProfileMenu = false }
                             ) {
+                                DropdownMenuItem(
+                                    text = { Text("🌐 App Language (${currentLang.flagEmoji} ${currentLang.nativeName})", fontWeight = FontWeight.SemiBold) },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        showLanguageDialog = true
+                                    }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("⚙️ Settings & Algorithm", fontWeight = FontWeight.SemiBold) },
                                     onClick = {
