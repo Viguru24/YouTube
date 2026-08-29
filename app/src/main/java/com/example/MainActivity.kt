@@ -404,6 +404,7 @@ fun MainAppContent(
                     onOpenGoogleAuth = { showGoogleAuthDialog = true },
                     areAdvertsEnabled = areAdvertsEnabled,
                     onNotInterested = { v -> viewModel.deleteVideo(v) },
+                    isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
                     onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
                     isDownloaded = isDownloadedVideo,
                     downloadProgress = currentProgress,

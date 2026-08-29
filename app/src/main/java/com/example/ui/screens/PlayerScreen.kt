@@ -67,6 +67,7 @@ fun PlayerScreen(
     onOpenGoogleAuth: () -> Unit,
     areAdvertsEnabled: Boolean = false,
     onNotInterested: (VideoEntity) -> Unit = {},
+    isDisliked: Boolean = false,
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     isDownloaded: Boolean = false,
     downloadProgress: Int = 0,
@@ -227,6 +228,21 @@ fun PlayerScreen(
                         onFavoriteToggle = { onFavoriteToggle(video) },
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },
+                        isDisliked = isDisliked,
+                        onDislikeToggle = {
+                            onNotInterested(video)
+                            val nextVideo = otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+                            if (nextVideo != null) {
+                                onSelectOtherVideo(nextVideo)
+                            } else {
+                                onBackClick()
+                            }
+                        },
+                        onAiSummaryClick = { showAiSummaryModal = true },
+                        isDownloaded = isDownloaded,
+                        downloadProgress = downloadProgress,
+                        onDownloadClick = onDownloadClick,
+                        onDeleteDownloadClick = onDeleteDownloadClick,
                         videoTitle = video.title,
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = toggleFullscreen,
@@ -339,146 +355,6 @@ fun PlayerScreen(
                                                 color = if (isSubbed) MaterialTheme.colorScheme.onSurface else Color.White,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                // Sleek Compact Action Bar (Like, Dislike, Share, AI Summary, Download)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.SpaceEvenly,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // 1. Like 👍
-                                    var isLiked by remember(video.youtubeId, video.isFavorite) { mutableStateOf(video.isFavorite) }
-                                    IconButton(
-                                        onClick = {
-                                            isLiked = !isLiked
-                                            onFavoriteToggle(video)
-                                            android.widget.Toast.makeText(context, if (isLiked) "Liked video 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isLiked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                            contentDescription = "Like",
-                                            tint = if (isLiked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    // 2. Dislike 👎
-                                    var isDisliked by remember(video.youtubeId) { mutableStateOf(false) }
-                                    IconButton(
-                                        onClick = {
-                                            isDisliked = !isDisliked
-                                            if (isDisliked) {
-                                                if (isLiked) {
-                                                    isLiked = false
-                                                    onFavoriteToggle(video)
-                                                }
-                                                onNotInterested(video)
-                                                android.widget.Toast.makeText(context, "Disliked 👎 - Playing next", android.widget.Toast.LENGTH_SHORT).show()
-                                                val nextVideo = otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
-                                                if (nextVideo != null) {
-                                                    onSelectOtherVideo(nextVideo)
-                                                } else {
-                                                    onBackClick()
-                                                }
-                                            } else {
-                                                android.widget.Toast.makeText(context, "Removed Dislike", android.widget.Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isDisliked) YouTubeRed.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                                            contentDescription = "Dislike",
-                                            tint = if (isDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    // 3. ↗️ Share Video Link
-                                    IconButton(
-                                        onClick = {
-                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(android.content.Intent.EXTRA_SUBJECT, video.title)
-                                                putExtra(android.content.Intent.EXTRA_TEXT, "${video.title}\nhttps://youtu.be/${video.youtubeId}")
-                                            }
-                                            context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video Link"))
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Share,
-                                            contentDescription = "Share Link",
-                                            tint = MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    // 4. ✨ AI Summary
-                                    IconButton(
-                                        onClick = { showAiSummaryModal = true },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF8E24AA).copy(alpha = 0.18f))
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.AutoAwesome,
-                                            contentDescription = "AI Summary",
-                                            tint = Color(0xFFAB47BC),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-
-                                    // 5. ⬇️ Download
-                                    IconButton(
-                                        onClick = {
-                                            if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    ) {
-                                        if (isDownloaded) {
-                                            Icon(
-                                                imageVector = Icons.Filled.CheckCircle,
-                                                contentDescription = "Downloaded",
-                                                tint = Color(0xFF4CAF50),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        } else if (downloadProgress in 1..99) {
-                                            CircularProgressIndicator(
-                                                progress = { downloadProgress / 100f },
-                                                modifier = Modifier.size(16.dp),
-                                                color = YouTubeRed,
-                                                strokeWidth = 2.dp
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Filled.Download,
-                                                contentDescription = "Download Video",
-                                                tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }
