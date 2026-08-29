@@ -89,6 +89,8 @@ fun HomeScreen(
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
     var showAddChannelDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showProfileMenu by remember { mutableStateOf(false) }
+    var showSortSubMenu by remember { mutableStateOf(false) }
     var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
@@ -315,10 +317,7 @@ fun HomeScreen(
                             Text("🌐", fontSize = 18.sp)
                         }
 
-                        // 3. LS Profile Button (Opens Settings & Full Menu Options)
-                        var showProfileMenu by remember { mutableStateOf(false) }
-                        var showSortSubMenu by remember { mutableStateOf(false) }
-
+                        // 3. Profile Button (Opens Settings & Full Menu Options)
                         Box {
                             IconButton(
                                 onClick = { showProfileMenu = true },
@@ -332,7 +331,7 @@ fun HomeScreen(
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "LS",
+                                                text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "GU",
                                                 color = Color.White,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 13.sp

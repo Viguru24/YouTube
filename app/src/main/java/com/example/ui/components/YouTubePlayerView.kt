@@ -126,7 +126,14 @@ fun YouTubePlayerView(
     var activeCaptionText by remember { mutableStateOf<String?>(null) }
     var isCaptionsLoading by remember { mutableStateOf(false) }
     // Gestures: Brightness (Left) & Volume (Right)
-    val activity = remember(context) { context as? android.app.Activity }
+    val activity = remember(context) {
+        var ctx = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) return@remember ctx
+            ctx = ctx.baseContext
+        }
+        null
+    }
     val audioManager = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
     val maxAudioVolume = remember(audioManager) { audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
