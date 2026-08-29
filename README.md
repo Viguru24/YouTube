@@ -113,7 +113,12 @@ Installing Vixz takes less than 60 seconds:
 
 - **Android Versions:** Android 8.0 (Oreo) through Android 15+
 - **Architectures:** `arm64-v8a`, `armeabi-v7a`, `x86_64`
-- **Root Requirement:** **No Root Required** (100% Standalone APK)
+## 🌟 Try Our Other Products
+
+Discover more tools developed by our team:
+
+- 🎙️ **[Cosmo Whisper](https://cosmowhisper.com)** — Ultra-fast, on-device AI speech-to-text, audio transcription, and voice intelligence.
+- 🎵 **[Cosmo Symphony on Microsoft Store](https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare)** — Music, media, and audio processing on Windows.
 
 ---
 
