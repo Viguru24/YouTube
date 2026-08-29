@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.*
+import com.example.util.findActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,7 +99,7 @@ fun PlayerScreen(
 
     // Automatically manage immersive system bars when phone is physically rotated 90 degrees or maximized
     LaunchedEffect(isLandscape, isMaximized, isInPipMode) {
-        val act = context as? android.app.Activity
+        val act = context.findActivity()
         if (act != null) {
             val window = act.window
             val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
@@ -113,13 +114,13 @@ fun PlayerScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            val act = context as? android.app.Activity
+            val act = context.findActivity()
             act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
         }
     }
 
         val toggleFullscreen: () -> Unit = {
-        val act = context as? android.app.Activity
+        val act = context.findActivity()
         if (act != null) {
             val isCurrentLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
             if (isCurrentLand) {
