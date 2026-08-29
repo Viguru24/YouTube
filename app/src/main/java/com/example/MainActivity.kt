@@ -450,9 +450,8 @@ fun MainAppContent(
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
                         contentColor = MaterialTheme.colorScheme.onSurface,
+                        windowInsets = NavigationBarDefaults.windowInsets,
                         modifier = Modifier
-                            .height(navBarHeight)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
                         NavigationBarItem(
