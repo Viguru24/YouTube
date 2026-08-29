@@ -103,7 +103,7 @@ fun YouTubePlayerView(
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
-    var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
+
     var statusLog by remember(videoId) { mutableStateOf("Initializing Native ExoPlayer Engine...") }
     val debugLogs = remember(videoId) { mutableStateListOf<String>() }
 
@@ -268,7 +268,7 @@ fun YouTubePlayerView(
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 addLog("⚠️ ExoPlayer Playback Error (${error.errorCodeName}): ${error.message} -> Activating Web Player Fallback")
-                useWebPlayerFallback = true
+                
                 isLoading = false
             }
         }
@@ -444,7 +444,7 @@ fun YouTubePlayerView(
     LaunchedEffect(videoId) {
         isLoading = true
         isFirstFrameRendered = false
-        useWebPlayerFallback = false
+        
         hasPreparedMedia = false
         streamUrl = null
 
@@ -474,7 +474,7 @@ fun YouTubePlayerView(
             addLog("Streams Extracted! Available: ${result.availableQualities.joinToString(", ")}")
         } else {
             isLoading = false
-            useWebPlayerFallback = true
+            
             statusLog = "Direct stream timed out or restricted. Activating Web Player."
             addLog("Direct stream timeout (15.0s) -> Activating Web Player Fallback")
         }
@@ -580,164 +580,31 @@ fun YouTubePlayerView(
                 },
             contentAlignment = Alignment.Center
         ) {
-            if (streamUrl != null && !useWebPlayerFallback) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            setOnTouchListener { _, _ -> false }
-                            playerViewRef = this
-                        }
-                    },
-                    update = { view ->
-                        if (view.player != exoPlayer) {
-                            view.player = exoPlayer
-                        }
-                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        playerViewRef = view
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("native_exoplayer_view")
-                )
-            } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
-                // Automatic Fallback: Embedded YouTube Player WebView with WebChromeClient for HTML5 Video Playback
-                AndroidView(
-                    factory = { ctx ->
-                        android.webkit.WebView(ctx).apply {
-                            layoutParams = android.view.ViewGroup.LayoutParams(
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.databaseEnabled = true
-                            settings.useWideViewPort = true
-                            settings.loadWithOverviewMode = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                            // Desktop Mode User-Agent: Bypasses mobile browser embed restrictions automatically
-                            settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-
-                            // Set Comprehensive Desktop, EU/UK Consent & Privacy Bypass Cookies
-                            try {
-                                val cookieManager = android.webkit.CookieManager.getInstance()
-                                cookieManager.setAcceptCookie(true)
-                                cookieManager.setAcceptThirdPartyCookies(this, true)
-                                val domains = listOf(
-                                    "https://www.youtube.com",
-                                    "https://m.youtube.com",
-                                    "https://youtube.com",
-                                    ".youtube.com",
-                                    "https://consent.youtube.com",
-                                    "https://consent.google.com",
-                                    ".google.com"
-                                )
-                                val consentCookies = listOf(
-                                    "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                    "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                    "PREF=f6=40000000&hl=en&gl=GB; path=/; domain=.youtube.com; Secure; SameSite=None",
-                                    "SOCS=CAESEwgDEgk2OTg5OTk5OTkaAmVuIAEaBgiA_LyaBg; path=/; domain=.google.com; Secure; SameSite=None",
-                                    "CONSENT=YES+cb.20230531-04-p0.en+FX+999; path=/; domain=.google.com; Secure; SameSite=None"
-                                )
-                                domains.forEach { domain ->
-                                    consentCookies.forEach { cookie ->
-                                        cookieManager.setCookie(domain, cookie)
-                                    }
-                                }
-                                cookieManager.flush()
-                            } catch (e: Exception) { }
-
-                            webChromeClient = object : android.webkit.WebChromeClient() {
-                                override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
-                                    super.onShowCustomView(view, callback)
-                                    onToggleFullscreen()
-                                }
-                                override fun onHideCustomView() {
-                                    super.onHideCustomView()
-                                    onToggleFullscreen()
-                                }
-                            }
-                        webViewClient = object : android.webkit.WebViewClient() {
-                            private fun runBypassScript(view: android.webkit.WebView?) {
-                                view?.evaluateJavascript("""
-                                    (function() {
-                                        // 1. Auto-dismiss any Google / YouTube consent dialogues & channel creation prompts immediately
-                                        var dismissButtons = document.querySelectorAll(
-                                            'button[aria-label*="Accept"], button[aria-label*="Agree"], button[aria-label*="Reject"], ' +
-                                            'button[aria-label*="Dismiss"], button[aria-label*="No thanks"], button[aria-label*="Cancel"], ' +
-                                            'button[aria-label*="Close"], button[aria-label*="Skip"], .yt-spec-button-shape-next--tonal, ' +
-                                            'form[action*="consent"] button, ytm-consent-bump-v2-renderer button, .eom-button-row button, ' +
-                                            'button.VfPpkd-LgbsSe, button.c3-material-button, ytd-consent-bump-v2-renderer button, ' +
-                                            'button[aria-label*="I agree"], button[aria-label*="accept all"], ytm-button-renderer button, ' +
-                                            '#cancel-button button, yt-button-renderer#cancel-button button'
-                                        );
-                                        for (var i = 0; i < dismissButtons.length; i++) {
-                                            try { dismissButtons[i].click(); } catch(e) {}
-                                        }
-
-                                        // 2. Hide channel creation forms, consent popups, dialogs, and all YouTube web clutter
-                                        var style = document.createElement('style');
-                                        style.innerHTML = 'ytm-consent-bump-v2-renderer, ytd-consent-bump-v2-renderer, #consent-bump, ' +
-                                            '.eom-dialog-wrapper, .upsell-dialog, #dialog, .dialog-container, ytm-channel-creation-form, ' +
-                                            '#channel-creation, ytd-channel-creation-form-renderer, tp-yt-paper-dialog, ytm-dialog-renderer, ' +
-                                            'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ' +
-                                            'ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, ' +
-                                            '#related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, ' +
-                                            '.ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay, ytd-masthead, #masthead, ' +
-                                            'ytd-watch-next-secondary-results-renderer, #secondary, #comments-entry-point { display: none !important; } ' +
-                                            'html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } ' +
-                                            '.player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
-                                        document.head.appendChild(style);
-
-                                        // 3. Trigger video playback
-                                        var v = document.querySelector('video');
-                                        if (v) { v.muted = false; v.play(); }
-                                        var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
-                                        if (playBtn) playBtn.click();
-                                    })();
-                                """.trimIndent(), null)
-                            }
-
-                            override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                super.onPageStarted(view, url, favicon)
-                                runBypassScript(view)
-                            }
-
-                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                isFirstFrameRendered = true
-                                runBypassScript(view)
-                            }
-                        }
-                        
-                        val extraHeaders = mapOf(
-                            "Accept-Language" to "en-US,en;q=0.9",
-                            "Sec-Fetch-Site" to "none",
-                            "Sec-Fetch-Mode" to "navigate",
-                            "Sec-Fetch-User" to "?1",
-                            "Sec-Fetch-Dest" to "document"
-                        )
-                        loadUrl("https://m.youtube.com/watch?v=$videoId", extraHeaders)
-                        onPlayerReady(this)
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setOnTouchListener { _, _ -> false }
+                        playerViewRef = this
                     }
                 },
-                update = { webView ->
-                    // Keep loaded
+                update = { view ->
+                    if (view.player != exoPlayer) {
+                        view.player = exoPlayer
+                    }
+                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    playerViewRef = view
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .testTag("fallback_webview_player")
+                    .testTag("native_exoplayer_view")
             )
-        }
         }
 
         // Preview thumbnail poster while buffering / preparing (prevents initial black screen)
-        if (isLoading || (!isFirstFrameRendered && !useWebPlayerFallback && streamUrl != null)) {
+        if (isLoading || (!isFirstFrameRendered && streamUrl != null)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -927,7 +794,7 @@ fun YouTubePlayerView(
                                     singleTapJob?.cancel()
                                     singleTapJob = coroutineScope.launch {
                                         kotlinx.coroutines.delay(240)
-                                        if (streamUrl != null && !useWebPlayerFallback && !isLoading) {
+                                        if (streamUrl != null && !isLoading) {
                                             val willPlay = !exoPlayer.isPlaying
                                             if (willPlay) {
                                                 exoPlayer.play()
@@ -973,7 +840,7 @@ fun YouTubePlayerView(
                 }
         )
 
-        val shouldShowControls = (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || showSettingsMenu || isDraggingScrubber)
+        val shouldShowControls = (streamUrl != null && !isLoading) && (areControlsVisible || showSettingsMenu || isDraggingScrubber)
 
         // Top-Right Corner Tiny Translucent Sleep Timer Countdown Badge
         if (isSleepTimerActive) {
