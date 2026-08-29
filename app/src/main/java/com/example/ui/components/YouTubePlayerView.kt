@@ -299,10 +299,10 @@ fun YouTubePlayerView(
     var showQualitySubMenu by remember { mutableStateOf(false) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
 
-    // Auto-hide bottom utility controls after 2.0 seconds of no interaction (both when playing and when paused)
+    // Auto-hide bottom utility controls: ONLY when actively playing; when PAUSED, keep controls visible permanently
     LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSettingsMenu, showSpeedSubMenu, showQualitySubMenu) {
-        if (areControlsVisible && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
-            delay(2000L)
+        if (areControlsVisible && isPlayingState && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
+            delay(3500L)
             areControlsVisible = false
         }
     }
