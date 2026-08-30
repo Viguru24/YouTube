@@ -89,6 +89,7 @@ fun YouTubePlayerView(
     isFullscreen: Boolean = false,
     onToggleFullscreen: () -> Unit = {},
     onBackClick: () -> Unit = {},
+    onPositionUpdate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
 ) {
@@ -282,6 +283,10 @@ fun YouTubePlayerView(
                 val pos = exoPlayer.currentPosition
                 if (pos > 0) {
                     savedPositionMs = pos
+                    val finalSec = (pos / 1000).toInt()
+                    val rPrefs = context.getSharedPreferences("vixz_resume_positions", Context.MODE_PRIVATE)
+                    rPrefs.edit().putInt("pos_$videoId", finalSec).apply()
+                    onPositionUpdate(finalSec)
                 }
             } catch (e: Exception) {
                 // Ignore
@@ -347,6 +352,12 @@ fun YouTubePlayerView(
                     if (pos > 0 && !isDraggingScrubber) {
                         savedPositionMs = pos
                         currentPosMs = pos
+                        val curSec = (pos / 1000).toInt()
+                        if (curSec > 0) {
+                            val rPrefs = context.getSharedPreferences("vixz_resume_positions", Context.MODE_PRIVATE)
+                            rPrefs.edit().putInt("pos_$videoId", curSec).apply()
+                            onPositionUpdate(curSec)
+                        }
 
                         // Real-time Closed Captions (CC) Matcher
                         val currentSec = (pos / 1000).toInt()
@@ -541,10 +552,15 @@ fun YouTubePlayerView(
                 exoPlayer.setMediaSource(mediaSource)
             }
 
+            val resumePrefs = context.getSharedPreferences("vixz_resume_positions", Context.MODE_PRIVATE)
+            val savedPrefsSec = resumePrefs.getInt("pos_$videoId", 0)
+
             val targetSeekMs = if (savedPositionMs > 0) {
                 savedPositionMs
+            } else if (savedPrefsSec > 0) {
+                savedPrefsSec * 1000L
             } else if (startSeconds > 0) {
-                (startSeconds * 1000).toLong()
+                startSeconds * 1000L
             } else 0L
 
             if (targetSeekMs > 0) {
