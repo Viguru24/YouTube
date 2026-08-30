@@ -587,74 +587,108 @@ object YouTubeCaptionService {
         segments: List<TranscriptSegment>,
         chapters: List<Pair<Int, String>>
     ): VideoAiTranscript {
-        val host = video.channelName.ifBlank { "Creator / Host" }
-        val scoredSentences = assembleAndScoreSentences(segments, video.title)
+        val host = video.channelName.ifBlank { "Creator" }
+        val rawText = segments.joinToString(" ") { it.text }
 
-        // 1. Topic & Premise: Top informative sentence in first 25% of video
-        val earlySentences = scoredSentences.take((scoredSentences.size * 0.28).toInt().coerceAtLeast(3))
-        val topicPremise = earlySentences.maxByOrNull { it.score }?.text
-            ?: "In this video, $host explores '${video.title}', analyzing key developments and technical insights."
+        // Clean spoken fillers and disfluencies
+        val cleanedText = cleanSpokenDisfluencies(rawText)
+        val sentences = cleanedText.split(Regex("(?<=[.!?])\\s+"))
+            .map { it.trim() }
+            .filter { it.length > 25 && !isBoilerplateOutro(it) }
 
-        // 2. Key Discussion Highlights (3 to 4 well-spaced chronological acts across the body)
-        val discussionPoints = mutableListOf<String>()
+        // Synthesize Topic & Executive Premise
+        val topicPremise = if (sentences.isNotEmpty()) {
+            val introSentences = sentences.take((sentences.size * 0.25).toInt().coerceIn(1, 4))
+            val premiseCore = introSentences.filter { !it.contains("subscribe", ignoreCase = true) && !it.contains("channel", ignoreCase = true) }
+                .maxByOrNull { it.length } ?: sentences.first()
+            "In this video, $host breaks down '${video.title}'. The discussion explores: ${premiseCore.replace(Regex("^(so|and|now|well|today|in this video)\\s+", RegexOption.IGNORE_CASE), "").replaceFirstChar { it.uppercase() }}"
+        } else {
+            "In this video, $host analyzes '${video.title}', reviewing key developments, practical methods, and core insights."
+        }
+
+        // Synthesize Key Insights & Chapters
+        val keyInsights = mutableListOf<String>()
         if (chapters.isNotEmpty()) {
-            chapters.take(4).forEach { ch ->
-                discussionPoints.add("${ch.second} (at ${formatSeconds(ch.first)})")
+            chapters.forEach { ch ->
+                keyInsights.add("📌 **${ch.second}** (at ${formatSeconds(ch.first)})")
             }
-        } else if (scoredSentences.size >= 4) {
-            val bodySentences = scoredSentences.drop((scoredSentences.size * 0.12).toInt()).dropLast((scoredSentences.size * 0.12).toInt())
-            if (bodySentences.isNotEmpty()) {
-                val chunkSize = (bodySentences.size / 3).coerceAtLeast(1)
-                for (chunk in bodySentences.chunked(chunkSize).take(3)) {
-                    val best = chunk.filter { it.text != topicPremise }.maxByOrNull { it.score }
-                    if (best != null && !discussionPoints.contains(best.text)) {
-                        discussionPoints.add(best.text)
-                    }
+        }
+
+        // Extract and synthesize core topical takeaways
+        val middleSentences = sentences.drop((sentences.size * 0.15).toInt()).dropLast((sentences.size * 0.15).toInt())
+        val informativeSentences = middleSentences
+            .filter { s -> s.length in 40..220 && !s.contains("sponsor", ignoreCase = true) }
+            .distinctBy { it.take(20) }
+
+        if (informativeSentences.isNotEmpty()) {
+            val step = (informativeSentences.size / 4).coerceAtLeast(1)
+            for (i in 0 until 4) {
+                val idx = (i * step).coerceAtMost(informativeSentences.size - 1)
+                val s = informativeSentences[idx]
+                    .replace(Regex("^(so|and|now|well|basically|like|you know)\\s+", RegexOption.IGNORE_CASE), "")
+                    .replaceFirstChar { it.uppercase() }
+                val bullet = "💡 $s"
+                if (!keyInsights.contains(bullet)) {
+                    keyInsights.add(bullet)
                 }
             }
         }
 
-        if (discussionPoints.isEmpty()) {
-            discussionPoints.add("Background context and key facts establishing the core analysis of '${video.title}'.")
-            discussionPoints.add("Core evidence, discussion points, and critical technical insights presented by $host.")
-            discussionPoints.add("Broader implications, key takeaways, and real-world impact.")
+        if (keyInsights.isEmpty()) {
+            keyInsights.add("💡 Core technical breakdown and demonstration of concepts in '${video.title}'.")
+            keyInsights.add("💡 In-depth walkthrough of practical methods and real-world implications.")
+            keyInsights.add("💡 Comparative analysis and strategic insights highlighted by $host.")
         }
 
-        // 3. Substantive Conclusion & Wrap-up: Ending segment window (65% to 92%), avoiding outro boilerplate
-        val lateWindowStart = (scoredSentences.size * 0.65).toInt().coerceAtMost(scoredSentences.size - 1)
-        val lateWindowEnd = (scoredSentences.size * 0.95).toInt().coerceAtLeast(lateWindowStart + 1)
-        val endingSentences = if (lateWindowStart in 0 until scoredSentences.size) {
-            scoredSentences.subList(lateWindowStart, lateWindowEnd.coerceAtMost(scoredSentences.size))
-        } else emptyList()
-
-        val bestConclusion = endingSentences
-            .filter { it.text != topicPremise && !discussionPoints.contains(it.text) }
-            .maxByOrNull { it.score }?.text
-
-        val conclusion = bestConclusion
-            ?: scoredSentences.lastOrNull { it.text != topicPremise && !discussionPoints.contains(it.text) }?.text
-            ?: "Final analysis and concluding perspectives presented by $host on '${video.title}'."
+        // Synthesize Substantive Conclusion & Takeaways
+        val lateSentences = sentences.takeLast((sentences.size * 0.25).toInt().coerceIn(1, 6))
+            .filter { !isBoilerplateOutro(it) }
+        val conclusion = if (lateSentences.isNotEmpty()) {
+            val coreConclusion = lateSentences.maxByOrNull { it.length } ?: lateSentences.last()
+            "Overall, $host concludes that ${coreConclusion.replace(Regex("^(so|and|now|in conclusion|to wrap up)\\s+", RegexOption.IGNORE_CASE), "").replaceFirstChar { it.lowercase() }}"
+        } else {
+            "$host emphasizes the key takeaways from '${video.title}' and highlights the practical outcomes for viewers."
+        }
 
         val executiveSummary = buildString {
-            append("🎙️ Host: $host\n\n")
-            append("🎯 Topic & Premise:\n$topicPremise\n\n")
-            append("💬 Key Discussion Highlights:\n")
-            discussionPoints.distinct().forEach { pt ->
-                append("• $pt\n")
+            append("🎯 **Executive Summary**\n\n")
+            append("$topicPremise\n\n")
+            append("🔍 **Key Insights & Breakdown:**\n")
+            keyInsights.forEach { insight ->
+                append("$insight\n")
             }
-            append("\n🏁 Conclusions & Wrap-up:\n$conclusion")
+            append("\n🏁 **Final Takeaway & Verdict:**\n$conclusion")
         }
 
         return VideoAiTranscript(
             videoId = video.youtubeId,
             hostName = host,
             topicPremise = topicPremise,
-            discussionPoints = discussionPoints.distinct(),
+            discussionPoints = keyInsights,
             conclusion = conclusion,
             executiveSummary = executiveSummary.trim(),
-            keyTakeaways = discussionPoints.distinct(),
+            keyTakeaways = keyInsights,
             segments = segments
         )
+    }
+
+    private fun cleanSpokenDisfluencies(text: String): String {
+        return text
+            .replace(Regex("\\b(um|uh|you know|sort of|kind of|like I said|as you can see|basically)\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun isBoilerplateOutro(sentence: String): Boolean {
+        val lower = sentence.lowercase()
+        return lower.contains("like and subscribe") ||
+                lower.contains("leave a comment below") ||
+                lower.contains("hit that notification bell") ||
+                lower.contains("link in the description") ||
+                lower.contains("patreon") ||
+                lower.contains("sponsored by") ||
+                lower.contains("thank you for watching") ||
+                lower.contains("see you in the next video")
     }
 
     private fun buildSummaryFromDescription(
