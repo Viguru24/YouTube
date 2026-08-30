@@ -929,135 +929,25 @@ fun YouTubePlayerView(
         }
 
 
-        // Sleek See-Through Frosted Action Strip: 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download
-        if (!isPlayingState && !isLoading) {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = !isPlayingState && shouldShowControls,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.92f),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.92f),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(bottom = 12.dp)
-            ) {
-
-
-                Surface(
-                    shape = RoundedCornerShape(50.dp),
-                    color = Color.Black.copy(alpha = 0.65f),
-                    shadowElevation = 6.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.padding(horizontal = if (isTablet) 12.dp else 8.dp, vertical = if (isTablet) 6.dp else 4.dp)
-                    ) {
-                        // 1. 👍 Like
-                        IconButton(
-                            onClick = {
-                                onFavoriteToggle()
-                                android.widget.Toast.makeText(context, if (!isFavorite) "Liked 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(actionBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                contentDescription = "Like",
-                                tint = if (isFavorite) YouTubeRed else Color.White,
-                                modifier = Modifier.size(actionIconSize)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
-
-                        // 2. 👎 Dislike
-                        IconButton(
-                            onClick = { onDislikeToggle() },
-                            modifier = Modifier.size(actionBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                                contentDescription = "Dislike",
-                                tint = if (isDisliked) YouTubeRed else Color.White,
-                                modifier = Modifier.size(actionIconSize)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
-
-                        // 3. ↗️ Share
-                        IconButton(
-                            onClick = {
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                            },
-                            modifier = Modifier.size(actionBtnSize)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Share,
-                                contentDescription = "Share",
-                                tint = Color.White,
-                                modifier = Modifier.size(actionIconSize)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
-
-                        // 4. ✨ AI Summary
-                        IconButton(
-                            onClick = { onAiSummaryClick() },
-                            modifier = Modifier
-                                .size(actionBtnSize)
-                                .background(Color(0xFF8E24AA).copy(alpha = 0.35f), shape = CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AutoAwesome,
-                                contentDescription = "AI Summary",
-                                tint = Color(0xFFCE93D8),
-                                modifier = Modifier.size(actionIconSize)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 22.dp else 18.dp).background(Color.White.copy(alpha = 0.25f)))
-
-                        // 5. ⬇️ Download
-                        IconButton(
-                            onClick = {
-                                if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
-                            },
-                            modifier = Modifier.size(actionBtnSize)
-                        ) {
-                            if (isDownloaded) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = "Downloaded",
-                                    tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                            } else if (downloadProgress in 1..99) {
-                                CircularProgressIndicator(
-                                    progress = { downloadProgress / 100f },
-                                    modifier = Modifier.size(actionIconSize),
-                                    color = YouTubeRed,
-                                    strokeWidth = 2.5.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.Download,
-                                    contentDescription = "Download Video",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(actionIconSize)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        // Modular Paused Action Strip: 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download
+        com.example.ui.components.player.PlayerPauseActionStrip(
+            visible = !isPlayingState && !isLoading && shouldShowControls,
+            isTablet = isTablet,
+            videoId = videoId,
+            videoTitle = videoTitle,
+            isFavorite = isFavorite,
+            isDisliked = isDisliked,
+            isDownloaded = isDownloaded,
+            downloadProgress = downloadProgress,
+            onFavoriteToggle = onFavoriteToggle,
+            onDislikeToggle = onDislikeToggle,
+            onAiSummaryClick = onAiSummaryClick,
+            onDownloadClick = onDownloadClick,
+            onDeleteDownloadClick = onDeleteDownloadClick,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(bottom = 12.dp)
+        )
 
         // Modular Bottom Utility Bar (Scrubber + Live Timestamps + Favorites + Folders + Watch Later + Speed Pill + Screenshots + Autoplay + Sleep Timer + CC + Settings + Rotate Screen)
         com.example.ui.components.player.PlayerBottomBar(

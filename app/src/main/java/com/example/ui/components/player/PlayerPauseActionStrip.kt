@@ -44,8 +44,8 @@ fun PlayerPauseActionStrip(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val actionBtnSize = if (isTablet) 34.dp else 28.dp
-    val actionIconSize = if (isTablet) 18.dp else 15.dp
+    val actionBtnSize = if (isTablet) 28.dp else 24.dp
+    val actionIconSize = if (isTablet) 15.dp else 13.dp
 
     AnimatedVisibility(
         visible = visible,
@@ -63,8 +63,8 @@ fun PlayerPauseActionStrip(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.padding(
-                    horizontal = if (isTablet) 8.dp else 6.dp,
-                    vertical = if (isTablet) 3.dp else 2.dp
+                    horizontal = if (isTablet) 5.dp else 4.dp,
+                    vertical = if (isTablet) 2.dp else 1.dp
                 )
             ) {
                 // 1. 👍 Like
@@ -83,7 +83,7 @@ fun PlayerPauseActionStrip(
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 14.dp else 11.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
 
                 // 2. 👎 Dislike & Auto-Skip
                 IconButton(
@@ -98,7 +98,7 @@ fun PlayerPauseActionStrip(
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 14.dp else 11.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
 
                 // 3. ↗️ Share
                 IconButton(
@@ -120,7 +120,7 @@ fun PlayerPauseActionStrip(
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 14.dp else 11.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
 
                 // 4. ✨ AI Summary
                 IconButton(
@@ -137,7 +137,7 @@ fun PlayerPauseActionStrip(
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 14.dp else 11.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
 
                 // 5. ⬇️ Download
                 IconButton(
