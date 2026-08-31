@@ -404,43 +404,49 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 }
         }
 
-        // 4. Category / Home: SWR Flow (Instant Local DB -> Silent Live Network Sync)
+        // 4. Category / Home: Live Network First with Freshness Guarantee
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             selectedCategory.collectLatest { category ->
                 feedBatchIndex = 0
                 try {
-                    // Step A: Instant 0ms cached videos for category
-                    val cached = if (category == "All") {
-                        repository.getAllVideosDirect()
-                    } else {
-                        repository.getVideosByCategoryDirect(category)
-                    }
-                    if (cached.isNotEmpty()) {
-                        val valid = cached.filter { it.youtubeId !in _dislikedVideoIds.value && !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                        if (valid.isNotEmpty()) {
-                            _categoryVideos.value = valid
+                    // Step A: Only fallback to cache if current list is completely empty
+                    if (_categoryVideos.value.isEmpty()) {
+                        val cached = if (category == "All") {
+                            repository.getAllVideosDirect()
+                        } else {
+                            repository.getVideosByCategoryDirect(category)
+                        }
+                        val validRecent = cached.filter {
+                            it.youtubeId !in _dislikedVideoIds.value &&
+                            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) &&
+                            YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) <= 86400L * 2 // Only recent (<= 48h)
+                        }
+                        if (validRecent.isNotEmpty()) {
+                            _categoryVideos.value = validRecent
                         }
                     }
 
-                    // Step B: Parallel Live Network Sync (Strictly Subscribed Creators or Curated Categories)
+                    // Step B: Parallel Live Network Sync with Strict Upload Date Sorting
                     val fetched = if (category == "All") {
                         val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(batchIndex = 0, batchSize = 12)
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(batchIndex = 0, batchSize = 12, forceRefresh = true)
                         } catch (e: Exception) { emptyList() }
 
                         val freshTechNews = try {
-                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("latest breakthrough news 2026", sortByUploadDate = true)
+                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("breaking news latest uploads today", sortByUploadDate = true, forceRefresh = true)
                         } catch (e: Exception) { emptyList() }
 
                         (profileFeed + freshTechNews).distinctBy { it.youtubeId }
                     } else {
-                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category)
+                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = true)
                     }
                     val filtered = fetched
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                         .filter { it.youtubeId !in _dislikedVideoIds.value }
+                        .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+
                     if (filtered.isNotEmpty()) {
-                        _categoryVideos.value = (filtered + _categoryVideos.value).distinctBy { it.youtubeId }
+                        _categoryVideos.value = filtered
                         filtered.forEach { v -> repository.saveVideo(v) }
                     }
                 } catch (e: Exception) {
