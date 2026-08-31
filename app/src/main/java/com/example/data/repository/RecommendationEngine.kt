@@ -144,15 +144,13 @@ object RecommendationEngine {
                 score += 65.0f // Boost fresh unknown topics to break recommendation fatigue
             }
 
-            // F. Freshness & Recency Engine (Massive boost for today's new uploads)
-            val timeText = video.publishedTimeText.lowercase()
+            // F. Freshness & Recency Engine (Granular continuous decay: minutes > hours > days)
+            val ageSeconds = YouTubeUtils.parsePublishedTimeToSeconds(video.publishedTimeText)
             val recencyBonus = when {
-                timeText.contains("min") || timeText.contains("hour") || timeText.contains("just now") || timeText.contains("moment") -> 200.0f
-                timeText.contains("today") -> 150.0f
-                timeText.contains("1 day") || timeText.contains("yesterday") -> 80.0f
-                timeText.contains("day") -> 50.0f
-                timeText.contains("week") -> 25.0f
-                else -> 5.0f
+                ageSeconds <= 3600L -> 450.0f - (ageSeconds / 60.0f) * 2.5f // 0-60 mins: 450 down to 300 pts
+                ageSeconds <= 86400L -> 300.0f - ((ageSeconds - 3600L) / 3600.0f) * 7.5f // 1-24 hrs: 300 down to 125 pts
+                ageSeconds <= 604800L -> 125.0f - ((ageSeconds - 86400L) / 86400.0f) * 12.0f // 1-7 days: 125 down to 40 pts
+                else -> 10.0f
             }
             score += recencyBonus
 

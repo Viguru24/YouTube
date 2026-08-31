@@ -392,7 +392,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         }
 
                         // Step B: Smooth Live Network Search without blocking typing
-                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = false)
+                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = true)
                         if (realVideos.isNotEmpty()) {
                             _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
                             realVideos.forEach { v -> repository.saveVideo(v) }
