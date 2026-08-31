@@ -828,24 +828,6 @@ fun YouTubePlayerView(
                                         }
                                     }
                                 }
-                            } else if (isDrag && dragZone == 3 && zoomScale <= 1.05f) {
-                                // Center Vertical Swipe (Slide UP = Next Video, Slide DOWN = Prev Video)
-                                val totalDy = startY - lastY
-                                if (totalDy > 90f) {
-                                    swipeVideoFeedback = "⏭️ Next Video"
-                                    coroutineScope.launch {
-                                        kotlinx.coroutines.delay(650)
-                                        swipeVideoFeedback = null
-                                    }
-                                    onNextVideo?.invoke()
-                                } else if (totalDy < -90f) {
-                                    swipeVideoFeedback = "⏮️ Previous Video"
-                                    coroutineScope.launch {
-                                        kotlinx.coroutines.delay(650)
-                                        swipeVideoFeedback = null
-                                    }
-                                    onPreviousVideo?.invoke()
-                                }
                             }
 
                             if (isDrag) {

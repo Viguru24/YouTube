@@ -234,7 +234,7 @@ class MainActivity : ComponentActivity() {
             .setActions(actions)
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(true)
+            builder.setAutoEnterEnabled(false)
         }
 
         return builder.build()
