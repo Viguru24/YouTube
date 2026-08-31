@@ -308,10 +308,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 feedBatchIndex++
-                val profileBatch = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(
-                    batchIndex = feedBatchIndex,
-                    batchSize = 8
-                )
+                val profileBatch = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = feedBatchIndex, batchSize = 30, forceRefresh = false)
                 val discoveryBatch = com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value)
                 val combined = (profileBatch + discoveryBatch)
 
@@ -429,7 +426,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     // Step B: Parallel Live Network Sync with Strict Upload Date Sorting
                     val fetched = if (category == "All") {
                         val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(batchIndex = 0, batchSize = 12, forceRefresh = true)
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
                         } catch (e: Exception) { emptyList() }
 
                         val freshTechNews = try {
@@ -471,7 +468,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                 // 1. Fetch latest uploads from all subscribed channels (Benny Johnson, Tucker Carlson, The Rubin Report, etc.)
                 val profileFeed = try {
-                    com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(batchIndex = 0, batchSize = 12, forceRefresh = true)
+                    com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
                 } catch (e: Exception) { emptyList() }
 
                 // 2. Fetch intelligent discovery videos matching user's creators and interests
@@ -532,10 +529,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 if (currentCategory == "All") {
                     feedBatchIndex++
                     val profileBatch = try {
-                        com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(
-                            batchIndex = feedBatchIndex,
-                            batchSize = 8
-                        )
+                        com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = feedBatchIndex, batchSize = 30, forceRefresh = false)
                     } catch (e: Exception) { emptyList() }
 
                     val discoveryQueries = listOf(

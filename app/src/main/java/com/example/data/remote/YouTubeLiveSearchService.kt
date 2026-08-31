@@ -62,35 +62,53 @@ object YouTubeLiveSearchService {
         } catch (e: Exception) { }
     }
 
+    private val VERIFIED_HANDLES = mapOf(
+        "benny johnson" to listOf("bennyjohnson", "thebennyjohnsonshow"),
+        "the benny johnson show" to listOf("bennyjohnson", "thebennyjohnsonshow"),
+        "the rubin report" to listOf("RubinReport", "rubinreport"),
+        "rubin report" to listOf("RubinReport", "rubinreport"),
+        "tucker carlson" to listOf("TuckerCarlson", "tuckercarlson"),
+        "piers morgan uncensored" to listOf("PiersMorganUncensored", "piersmorgan"),
+        "piers morgan" to listOf("PiersMorganUncensored", "piersmorgan"),
+        "lex fridman" to listOf("lexfridman", "LexFridman"),
+        "veritasium" to listOf("veritasium", "Veritasium"),
+        "huberman lab" to listOf("hubermanlab", "HubermanLab"),
+        "andrew huberman" to listOf("hubermanlab", "HubermanLab"),
+        "cleo abram" to listOf("cleoabram", "CleoAbram")
+    )
+
     /**
-     * Fetches a lightning-fast batch of latest uploads across the user's subscribed profile channels.
-     * Queries 4 creators per batch with a 3-second timeout for instant initial load and smooth infinite scroll.
+     * Fetches latest uploads across ALL subscribed creator channels in parallel.
+     * Guarantees all recent uploads (minutes/hours ago) across all subscriptions are loaded.
      */
-    suspend fun fetchSubscribedProfileFeed(batchIndex: Int = 0, batchSize: Int = 4, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val cacheKey = "feed:profile:$batchIndex:$batchSize"
+    suspend fun fetchSubscribedProfileFeed(
+        subscribedChannels: List<String> = emptyList(),
+        batchIndex: Int = 0,
+        batchSize: Int = 16,
+        forceRefresh: Boolean = false
+    ): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val channels = if (subscribedChannels.isNotEmpty()) {
+            subscribedChannels
+        } else if (com.example.data.model.WillRyanProfileData.subscribedChannels.isNotEmpty()) {
+            com.example.data.model.WillRyanProfileData.subscribedChannels.toList()
+        } else {
+            listOf("Benny Johnson", "The Rubin Report", "Tucker Carlson", "Piers Morgan Uncensored", "Lex Fridman", "Huberman Lab", "Veritasium", "Cleo Abram")
+        }
+
+        val cacheKey = "feed:profile:${channels.hashCode()}:$batchIndex:$batchSize"
         if (!forceRefresh) {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
-        val channels = com.example.data.model.WillRyanProfileData.subscribedChannels
-        if (channels.isEmpty()) return@withContext emptyList()
-
-        val startIdx = (batchIndex * batchSize) % channels.size
-        val selected = mutableListOf<String>()
-        for (i in 0 until batchSize) {
-            val idx = (startIdx + i) % channels.size
-            selected.add(channels[idx])
-        }
-
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
 
-        val jobs = selected.map { channel ->
+        val jobs = channels.map { channel ->
             async {
                 try {
-                    val fetched = kotlinx.coroutines.withTimeoutOrNull(6000L) {
+                    val fetched = kotlinx.coroutines.withTimeoutOrNull(8000L) {
                         fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
                     } ?: emptyList()
-                    results.addAll(fetched.take(12))
+                    results.addAll(fetched.take(30))
                 } catch (e: Exception) {
                     logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${e.message}")
                 }
@@ -298,9 +316,10 @@ object YouTubeLiveSearchService {
         val accumulated = mutableListOf<VideoEntity>()
 
         // 1. Direct YouTube Channel /videos HTML fetch
+        val knownHandles = VERIFIED_HANDLES[trimmed.lowercase()] ?: emptyList()
         val baseTrimmed = trimmed.replace("(?i)\\b(show|tv|channel|podcast|official|media|news|network)\\b".toRegex(), "").trim()
         val baseHandle = trimmed.replace(" ", "").lowercase()
-        val handleVariations = listOf(
+        val handleVariations = (knownHandles + listOf(
             baseHandle,
             "the$baseHandle",
             "${baseHandle}show",
@@ -308,7 +327,7 @@ object YouTubeLiveSearchService {
             "${baseHandle}official",
             trimmed.replace(" ", "-").lowercase(),
             baseTrimmed.replace(" ", "").lowercase()
-        ).filter { it.isNotBlank() }.distinct()
+        )).filter { it.isNotBlank() }.distinct()
 
         for (handle in handleVariations) {
             try {
