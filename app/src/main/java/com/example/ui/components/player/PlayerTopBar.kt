@@ -28,6 +28,7 @@ fun PlayerTopBar(
     onBackClick: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onToggleDebugConsole: () -> Unit,
+    onEnterPip: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val topIconBtnSize = if (isTablet) 42.dp else 36.dp
@@ -91,6 +92,18 @@ fun PlayerTopBar(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onEnterPip,
+                    modifier = Modifier.size(topIconBtnSize)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PictureInPictureAlt,
+                        contentDescription = "Pop-Out Floating Player (PiP)",
+                        tint = Color.White,
+                        modifier = Modifier.size(topIconSize)
+                    )
+                }
+
                 IconButton(
                     onClick = onToggleDebugConsole,
                     modifier = Modifier.size(topIconBtnSize)

@@ -63,6 +63,7 @@ fun PlayerBottomBar(
     onSelectQuality: (String) -> Unit,
     onToggleDebugConsole: () -> Unit,
     onBackClick: () -> Unit,
+    onEnterPip: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -446,7 +447,22 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 7. Back Navigation Button [⬅️]
+                    // 7. Pop-Out / PiP Floating Window [⧉]
+                    IconButton(
+                        onClick = onEnterPip,
+                        modifier = Modifier
+                            .size(if (isTablet) 42.dp else 34.dp)
+                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PictureInPictureAlt,
+                            contentDescription = "Pop-Out Floating Player",
+                            tint = Color.White,
+                            modifier = Modifier.size(if (isTablet) 22.dp else 18.dp)
+                        )
+                    }
+
+                    // 8. Back Navigation Button [⬅️]
                     IconButton(
                         onClick = onBackClick,
                         modifier = Modifier

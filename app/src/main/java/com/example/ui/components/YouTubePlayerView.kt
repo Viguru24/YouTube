@@ -89,6 +89,7 @@ fun YouTubePlayerView(
     isFullscreen: Boolean = false,
     onToggleFullscreen: () -> Unit = {},
     onBackClick: () -> Unit = {},
+    onEnterPip: () -> Unit = {},
     onPositionUpdate: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     onPlayerReady: (Any) -> Unit = {}
@@ -1030,6 +1031,7 @@ fun YouTubePlayerView(
             },
             onToggleDebugConsole = { onToggleDebugConsole() },
             onBackClick = { onBackClick() },
+            onEnterPip = { onEnterPip() },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
