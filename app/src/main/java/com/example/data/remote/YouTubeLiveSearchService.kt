@@ -574,7 +574,7 @@ object YouTubeLiveSearchService {
     private fun searchWebHtml(query: String, sortByUploadDate: Boolean = false): List<VideoEntity> {
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val sortParam = if (sortByUploadDate) "&sp=CAI%3D" else ""
+            val sortParam = if (sortByUploadDate) "&sp=CAISAhAB" else ""
             val url = "https://www.youtube.com/results?search_query=$encodedQuery$sortParam&hl=en&gl=US"
 
             val request = Request.Builder()
@@ -621,6 +621,11 @@ object YouTubeLiveSearchService {
 
     private fun walkJsonTree(obj: Any?, seenIds: MutableSet<String>, defaultCategory: String, results: MutableList<VideoEntity>) {
         if (obj is org.json.JSONObject) {
+            // Skip secondary shelves / recommendations that inject unrelated older videos
+            val shelfTitle = extractJsonText(obj.optJSONObject("shelfRenderer")?.opt("title"))?.lowercase() ?: ""
+            if (shelfTitle.contains("people also watched") || shelfTitle.contains("previously watched") || shelfTitle.contains("for you") || shelfTitle.contains("related to")) {
+                return
+            }
             // 1. Standard Video Renderers
             val rendererKeys = listOf("videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "reelItemRenderer")
             for (key in rendererKeys) {
