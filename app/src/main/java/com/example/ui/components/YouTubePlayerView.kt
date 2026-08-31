@@ -929,7 +929,7 @@ fun YouTubePlayerView(
         }
 
 
-        // Modular Paused Action Strip: 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download
+        // Modular Paused Action Strip: ⏮️ | 👍 | 👎 | ↗️ Share | ✨ AI | ⬇️ Download | ⏭️
         com.example.ui.components.player.PlayerPauseActionStrip(
             visible = !isPlayingState && !isLoading && shouldShowControls,
             isTablet = isTablet,
@@ -944,6 +944,8 @@ fun YouTubePlayerView(
             onAiSummaryClick = onAiSummaryClick,
             onDownloadClick = onDownloadClick,
             onDeleteDownloadClick = onDeleteDownloadClick,
+            onPreviousVideo = { onPreviousVideo() },
+            onNextVideo = { onNextVideo() },
             modifier = Modifier
                 .align(Alignment.Center)
                 .padding(bottom = 12.dp)

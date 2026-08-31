@@ -41,6 +41,8 @@ fun PlayerPauseActionStrip(
     onAiSummaryClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onDeleteDownloadClick: () -> Unit,
+    onPreviousVideo: (() -> Unit)? = null,
+    onNextVideo: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -67,6 +69,22 @@ fun PlayerPauseActionStrip(
                     vertical = if (isTablet) 2.dp else 1.dp
                 )
             ) {
+                // 0. ⏮️ Previous Video
+                if (onPreviousVideo != null) {
+                    IconButton(
+                        onClick = { onPreviousVideo() },
+                        modifier = Modifier.size(actionBtnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.SkipPrevious,
+                            contentDescription = "Previous Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(actionIconSize)
+                        )
+                    }
+                    Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                }
+
                 // 1. 👍 Like
                 IconButton(
                     onClick = {
@@ -164,6 +182,22 @@ fun PlayerPauseActionStrip(
                         Icon(
                             imageVector = Icons.Filled.Download,
                             contentDescription = "Download Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(actionIconSize)
+                        )
+                    }
+                }
+
+                // 6. ⏭️ Next Video
+                if (onNextVideo != null) {
+                    Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                    IconButton(
+                        onClick = { onNextVideo() },
+                        modifier = Modifier.size(actionBtnSize)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.SkipNext,
+                            contentDescription = "Next Video",
                             tint = Color.White,
                             modifier = Modifier.size(actionIconSize)
                         )

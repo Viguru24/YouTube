@@ -211,23 +211,7 @@ class MainActivity : ComponentActivity() {
 
         val actions = mutableListOf<android.app.RemoteAction>()
 
-        // 1. Rewind 10s action
-        val rewindIntent = android.app.PendingIntent.getBroadcast(
-            this,
-            101,
-            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_REWIND),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        actions.add(
-            android.app.RemoteAction(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_rew),
-                "-10s",
-                "Rewind 10 Seconds",
-                rewindIntent
-            )
-        )
-
-        // 2. Play / Pause action
+        // Single clean Play / Pause / Resume Action
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Pause" else "Play"
         val playPauseIntent = android.app.PendingIntent.getBroadcast(
@@ -242,38 +226,6 @@ class MainActivity : ComponentActivity() {
                 playPauseText,
                 playPauseText,
                 playPauseIntent
-            )
-        )
-
-        // 3. Fast Forward 10s action
-        val forwardIntent = android.app.PendingIntent.getBroadcast(
-            this,
-            103,
-            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_FORWARD),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        actions.add(
-            android.app.RemoteAction(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_ff),
-                "+10s",
-                "Forward 10 Seconds",
-                forwardIntent
-            )
-        )
-
-        // 4. Close Pop-Up action
-        val closeIntent = android.app.PendingIntent.getBroadcast(
-            this,
-            104,
-            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_CLOSE),
-            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        actions.add(
-            android.app.RemoteAction(
-                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel),
-                "Close",
-                "Close Pop-up",
-                closeIntent
             )
         )
 

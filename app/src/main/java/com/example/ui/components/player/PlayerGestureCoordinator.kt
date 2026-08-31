@@ -191,23 +191,6 @@ fun PlayerGestureCoordinator(
                                     onSingleTap()
                                 }
                             }
-                        } else if (isDrag && dragZone == 3 && zoomScale <= 1.05f) {
-                            val totalDy = startY - lastY
-                            if (totalDy > 90f) {
-                                onSwipeVideoFeedback("⏭️ Next Video")
-                                coroutineScope.launch {
-                                    delay(650)
-                                    onSwipeVideoFeedback(null)
-                                }
-                                onNextVideo?.invoke()
-                            } else if (totalDy < -90f) {
-                                onSwipeVideoFeedback("⏮️ Previous Video")
-                                coroutineScope.launch {
-                                    delay(650)
-                                    onSwipeVideoFeedback(null)
-                                }
-                                onPreviousVideo?.invoke()
-                            }
                         }
 
                         if (isDrag) {

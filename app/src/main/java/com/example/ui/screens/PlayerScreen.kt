@@ -194,7 +194,7 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (isFullscreen) PaddingValues(0.dp) else innerPadding)
+                .padding(if (isFullscreen || isInPipMode) PaddingValues(0.dp) else innerPadding)
                 .background(Color.Black)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
