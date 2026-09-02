@@ -4,10 +4,20 @@
 
 **Zero Commercial Ads • SponsorBlock Auto-Skip • Hardware Audio Muxing • 3-Zone Gestures • 0ms SWR Startup**
 
-[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.7.0-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/latest/download/YouTube-Player-v1.7.0.apk)
-[![GitHub Release](https://img.shields.io/github/v/release/Viguru24/YouTube?style=for-the-badge&color=2ea44f)](https://github.com/Viguru24/YouTube/releases/latest)
-[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
+[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.6-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)
+[![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
+[![Windows App](https://img.shields.io/badge/🖥️%20Windows%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
+[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
+
+<p align="center">
+  <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
+  <a href="#-whats-new-in-v196">🆕 <b>What's New</b></a> •
+  <a href="#-key-features">✨ <b>Features</b></a> •
+  <a href="#-feature-comparison">📊 <b>Comparison</b></a> •
+  <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
+  <a href="#-tech-stack">🛠️ <b>Tech Stack</b></a>
+</p>
 
 </div>
 
@@ -17,10 +27,19 @@
 
 Getting started takes less than 60 seconds:
 
-1. **[Click here to Download the Latest APK](https://github.com/Viguru24/YouTube/releases/latest/download/YouTube-Player-v1.7.0.apk)** directly to your Android phone.
-2. Tap the downloaded file in your browser notifications.
+---
+
+## ⚡ Quick Install Guide
+
+### Option A: Direct APK Install
+1. **[📥 Download the Latest Vixz APK (v1.9.6)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)** directly to your Android device.
+2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!
+
+### Option B: Automatic Background Updates (Recommended)
+Track and auto-update Vixz seamlessly using [Obtainium](https://github.com/ImranR98/Obtainium):
+- Tap **[⚡ Add to Obtainium](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)** on your device to install and receive instant background update notifications whenever a new version is released.
 
 ---
 
