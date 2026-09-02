@@ -4,6 +4,8 @@
 
 **Zero Commercial Ads • SponsorBlock Auto-Skip • Hardware Audio Muxing • 3-Zone Gestures • 0ms SWR Startup**
 
+<br/>
+
 [![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.6-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)
 [![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
 [![Windows App](https://img.shields.io/badge/🖥️%20Windows%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
@@ -25,7 +27,10 @@
 
 ## ⚡ Quick 1-Minute Install Guide
 
-Getting started takes less than 60 seconds:
+- 🌐 **12-Language In-App Localization:** Complete UI translations for **English, Español, Français, Deutsch, Português, Italiano, Русский, 日本語, 한국어, 简体中文, हिन्दी, العربية**.
+- ⚡ **0ms Instant Live UI Switching:** Change languages in Settings with instant zero-reload UI updates without interrupting video playback.
+- ✨ **Ecosystem Spotlight:** Seamless 1-tap discovery of **Cosmo Whisper** (*AI Transcription*), **Cosmo Symphony** (*Media Tool*), and **Vixz Desktop** (*Windows YouTube Player*).
+- ⏰ **Optimized "Last 24h" Filter:** Enhanced real-time upload parsing and creator feed synchronization.
 
 ---
 
@@ -83,7 +88,25 @@ Control your video effortlessly without hunting for tiny sliders:
 
 ---
 
-## 📱 Compatibility
-- **Android Version:** Android 8.0 (Oreo) through Android 15+
-- **Architecture:** `arm64-v8a`, `armeabi-v7a`, `x86_64`
-- **Root Required:** No (100% Standalone APK)
+## 📱 Device Compatibility
+
+- **Android Versions:** Android 8.0 (Oreo) through Android 15+
+- **Architectures:** `arm64-v8a`, `armeabi-v7a`, `x86_64`
+
+---
+
+## 🌟 Try Our Other Products
+
+Discover more tools developed by our team:
+
+- 🎙️ **[Cosmo Whisper](https://github.com/Viguru24/CosmoWhisper-Native)** — Ultra-fast, on-device AI speech-to-text, audio transcription, and voice intelligence.
+- 🎬 **[Cosmo Symphony on Microsoft Store](https://apps.microsoft.com/detail/9P4DFBGWGFF6?hl=en-us&gl=GB&ocid=pdpshare)** / **[GitHub](https://github.com/Viguru24/Video)** — Video, photo, and media studio editing & organization on Windows.
+- 🖥️ **[Vixz Desktop](https://github.com/Viguru24/VixzDesktop)** — Windows 10/11 Glassmorphic YouTube Player & AI Copilot.
+
+---
+
+<div align="center">
+
+**[⭐ Star this repository on GitHub](https://github.com/Viguru24/YouTube)** to support active development!
+
+</div>
