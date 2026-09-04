@@ -23,6 +23,7 @@ namespace VixzDesktop
 
         private List<VideoItem> _currentFeed = new List<VideoItem>();
         private List<VideoItem> _rawUnfilteredFeed = new List<VideoItem>();
+        private bool _isDiscoveryFeed = true; // true = Home/Subscriptions — filter out watched videos
         private VideoItem? _currentVideo = null;
         private int _currentVideoIndex = -1;
         private PopOutPlayerWindow? _popOutWindow = null;
@@ -66,32 +67,16 @@ namespace VixzDesktop
             try
             {
                 var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop");
-                var userDataFolder = Path.Combine(appData, "WebView2Profile");
-                var chromiumFlags = "--autoplay-policy=no-user-gesture-required " +
-                                    "--force_high_performance_gpu " +
-                                    "--gpu-preference=2 " +
-                                    "--enable-gpu-rasterization " +
-                                    "--force-gpu-rasterization " +
-                                    "--enable-zero-copy " +
-                                    "--use-angle=d3d11 " +
-                                    "--enable-accelerated-video-decode " +
-                                    "--enable-accelerated-mjpeg-decode " +
-                                    "--enable-accelerated-2d-canvas " +
-                                    "--enable-features=VaapiVideoDecoder,D3D11VideoDecoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays,HardwareMediaKeyHandling " +
-                                    "--disable-features=PreloadMediaEngagementData,TrackingPrevention " +
-                                    "--disable-web-security " +
-                                    "--allow-running-insecure-content";
-
-                var options = new CoreWebView2EnvironmentOptions(chromiumFlags);
-                var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
-                SharedWebView2Environment = env; // expose for reuse by PopOutPlayerWindow
+                var env = await WebViewManager.GetEnvironmentAsync();
+                SharedWebView2Environment = env; // expose for backwards compatibility
                 await VideoWebView.EnsureCoreWebView2Async(env);
+                await WebViewManager.MaskWebViewIndicatorsAsync(VideoWebView.CoreWebView2);
 
                 // Enable F12 DevTools and modern desktop capabilities
                 VideoWebView.CoreWebView2.Settings.AreDevToolsEnabled = true;
                 VideoWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 VideoWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
-                VideoWebView.CoreWebView2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+                VideoWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
 
                 // Map virtual host https://vixz.app to local WebAssets for valid secure origin
                 var webAssets = Path.Combine(appData, "WebAssets");
@@ -103,6 +88,7 @@ namespace VixzDesktop
 <head>
     <meta charset=""utf-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <meta name=""referrer"" content=""strict-origin-when-cross-origin"">
     <link rel=""icon"" href=""data:,"">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -150,17 +136,6 @@ namespace VixzDesktop
         }
 
         #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
-        
-        #click-detector {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: calc(100% - 50px);
-            z-index: 10;
-            cursor: pointer;
-            background: transparent;
-        }
     </style>
 </head>
 <body>
@@ -169,7 +144,6 @@ namespace VixzDesktop
     </div>
     <div id=""player-wrapper"">
         <div id=""player""></div>
-        <div id=""click-detector""></div>
     </div>
     <script>
         var tag = document.createElement('script');
@@ -400,65 +374,99 @@ namespace VixzDesktop
             try {
                 var targetId = vid || currentVideoId;
                 if (!targetId) return '';
-                var res = await fetch('https://www.youtube.com/watch?v=' + targetId);
-                var html = await res.text();
-                var match = html.match(/""captionTracks"":\s*(\[.*?\])/);
-                if (!match) return '';
 
-                var tracks = JSON.parse(match[1]);
-                if (!tracks || tracks.length === 0) return '';
-
-                var enTrack = tracks.find(function(t) { return t.languageCode === 'en' || (t.vssId && t.vssId.indexOf('en') !== -1); }) || tracks[0];
-                if (!enTrack || !enTrack.baseUrl) return '';
-
-                var capRes = await fetch(enTrack.baseUrl + '&fmt=json3');
-                var capJson = await capRes.json();
-                if (!capJson.events) return '';
-
-                var fullText = '';
-                for (var i = 0; i < capJson.events.length; i++) {
-                    var ev = capJson.events[i];
-                    if (ev.segs) {
-                        for (var j = 0; j < ev.segs.length; j++) {
-                            var seg = ev.segs[j];
-                            if (seg.utf8) {
-                                fullText += seg.utf8 + ' ';
-                            }
+                function extractCaptions(evts) {
+                    var t = '';
+                    for (var i = 0; i < evts.length; i++) {
+                        var ev = evts[i];
+                        if (ev.segs) for (var j = 0; j < ev.segs.length; j++) {
+                            var s = ev.segs[j].utf8;
+                            if (s && s !== '\n') t += s + ' ';
                         }
                     }
+                    return t.trim();
                 }
-                return fullText.trim();
+
+                async function fetchCapUrl(baseUrl) {
+                    var r = await fetch(baseUrl + '&fmt=json3', {credentials:'include'});
+                    var j = await r.json();
+                    return j && j.events ? extractCaptions(j.events) : '';
+                }
+
+                function pickEnTrack(tracks) {
+                    return tracks.find(function(t){return t.languageCode&&t.languageCode.indexOf('en')===0;}) || tracks[0];
+                }
+
+                // Strategy 1: Innertube WEB player API (sends YouTube session cookies from WebView2)
+                try {
+                    var pr = await fetch('https://www.youtube.com/youtubei/v1/player', {
+                        method: 'POST',
+                        headers: {'Content-Type':'application/json','X-YouTube-Client-Name':'1','X-YouTube-Client-Version':'2.20240101.00.00'},
+                        credentials: 'include',
+                        body: JSON.stringify({context:{client:{clientName:'WEB',clientVersion:'2.20240101.00.00',hl:'en',gl:'US'}},videoId:targetId})
+                    });
+                    var pd = await pr.json();
+                    var ct1 = pd&&pd.captions&&pd.captions.playerCaptionsTracklistRenderer&&pd.captions.playerCaptionsTracklistRenderer.captionTracks;
+                    if (ct1 && ct1.length > 0) {
+                        var t1 = await fetchCapUrl(pickEnTrack(ct1).baseUrl);
+                        if (t1.length > 80) return t1;
+                    }
+                } catch(e1) {}
+
+                // Strategy 2: Parse ytInitialPlayerResponse from watch page HTML (with auth cookies)
+                try {
+                    var res = await fetch('https://www.youtube.com/watch?v=' + targetId + '&hl=en', {credentials:'include'});
+                    var html = await res.text();
+
+                    // Brace-count parse of ytInitialPlayerResponse
+                    var iprIdx = html.indexOf('ytInitialPlayerResponse');
+                    if (iprIdx !== -1) {
+                        var bStart = html.indexOf('{', iprIdx);
+                        if (bStart !== -1) {
+                            var depth = 0, bEnd = bStart;
+                            for (var ci = bStart; ci < Math.min(bStart + 800000, html.length); ci++) {
+                                if (html[ci] === '{') depth++; else if (html[ci] === '}') { depth--; if (depth === 0) { bEnd = ci; break; } }
+                            }
+                            try {
+                                var ipr = JSON.parse(html.substring(bStart, bEnd + 1));
+                                var ct2 = ipr&&ipr.captions&&ipr.captions.playerCaptionsTracklistRenderer&&ipr.captions.playerCaptionsTracklistRenderer.captionTracks;
+                                if (ct2 && ct2.length > 0) {
+                                    var t2 = await fetchCapUrl(pickEnTrack(ct2).baseUrl);
+                                    if (t2.length > 80) return t2;
+                                }
+                            } catch(pe) {}
+                        }
+                    }
+
+                    // Strategy 3: Bracket-count extraction of captionTracks array
+                    var ctIdx = html.indexOf('""captionTracks""');
+                    if (ctIdx !== -1) {
+                        var aStart = html.indexOf('[', ctIdx);
+                        if (aStart !== -1) {
+                            var ad = 0, aEnd = aStart;
+                            for (var ci2 = aStart; ci2 < Math.min(aStart + 80000, html.length); ci2++) {
+                                if (html[ci2] === '[') ad++; else if (html[ci2] === ']') { ad--; if (ad === 0) { aEnd = ci2; break; } }
+                            }
+                            try {
+                                var ct3 = JSON.parse(html.substring(aStart, aEnd + 1));
+                                if (ct3 && ct3.length > 0) {
+                                    var enT3 = ct3.find(function(t){return t.languageCode==='en'||(t.vssId&&t.vssId.indexOf('en')!==-1);}) || ct3[0];
+                                    if (enT3 && enT3.baseUrl) {
+                                        var t3 = await fetchCapUrl(enT3.baseUrl);
+                                        if (t3.length > 80) return t3;
+                                    }
+                                }
+                            } catch(pe3) {}
+                        }
+                    }
+                } catch(e2) {}
+
+                return '';
             } catch (e) {
                 return '';
             }
         }
 
-        // Intelligent Click / Double-Click Interceptor
-        var clickTimer = null;
-        var clickDetector = document.getElementById('click-detector');
-        if (clickDetector) {
-            clickDetector.addEventListener('click', function(e) {
-                if (clickTimer) {
-                    // Second click arrived -> DOUBLE CLICK!
-                    clearTimeout(clickTimer);
-                    clickTimer = null;
-                    if (window.chrome && window.chrome.webview) {
-                        window.chrome.webview.postMessage('DOUBLE_CLICK_VIDEO');
-                    }
-                } else {
-                    // First click: wait 260ms before toggling play/pause
-                    clickTimer = setTimeout(function() {
-                        clickTimer = null;
-                        togglePlay();
-                    }, 260);
-                }
-            });
-
-            clickDetector.addEventListener('dblclick', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            });
-        }
     </script>
 </body>
 </html>";
@@ -478,7 +486,8 @@ namespace VixzDesktop
                     try
                     {
                         var uri = args.Request.Uri.ToLowerInvariant();
-                        if (uri.Contains("doubleclick") || uri.Contains("googleads") || uri.Contains("/pagead/") || uri.Contains("ad_status") || uri.Contains("favicon.ico") || uri.Contains("viewthroughconversion"))
+                        // Only intercept external tracking ad domains, never tamper with youtube.com internal integrity/pagead scripts
+                        if (!uri.Contains("youtube.com") && (uri.Contains("doubleclick") || uri.Contains("googleads") || uri.Contains("viewthroughconversion") || uri.Contains("ad_status") || uri.Contains("favicon.ico")))
                         {
                             string origin = "*";
                             try
@@ -526,10 +535,24 @@ namespace VixzDesktop
                 VideoWebView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
                 VideoWebView.PreviewKeyDown += Window_PreviewKeyDown;
 
-                // Intercept 'More videos' and external links so they play inside Vixz instead of opening external browsers
+                // Intercept 'More videos', external links, and in-player Sign In prompts
                 VideoWebView.CoreWebView2.NewWindowRequested += async (s, args) =>
                 {
                     args.Handled = true;
+                    if (args.Uri.Contains("accounts.google.com") || args.Uri.Contains("/signin") || args.Uri.Contains("ServiceLogin"))
+                    {
+                        Dispatcher.Invoke(() => OpenSignInWindow_Click(this, new RoutedEventArgs()));
+                        return;
+                    }
+
+                    // Intercept channel links inside the player → navigate within Vixz
+                    var channelHandle = ExtractYouTubeChannelHandle(args.Uri);
+                    if (!string.IsNullOrEmpty(channelHandle))
+                    {
+                        await Dispatcher.InvokeAsync(async () => await NavigateToChannelFeedAsync(channelHandle));
+                        return;
+                    }
+
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
@@ -542,6 +565,7 @@ namespace VixzDesktop
                         };
                         await PlayVideoAsync(video);
                     }
+                    // All other new windows are suppressed (args.Handled = true above)
                 };
 
                 VideoWebView.CoreWebView2.NavigationStarting += async (s, args) =>
@@ -552,6 +576,20 @@ namespace VixzDesktop
                     }
 
                     args.Cancel = true;
+                    if (args.Uri.Contains("accounts.google.com") || args.Uri.Contains("/signin") || args.Uri.Contains("ServiceLogin"))
+                    {
+                        Dispatcher.Invoke(() => OpenSignInWindow_Click(this, new RoutedEventArgs()));
+                        return;
+                    }
+
+                    // Intercept channel links (e.g. clicking channel name/avatar in player)
+                    var channelHandle = ExtractYouTubeChannelHandle(args.Uri);
+                    if (!string.IsNullOrEmpty(channelHandle))
+                    {
+                        await Dispatcher.InvokeAsync(async () => await NavigateToChannelFeedAsync(channelHandle));
+                        return;
+                    }
+
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
@@ -564,6 +602,7 @@ namespace VixzDesktop
                         };
                         await PlayVideoAsync(video);
                     }
+                    // All other navigations are cancelled (args.Cancel = true above)
                 };
             }
             catch (Exception ex)
@@ -692,7 +731,18 @@ namespace VixzDesktop
             var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
-            _currentFeed = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTag, durationTag, sortByTag);
+            var filtered = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTag, durationTag, sortByTag);
+
+            // On discovery feeds (Home / Subscriptions), hide already-watched videos
+            if (_isDiscoveryFeed)
+            {
+                var watchedIds = new HashSet<string>(
+                    StorageService.Settings.WatchHistory.Select(v => v.Id),
+                    StringComparer.OrdinalIgnoreCase);
+                filtered = filtered.Where(v => !watchedIds.Contains(v.Id)).ToList();
+            }
+
+            _currentFeed = filtered;
             VideoItemsControl.ItemsSource = _currentFeed;
         }
 
@@ -746,12 +796,14 @@ namespace VixzDesktop
 
         private async void NavHome_Click(object sender, RoutedEventArgs e)
         {
+            _isDiscoveryFeed = true;
             SwitchToFeedView();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
         }
 
         private async void NavSubscriptions_Click(object sender, RoutedEventArgs e)
         {
+            _isDiscoveryFeed = true;
             SwitchToFeedView();
             await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
         }
@@ -760,9 +812,20 @@ namespace VixzDesktop
         {
             if (sender is Button btn && btn.Content is string channelName)
             {
-                SwitchToFeedView();
-                await LoadFeedAsync($"🔔 {channelName}", () => YouTubeService.GetSubscribedFeedAsync(channelName));
+                await NavigateToChannelFeedAsync(channelName);
             }
+        }
+
+        public async Task NavigateToChannelFeedAsync(string channelName)
+        {
+            if (string.IsNullOrWhiteSpace(channelName)) return;
+
+            var cleanName = channelName.Trim();
+            _isDiscoveryFeed = false;
+            _currentSearchQuery = cleanName;
+
+            SwitchToFeedView();
+            await LoadFeedAsync($"👤 {cleanName} (Videos)", () => YouTubeService.GetChannelVideosFeedAsync(cleanName));
         }
 
         private void RefreshSubscribedChannelsUi()
@@ -1084,6 +1147,7 @@ namespace VixzDesktop
 
         private void NavFavorites_Click(object sender, RoutedEventArgs e)
         {
+            _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "⭐ Favorite Videos";
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
@@ -1092,6 +1156,7 @@ namespace VixzDesktop
 
         private void NavWatchLater_Click(object sender, RoutedEventArgs e)
         {
+            _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "🕒 Watch Later Queue";
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
@@ -1100,6 +1165,7 @@ namespace VixzDesktop
 
         private void NavHistory_Click(object sender, RoutedEventArgs e)
         {
+            _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "📜 Watch History";
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
@@ -1271,6 +1337,7 @@ namespace VixzDesktop
             else if (durationTag == "long") spParam = "EgQQARgC";
 
             LoadingSpinner.Visibility = Visibility.Visible;
+            _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = $"🔍 Search: \"{query}\"";
 
@@ -1371,6 +1438,36 @@ namespace VixzDesktop
             return null;
         }
 
+        /// <summary>
+        /// Extracts a YouTube channel handle or ID from a URL.
+        /// Returns the handle (e.g. "@MrBeast"), channel ID ("UCxxxxxx"), or name for /c/ and /user/ paths.
+        /// Returns null if the URL is not a channel URL.
+        /// </summary>
+        public static string? ExtractYouTubeChannelHandle(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+
+            // /@handle  e.g. https://www.youtube.com/@MrBeast
+            var matchHandle = System.Text.RegularExpressions.Regex.Match(
+                input, @"youtube\.com\/@([a-zA-Z0-9_\-\.]+)");
+            if (matchHandle.Success)
+                return "@" + matchHandle.Groups[1].Value;
+
+            // /channel/UCxxxxxx
+            var matchChannel = System.Text.RegularExpressions.Regex.Match(
+                input, @"youtube\.com\/channel\/(UC[a-zA-Z0-9_\-]{22})");
+            if (matchChannel.Success)
+                return matchChannel.Groups[1].Value;
+
+            // /c/ChannelName  or  /user/Username
+            var matchCOrUser = System.Text.RegularExpressions.Regex.Match(
+                input, @"youtube\.com\/(?:c|user)\/([a-zA-Z0-9_\-\.]+)");
+            if (matchCOrUser.Success)
+                return matchCOrUser.Groups[1].Value;
+
+            return null;
+        }
+
         #endregion
 
         #region Video Player
@@ -1388,6 +1485,15 @@ namespace VixzDesktop
         {
             _currentVideo = video;
             StorageService.AddHistory(video);
+
+            // Immediately drop the video from the discovery feed so it's gone when the user goes back
+            if (_isDiscoveryFeed)
+            {
+                _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
+                _currentFeed.RemoveAll(v => v.Id == video.Id);
+                VideoItemsControl.ItemsSource = null;
+                VideoItemsControl.ItemsSource = _currentFeed;
+            }
 
             CurrentVideoTitle.Text = video.Title;
             CurrentVideoChannel.Text = video.ChannelTitle;
@@ -1759,6 +1865,32 @@ namespace VixzDesktop
                 var url = $"https://youtu.be/{video.Id}";
                 Clipboard.SetText(url);
                 ShowToast("Video link copied to clipboard! 📋✨");
+            }
+        }
+
+        private async void ContextMenuChannel_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && menuItem.DataContext is VideoItem video && !string.IsNullOrWhiteSpace(video.ChannelTitle))
+            {
+                await NavigateToChannelFeedAsync(video.ChannelTitle);
+            }
+        }
+
+        private async void ChannelName_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true; // Prevent triggering the card's PlayVideoAsync
+            if (sender is FrameworkElement elem && elem.DataContext is VideoItem video && !string.IsNullOrWhiteSpace(video.ChannelTitle))
+            {
+                await NavigateToChannelFeedAsync(video.ChannelTitle);
+            }
+        }
+
+        private async void CurrentVideoChannel_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+            if (_currentVideo != null && !string.IsNullOrWhiteSpace(_currentVideo.ChannelTitle))
+            {
+                await NavigateToChannelFeedAsync(_currentVideo.ChannelTitle);
             }
         }
 
@@ -2534,8 +2666,9 @@ namespace VixzDesktop
                 case Key.Escape:
                     e.Handled = true;
                     if (SleepTimerPopup.IsOpen) SleepTimerPopup.IsOpen = false;
-                    if (FolderPopup.IsOpen) FolderPopup.IsOpen = false;
-                    if (_isCustomFullscreen) ToggleFullscreen();
+                    else if (FolderPopup.IsOpen) FolderPopup.IsOpen = false;
+                    else if (_isCustomFullscreen) ToggleFullscreen();
+                    else if (PlayerView.Visibility == Visibility.Visible) SwitchToFeedView();
                     break;
             }
         }
@@ -2589,6 +2722,14 @@ namespace VixzDesktop
             {
                 UpdateAccountUi();
                 ShowToast($"👤 Signed in as {StorageService.Settings.UserAccount.DisplayName}!");
+                if (_currentVideo != null && VideoWebView.CoreWebView2 != null)
+                {
+                    _ = PlayVideoAsync(_currentVideo);
+                }
+                // Ensure bottom controls are visible after returning from sign-in dialog
+                AnimateBottomBar(1.0);
+                _bottomBarHideTimer?.Stop();
+                _bottomBarHideTimer?.Start();
             }
         }
 
@@ -2617,7 +2758,7 @@ namespace VixzDesktop
 
         private void SetupBottomBarAutoFade()
         {
-            _bottomBarHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            _bottomBarHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
             _bottomBarHideTimer.Tick += (s, e) =>
             {
                 if (PlayerView.Visibility == Visibility.Visible && !_isMouseOverBottomBar)
@@ -3358,6 +3499,88 @@ namespace VixzDesktop
                 factsCard.Child = factStack;
                 mainContainer.Children.Add(factsCard);
             }
+
+            // 4. Copy Button Row
+            var copyRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 2, 0, 0)
+            };
+
+            var copyBtn = new Button
+            {
+                Content = "📋 Copy",
+                Style = (Style)FindResource("GlassButton"),
+                FontSize = 10.5,
+                Padding = new Thickness(8, 3, 8, 3),
+                Cursor = System.Windows.Input.Cursors.Hand,
+                ToolTip = "Copy this response to clipboard"
+            };
+
+            var copiedLabel = new System.Windows.Controls.TextBlock
+            {
+                Text = "✔ Copied!",
+                Foreground = new System.Windows.Media.SolidColorBrush(
+                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4CAF50")),
+                FontSize = 10.5,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(8, 0, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
+
+            copyBtn.Click += (s, e) =>
+            {
+                // Build full plain-text copy string
+                var sb = new System.Text.StringBuilder();
+                if (!string.IsNullOrWhiteSpace(result.ResponseMessage))
+                    sb.AppendLine(result.ResponseMessage.Replace("**", "").Replace("*", ""));
+
+                if (result.Summary != null)
+                {
+                    var sum = result.Summary;
+                    if (!string.IsNullOrWhiteSpace(sum.Tldr))
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine("EXECUTIVE SUMMARY:");
+                        sb.AppendLine(sum.Tldr);
+                    }
+                    if (sum.KeyTakeaways.Count > 0)
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine("KEY TAKEAWAYS:");
+                        foreach (var pt in sum.KeyTakeaways)
+                            sb.AppendLine($"• {pt}");
+                    }
+                    if (sum.Chapters.Count > 0)
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine("TIMELINE CHAPTERS:");
+                        foreach (var ch in sum.Chapters)
+                            sb.AppendLine($"[{ch.TimeFormatted}] {ch.Title}");
+                    }
+                }
+
+                if (result.WebFacts.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("LIVE WEB INTELLIGENCE & KEY FACTS:");
+                    foreach (var fact in result.WebFacts)
+                        sb.AppendLine($"• {fact}");
+                }
+
+                System.Windows.Clipboard.SetText(sb.ToString().Trim());
+
+                // Flash "Copied!" label then hide after 2 seconds
+                copiedLabel.Visibility = Visibility.Visible;
+                var fadeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                fadeTimer.Tick += (_, __) => { copiedLabel.Visibility = Visibility.Collapsed; fadeTimer.Stop(); };
+                fadeTimer.Start();
+            };
+
+            copyRow.Children.Add(copyBtn);
+            copyRow.Children.Add(copiedLabel);
+            mainContainer.Children.Add(copyRow);
 
             AiMessageStack.Children.Add(mainContainer);
             AiChatScrollViewer.ScrollToEnd();

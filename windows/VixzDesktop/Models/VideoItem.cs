@@ -33,5 +33,16 @@ namespace VixzDesktop.Models
                 return string.Join(" • ", parts);
             }
         }
+
+        public string MetaSubtitleText
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube") parts.Add(UploadDateText);
+                if (!string.IsNullOrWhiteSpace(ViewCountText)) parts.Add(ViewCountText);
+                return parts.Count > 0 ? string.Join(" • ", parts) : "";
+            }
+        }
     }
 }

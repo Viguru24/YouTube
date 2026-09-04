@@ -271,9 +271,6 @@ fun PlayerScreen(
                         videoTitle = video.title,
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = toggleFullscreen,
-                        onBackClick = onBackClick,
-                        onEnterPip = onEnterPip,
-                        onPositionUpdate = onPositionUpdate,
                         onPlayerReady = { wv -> webViewInstance = wv },
                         modifier = Modifier.fillMaxSize()
                     )

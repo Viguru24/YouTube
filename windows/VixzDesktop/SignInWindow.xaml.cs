@@ -41,19 +41,18 @@ namespace VixzDesktop
                 LoginProgress.Visibility = Visibility.Visible;
                 StatusText.Text = "Connecting to Google / YouTube Sign In...";
 
-                var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop");
-                var userDataFolder = Path.Combine(appData, "WebView2Profile");
-
-                var options = new CoreWebView2EnvironmentOptions("--disable-features=PreloadMediaEngagementData,TrackingPrevention --disable-web-security");
-                var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
+                var env = await WebViewManager.GetEnvironmentAsync();
                 await AuthWebView.EnsureCoreWebView2Async(env);
+                await WebViewManager.MaskWebViewIndicatorsAsync(AuthWebView.CoreWebView2);
 
                 // Use standard desktop Chrome User-Agent so Google allows login without WebView2 restrictions
-                AuthWebView.CoreWebView2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+                AuthWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
                 AuthWebView.CoreWebView2.Settings.AreDevToolsEnabled = true;
                 AuthWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
+                AuthWebView.CoreWebView2.NavigationStarting -= AuthWebView_NavigationStarting;
                 AuthWebView.CoreWebView2.NavigationStarting += AuthWebView_NavigationStarting;
+                AuthWebView.CoreWebView2.NavigationCompleted -= AuthWebView_NavigationCompleted;
                 AuthWebView.CoreWebView2.NavigationCompleted += AuthWebView_NavigationCompleted;
 
                 // Navigate directly to YouTube sign-in endpoint
@@ -101,12 +100,8 @@ namespace VixzDesktop
 
             try
             {
-                // Check cookies for LOGIN_INFO or SID / SAPISID
-                var cookieManager = AuthWebView.CoreWebView2.CookieManager;
-                var cookies = await cookieManager.GetCookiesAsync("https://www.youtube.com");
-                bool hasLoginCookie = cookies.Any(c => c.Name.Equals("LOGIN_INFO", StringComparison.OrdinalIgnoreCase) || 
-                                                       c.Name.Equals("SAPISID", StringComparison.OrdinalIgnoreCase) ||
-                                                       c.Name.Equals("SID", StringComparison.OrdinalIgnoreCase));
+                // Robust multi-cookie check for active login session
+                bool hasLoginCookie = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
 
                 if (hasLoginCookie)
                 {
@@ -156,6 +151,24 @@ namespace VixzDesktop
             }
         }
 
+        private void OpenInBrowserBtn_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var targetUrl = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = targetUrl,
+                    UseShellExecute = true
+                });
+                StatusText.Text = "🌐 Sign in via browser, then click 'Done / Sync Account' below.";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Could not launch browser: {ex.Message}";
+            }
+        }
+
         private async void DoneBtn_Click(object sender, RoutedEventArgs e)
         {
             LoginProgress.Visibility = Visibility.Visible;
@@ -165,11 +178,7 @@ namespace VixzDesktop
             {
                 if (AuthWebView.CoreWebView2 != null)
                 {
-                    var cookieManager = AuthWebView.CoreWebView2.CookieManager;
-                    var cookies = await cookieManager.GetCookiesAsync("https://www.youtube.com");
-                    bool hasLoginCookie = cookies.Any(c => c.Name.Equals("LOGIN_INFO", StringComparison.OrdinalIgnoreCase) || 
-                                                           c.Name.Equals("SAPISID", StringComparison.OrdinalIgnoreCase) ||
-                                                           c.Name.Equals("SID", StringComparison.OrdinalIgnoreCase));
+                    bool hasLoginCookie = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
 
                     string nameScript = @"(function() {
                         try {
@@ -223,15 +232,32 @@ namespace VixzDesktop
             return trimmed;
         }
 
-        private void ReloadBtn_Click(object sender, RoutedEventArgs e)
+        private async void ReloadBtn_Click(object sender, RoutedEventArgs e)
         {
-            AuthWebView.CoreWebView2?.Reload();
+            if (AuthWebView.CoreWebView2 != null)
+            {
+                AuthWebView.CoreWebView2.Reload();
+            }
+            else
+            {
+                await InitializeAuthBrowserAsync();
+            }
         }
 
         private void CloseBtn_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = IsSuccess;
             Close();
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try
+            {
+                AuthWebView.Dispose();
+            }
+            catch { }
+            base.OnClosed(e);
         }
     }
 }

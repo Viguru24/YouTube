@@ -85,8 +85,11 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Reload / Back to Login -->
-                    <Button Grid.Column="0" Content="🔄 Reload" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="ReloadBtn_Click"/>
+                    <!-- Reload / System Browser Fallback -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <Button Content="🔄 Reload" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,6,0" Click="ReloadBtn_Click"/>
+                        <Button Content="🌐 Browser" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="OpenInBrowserBtn_Click" ToolTip="Open YouTube sign-in in your system browser if Google restricts embedded views"/>
+                    </StackPanel>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <!-- Quick Auto-Detect & Complete -->

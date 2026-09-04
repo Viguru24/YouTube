@@ -139,8 +139,9 @@ namespace VixzDesktop.Services
                 };
             }
 
-            // 2. Video Summarization Command
-            if (lower.Contains("summar") || lower.Contains("tl;dr") || lower.Contains("explain this video") || lower.Contains("tldr"))
+            // 2. Video Summarization / Transcription Command
+            if (lower.Contains("summar") || lower.Contains("tl;dr") || lower.Contains("explain this video") || lower.Contains("tldr")
+                || lower.Contains("transcript") || lower.Contains("transcri") || lower.Contains("full text") || lower.Contains("give me the full"))
             {
                 if (currentPlayingVideo == null)
                 {
@@ -700,10 +701,106 @@ namespace VixzDesktop.Services
 
         private static async Task GenerateStructuredPointsAsync(string transcriptText, string descriptionText, VideoItem video, VideoSummaryResult summary)
         {
-            // 1. Clean transcript sentences
-            var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
+            var apiKey = StorageService.Settings.GeminiApiKey;
 
-            // If we have real spoken transcript sentences, use them directly
+            // 1. LLM-powered synthesis (when API key is available) — produces a REAL summary, not raw transcript
+            if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(transcriptText))
+            {
+                // Pre-clean the transcript before sending to the LLM:
+                // strip [music], [applause], filler annotations, URLs
+                var cleanedTranscript = Regex.Replace(transcriptText, @"\[[\w\s]+\]", " ", RegexOptions.IgnoreCase);
+                cleanedTranscript = Regex.Replace(cleanedTranscript, @"https?://\S+", " ", RegexOptions.IgnoreCase);
+                cleanedTranscript = Regex.Replace(cleanedTranscript, @"\s+", " ").Trim();
+
+                // Trim to ~6000 chars to stay within token limits
+                if (cleanedTranscript.Length > 6000)
+                    cleanedTranscript = cleanedTranscript.Substring(0, 6000);
+
+                var llmPrompt =
+                    $"You are an expert content analyst. Read the following YouTube video transcript and produce a high-quality summary.\n\n" +
+                    $"Video: \"{video.Title}\" by {video.ChannelTitle}\n\n" +
+                    $"TRANSCRIPT:\n{cleanedTranscript}\n\n" +
+                    $"OUTPUT RULES — follow exactly:\n" +
+                    $"1. Write a TLDR of 2-3 sentences that captures the core argument or story. Write in your own words — do NOT copy sentences from the transcript.\n" +
+                    $"2. List exactly 5 KEY TAKEAWAYS as concise, insightful bullet points. Each must be a complete, standalone idea — not a fragment or filler phrase.\n" +
+                    $"3. Do NOT include phrases like 'all right', 'now back to the video', or any presenter filler.\n" +
+                    $"4. Do NOT mention [music], [applause] or any annotation tags.\n" +
+                    $"5. Respond in this exact JSON format:\n" +
+                    $"{{\"tldr\":\"...\",\"takeaways\":[\"...\",\"...\",\"...\",\"...\",\"...\"]}}";
+
+                try
+                {
+                    string? llmJson = null;
+
+                    if (apiKey.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                        req.Headers.Add("Authorization", "Bearer " + apiKey);
+                        var payload = new { model = "openai/gpt-oss-120b", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
+                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        var resp = await _httpClient.SendAsync(req);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+                            llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                        }
+                    }
+                    else if (apiKey.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+                        req.Headers.Add("Authorization", "Bearer " + apiKey);
+                        var payload = new { model = "gpt-4o-mini", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
+                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        var resp = await _httpClient.SendAsync(req);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+                            llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                        }
+                    }
+                    else
+                    {
+                        foreach (var model in new[] { "gemini-2.0-flash", "gemini-1.5-flash" })
+                        {
+                            var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                            var payload = new { contents = new[] { new { parts = new[] { new { text = llmPrompt } } } } };
+                            var resp = await _httpClient.PostAsync(endpoint, new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json"));
+                            if (resp.IsSuccessStatusCode)
+                            {
+                                var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+                                llmJson = (string?)json["candidates"]?[0]?["content"]?["parts"]?[0]?["text"];
+                                if (!string.IsNullOrWhiteSpace(llmJson)) break;
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(llmJson))
+                    {
+                        // Extract the JSON block from the response (model may wrap it in markdown)
+                        var jsonMatch = Regex.Match(llmJson, @"\{[\s\S]*\}", RegexOptions.Singleline);
+                        if (jsonMatch.Success)
+                        {
+                            var parsed = JObject.Parse(jsonMatch.Value);
+                            var tldr = (string?)parsed["tldr"];
+                            var takeaways = parsed["takeaways"]?.ToObject<List<string>>();
+
+                            if (!string.IsNullOrWhiteSpace(tldr) && takeaways != null && takeaways.Count > 0)
+                            {
+                                summary.Tldr = tldr.Trim();
+                                summary.KeyTakeaways = takeaways
+                                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                                    .Select(t => t.Trim())
+                                    .ToList();
+                                return;
+                            }
+                        }
+                    }
+                }
+                catch { /* fall through to heuristic logic below */ }
+            }
+
+            // 2. Heuristic fallback: clean raw transcript sentences (no API key, or LLM failed)
+            var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
             if (cleanTranscriptSentences.Count >= 3)
             {
                 summary.Tldr = string.Join(". ", cleanTranscriptSentences.Take(3)) + ".";
@@ -711,23 +808,15 @@ namespace VixzDesktop.Services
                 return;
             }
 
-            // 2. High-Intelligence Live Web Intelligence (Always preferred over noisy YouTube descriptions)
+            // 3. Live web intelligence based on video title
             var topicQuery = CleanTopicQuery(video.Title);
             var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
-
             if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage) && webResult.ResponseMessage.Length > 30)
             {
                 summary.Tldr = $"**{video.Title}** ({video.ChannelTitle})\n\n{webResult.ResponseMessage}";
-                var takeaways = new List<string>();
-
-                foreach (var fact in webResult.WebFacts.Take(4))
-                {
-                    if (!string.IsNullOrWhiteSpace(fact) && fact.Length > 25 && !takeaways.Contains(fact))
-                    {
-                        takeaways.Add(fact);
-                    }
-                }
-
+                var takeaways = webResult.WebFacts.Take(4)
+                    .Where(f => !string.IsNullOrWhiteSpace(f) && f.Length > 25)
+                    .ToList();
                 if (takeaways.Count >= 2)
                 {
                     summary.KeyTakeaways = takeaways;
@@ -735,7 +824,7 @@ namespace VixzDesktop.Services
                 }
             }
 
-            // 3. Clean description sentences only if substantive (> 4 long sentences)
+            // 4. Clean description sentences
             var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
             if (cleanDescSentences.Count >= 4)
             {
@@ -744,8 +833,8 @@ namespace VixzDesktop.Services
                 return;
             }
 
-            // 4. Default clean editorial fallback (Never output raw boilerplate!)
-            summary.Tldr = $"**{video.Title}** — In-depth political & news briefing presented by **{video.ChannelTitle}**.";
+            // 5. Ultimate fallback
+            summary.Tldr = $"**{video.Title}** — presented by **{video.ChannelTitle}**.";
             summary.KeyTakeaways = new List<string>
             {
                 $"Comprehensive commentary and analysis: {video.Title}",

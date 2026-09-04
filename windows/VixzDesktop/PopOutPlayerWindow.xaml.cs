@@ -68,32 +68,14 @@ namespace VixzDesktop
         {
             try
             {
-                // Reuse the environment already created by MainWindow (same user-data folder).
-                // Creating a second environment pointing at the same folder causes the
-                // "Class not registered" COM error.
-                CoreWebView2Environment env;
-                if (MainWindow.SharedWebView2Environment != null)
-                {
-                    env = MainWindow.SharedWebView2Environment;
-                }
-                else
-                {
-                    // Fallback: create our own environment if for some reason the main window
-                    // hasn't initialised yet (e.g., window opened standalone in tests).
-                    var appData = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                        "VixzDesktop"
-                    );
-                    var userDataFolder = Path.Combine(appData, "WebView2Profile");
-                    env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
-                }
-
+                var env = await WebViewManager.GetEnvironmentAsync();
                 await MiniWebView.EnsureCoreWebView2Async(env);
+                await WebViewManager.MaskWebViewIndicatorsAsync(MiniWebView.CoreWebView2);
 
                 MiniWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
                 MiniWebView.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = true;
                 MiniWebView.CoreWebView2.Settings.AreDevToolsEnabled = true;
-                MiniWebView.CoreWebView2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+                MiniWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
 
                 MiniWebView.CoreWebView2.WebMessageReceived += MiniWebView_WebMessageReceived;
 
@@ -118,7 +100,8 @@ namespace VixzDesktop
                     try
                     {
                         var uri = args.Request.Uri.ToLowerInvariant();
-                        if (uri.Contains("doubleclick") || uri.Contains("googleads") || uri.Contains("/pagead/") || uri.Contains("ad_status") || uri.Contains("favicon.ico") || uri.Contains("viewthroughconversion"))
+                        // Only intercept external tracking ad domains, never tamper with youtube.com internal integrity/pagead scripts
+                        if (!uri.Contains("youtube.com") && (uri.Contains("doubleclick") || uri.Contains("googleads") || uri.Contains("viewthroughconversion") || uri.Contains("ad_status") || uri.Contains("favicon.ico")))
                         {
                             string origin = "*";
                             try
@@ -167,6 +150,20 @@ namespace VixzDesktop
                 MiniWebView.CoreWebView2.NewWindowRequested += async (s, args) =>
                 {
                     args.Handled = true;
+                    if (args.Uri.Contains("accounts.google.com") || args.Uri.Contains("/signin") || args.Uri.Contains("ServiceLogin"))
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            var win = new SignInWindow { Owner = this };
+                            if (win.ShowDialog() == true || win.IsSuccess)
+                            {
+                                _mainWindow.UpdateAccountUi();
+                                MiniWebView.CoreWebView2.Reload();
+                            }
+                        });
+                        return;
+                    }
+
                     var vid = MainWindow.ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
@@ -192,6 +189,20 @@ namespace VixzDesktop
                     }
 
                     args.Cancel = true;
+                    if (args.Uri.Contains("accounts.google.com") || args.Uri.Contains("/signin") || args.Uri.Contains("ServiceLogin"))
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            var win = new SignInWindow { Owner = this };
+                            if (win.ShowDialog() == true || win.IsSuccess)
+                            {
+                                _mainWindow.UpdateAccountUi();
+                                MiniWebView.CoreWebView2.Reload();
+                            }
+                        });
+                        return;
+                    }
+
                     var vid = MainWindow.ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {

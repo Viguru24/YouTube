@@ -249,6 +249,7 @@ fun MainAppContent(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedNavIndex by remember { mutableIntStateOf(0) } // 0: Home, 1: Library, 2: History
+    var previousNavIndex by remember { mutableIntStateOf(0) } // Track where user came from
 
     var showAddVideoDialog by remember { mutableStateOf(false) }
     var showAddCategoryDialog by remember { mutableStateOf(false) }
@@ -510,7 +511,7 @@ fun MainAppContent(
                             selectedSubscribedChannel = selectedSubscribedChannel,
                             onSubscribedChannelSelected = { channel -> viewModel.selectSubscribedChannel(channel) },
                             onRefreshSubscribedChannel = { channel -> viewModel.refreshSubscribedChannel(channel) },
-                            onOpenHistory = { selectedNavIndex = 2 },
+                            onOpenHistory = { previousNavIndex = selectedNavIndex; selectedNavIndex = 2 },
                             onOpenManageTopicsAndCreators = { tab ->
                                 manageInitialTab = tab
                                 showManageTopicsAndCreatorsDialog = true
@@ -533,7 +534,7 @@ fun MainAppContent(
                             historyVideos = watchHistory,
                             downloadedVideos = downloadedVideos,
                             onDeleteDownload = { v -> viewModel.deleteDownloadedVideo(v) },
-                            onOpenHistory = { selectedNavIndex = 2 }
+                            onOpenHistory = { previousNavIndex = selectedNavIndex; selectedNavIndex = 2 }
                         )
                         2 -> HistoryScreen(
                             historyVideos = watchHistory,
@@ -541,7 +542,8 @@ fun MainAppContent(
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
                             onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
                             onDeleteVideo = { v -> viewModel.deleteVideo(v) },
-                            onClearHistory = { viewModel.clearHistory() }
+                            onClearHistory = { viewModel.clearHistory() },
+                            onBack = { selectedNavIndex = previousNavIndex }
                         )
                     }
                 }

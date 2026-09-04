@@ -59,9 +59,7 @@
                         </Border>
                         <TextBlock Text="Vixz" Foreground="White" FontSize="17" FontWeight="Bold" 
                                    VerticalAlignment="Center" Margin="10,0,0,0"/>
-                        <Border Background="#25FF6B00" CornerRadius="6" Margin="8,0,0,0" Padding="6,2">
-                            <TextBlock Text="DESKTOP" Foreground="{StaticResource AccentOrange}" FontSize="9" FontWeight="Bold"/>
-                        </Border>
+
                     </StackPanel>
 
                     <!-- Top Search Bar (High Contrast & Clear Option & Recent History Dropdown) -->
@@ -425,6 +423,7 @@
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
                                                         <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
+                                                        <MenuItem Header="👤 View Channel Videos" Click="ContextMenuChannel_Click"/>
                                                         <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
                                                         <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
                                                         <Separator Background="{StaticResource BorderSubtle}"/>
@@ -465,7 +464,10 @@
                                                     <!-- Video Info -->
                                                     <StackPanel Grid.Row="1" Margin="10,8,10,6">
                                                         <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
-                                                        <TextBlock Text="{Binding SubtitleText}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,3,0,0"/>
+                                                        <WrapPanel Margin="0,3,0,0">
+                                                            <TextBlock Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" ToolTip="Click to view creator videos" MouseDown="ChannelName_MouseDown"/>
+                                                            <TextBlock Text="{Binding MetaSubtitleText, StringFormat='{} • {0}'}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                                                        </WrapPanel>
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
@@ -489,14 +491,30 @@
                           MouseMove="PlayerView_MouseMove"
                           MouseDown="PlayerContainer_MouseDown">
                         <Grid.RowDefinitions>
+                            <!-- Fixed Top Bar with Back Button -->
+                            <RowDefinition Height="Auto"/>
                             <!-- Player Deck + Video Frame -->
                             <RowDefinition Height="*"/>
                             <!-- Below Player Controls & Video Info (Auto-fading) -->
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
+                        <!-- Top Bar: Fixed Back Button -->
+                        <Border Grid.Row="0" Background="#1A1A22" BorderBrush="#2A2A38" BorderThickness="0,0,0,1" Padding="12,8">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="TopBarBackBtn"
+                                        Content="← Back"
+                                        Style="{StaticResource GlassButton}"
+                                        Padding="12,6"
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        Click="BackToFeed_Click"
+                                        ToolTip="Back to Feed (Escape)"/>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Video Player Area -->
-                        <Grid Grid.Row="0" x:Name="PlayerContainer" MouseDown="PlayerContainer_MouseDown">
+                        <Grid Grid.Row="1" x:Name="PlayerContainer" MouseDown="PlayerContainer_MouseDown">
                             <!-- Dynamic Ambient Glow Layer (GPU Accelerated) -->
                             <Border x:Name="AmbientGlowBorder"
                                     CornerRadius="16"
@@ -563,10 +581,51 @@
                                     <TextBlock x:Name="ResumeSleepText" Text="Resume for 30m" Foreground="White" FontSize="15" FontWeight="Bold"/>
                                 </StackPanel>
                             </Border>
+
+                            <!-- Always-Visible Floating Back Button (top-left) -->
+                            <Button x:Name="FloatingBackBtn"
+                                    Content="◀ Back"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Top"
+                                    Margin="14,14,0,0"
+                                    Padding="10,6"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    Cursor="Hand"
+                                    Click="BackToFeed_Click"
+                                    Panel.ZIndex="20">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="#B0000000"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="BorderBrush" Value="#50FFFFFF"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="10"
+                                                            Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#D0FF3B3B"/>
+                                                            <Setter Property="BorderBrush" Value="#FF3B3B"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
                         </Grid>
 
                         <!-- Below Video Details & Desktop Utility Deck (Auto-fades after inactivity) -->
-                        <Border x:Name="PlayerBottomBar" Grid.Row="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
+                        <Border x:Name="PlayerBottomBar" Grid.Row="2" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
                                 MouseEnter="PlayerBottomBar_MouseEnter"
                                 MouseLeave="PlayerBottomBar_MouseLeave">
                             <Grid>
@@ -590,7 +649,7 @@
                                     <StackPanel VerticalAlignment="Center">
                                         <TextBlock x:Name="CurrentVideoTitle" Text="Video Title" Foreground="White" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" MaxWidth="380"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,2,0,0" VerticalAlignment="Center">
-                                            <TextBlock x:Name="CurrentVideoChannel" Text="Channel Name" Foreground="{StaticResource TextSecondary}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="CurrentVideoChannel" Text="Channel Name" Style="{StaticResource LinkTextBlock}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip="Click to view creator videos" MouseDown="CurrentVideoChannel_MouseDown"/>
                                             <Button x:Name="SubscribeToggleBtn" Content="+ Subscribe" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,2" Margin="8,0,0,0" ToolTip="Toggle Subscription for this Creator" Click="SubscribeToggleBtn_Click"/>
                                             <TextBlock x:Name="CurrentVideoDate" Text="" Foreground="{StaticResource AccentGold}" FontSize="11.5" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"/>
                                             <TextBlock x:Name="CurrentVideoViews" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>

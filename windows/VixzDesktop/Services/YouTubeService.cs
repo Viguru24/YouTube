@@ -260,12 +260,214 @@ namespace VixzDesktop.Services
             }
         }
 
+        public static async Task<List<VideoItem>> GetChannelVideosFeedAsync(string channelNameOrId)
+        {
+            if (string.IsNullOrWhiteSpace(channelNameOrId)) return new List<VideoItem>();
+
+            var channelQuery = channelNameOrId.Trim();
+            var results = new List<VideoItem>();
+            var seenIds = new HashSet<string>();
+
+            try
+            {
+                string? targetUrl = null;
+                if (channelQuery.StartsWith("UC") && channelQuery.Length == 24)
+                {
+                    targetUrl = $"https://www.youtube.com/channel/{channelQuery}/videos";
+                }
+                else if (channelQuery.StartsWith("@"))
+                {
+                    targetUrl = $"https://www.youtube.com/{channelQuery}/videos";
+                }
+                else
+                {
+                    // Search for the creator channel using YouTube channel filter
+                    var searchUrl = $"https://www.youtube.com/results?search_query={Uri.EscapeDataString(channelQuery)}&sp=EgIQAg%3D%3D&hl=en&gl=US";
+                    var searchReq = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+                    searchReq.Headers.Add("Cookie", "PREF=hl=en&gl=US; SOCS=CAI");
+                    var searchResp = await _httpClient.SendAsync(searchReq);
+                    var searchHtml = await searchResp.Content.ReadAsStringAsync();
+
+                    var sm = Regex.Match(searchHtml, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                    if (sm.Success)
+                    {
+                        var sObj = JObject.Parse(sm.Groups[1].Value);
+                        JToken? cr = null;
+                        void FindChannelRenderer(JToken token)
+                        {
+                            if (cr != null || token == null) return;
+                            if (token is JObject jo)
+                            {
+                                if (jo["channelRenderer"] != null)
+                                {
+                                    cr = jo["channelRenderer"];
+                                    return;
+                                }
+                                foreach (var prop in jo.Properties()) FindChannelRenderer(prop.Value);
+                            }
+                            else if (token is JArray ja)
+                            {
+                                foreach (var item in ja) FindChannelRenderer(item);
+                            }
+                        }
+                        FindChannelRenderer(sObj);
+
+                        if (cr != null)
+                        {
+                            var canonicalUrl = cr?["navigationEndpoint"]?["browseEndpoint"]?["canonicalBaseUrl"]?.ToString();
+                            var cid = cr?["channelId"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(canonicalUrl))
+                            {
+                                targetUrl = $"https://www.youtube.com{canonicalUrl}/videos";
+                            }
+                            else if (!string.IsNullOrWhiteSpace(cid))
+                            {
+                                targetUrl = $"https://www.youtube.com/channel/{cid}/videos";
+                            }
+                        }
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(targetUrl))
+                {
+                    var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+                    req.Headers.Add("Cookie", "PREF=hl=en&gl=US; SOCS=CAI");
+                    var resp = await _httpClient.SendAsync(req);
+                    var html = await resp.Content.ReadAsStringAsync();
+
+                    var vm = Regex.Match(html, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                    if (vm.Success)
+                    {
+                        var vObj = JObject.Parse(vm.Groups[1].Value);
+                        string channelTitle = vObj?["metadata"]?["channelMetadataRenderer"]?["title"]?.ToString() ?? channelQuery;
+
+                        void ExtractChannelVideos(JToken token)
+                        {
+                            if (token == null || results.Count >= 50) return;
+
+                            if (token is JObject jo)
+                            {
+                                // Modern lockupViewModel
+                                if (jo["lockupViewModel"] is JObject lum)
+                                {
+                                    var vid = lum["contentId"]?.ToString();
+                                    if (!string.IsNullOrWhiteSpace(vid) && vid.Length == 11 && seenIds.Add(vid))
+                                    {
+                                        var meta = lum["metadata"]?["lockupMetadataViewModel"];
+                                        var title = meta?["title"]?["content"]?.ToString() ?? "";
+                                        var rows = meta?["metadata"]?["contentMetadataViewModel"]?["metadataRows"] as JArray;
+                                        string views = "";
+                                        string pub = "";
+                                        if (rows != null && rows.Count > 0)
+                                        {
+                                            var parts = rows[0]?["metadataParts"] as JArray;
+                                            if (parts != null && parts.Count > 0) views = parts[0]?["text"]?["content"]?.ToString() ?? "";
+                                            if (parts != null && parts.Count > 1) pub = parts[1]?["text"]?["content"]?.ToString() ?? "";
+                                        }
+
+                                        string dur = "Video";
+                                        var tov = lum["contentImage"]?["thumbnailViewModel"]?["overlays"] as JArray;
+                                        if (tov != null)
+                                        {
+                                            foreach (var ov in tov)
+                                            {
+                                                var badges = ov?["thumbnailBottomOverlayViewModel"]?["badges"] as JArray;
+                                                if (badges != null)
+                                                {
+                                                    foreach (var badge in badges)
+                                                    {
+                                                        var badgeText = badge?["thumbnailBadgeViewModel"]?["text"]?.ToString();
+                                                        if (!string.IsNullOrWhiteSpace(badgeText))
+                                                        {
+                                                            dur = badgeText;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                                if (dur != "Video") break;
+                                            }
+                                        }
+
+                                        if (!string.IsNullOrWhiteSpace(title))
+                                        {
+                                            results.Add(new VideoItem
+                                            {
+                                                Id = vid,
+                                                Title = System.Net.WebUtility.HtmlDecode(title),
+                                                ChannelTitle = System.Net.WebUtility.HtmlDecode(channelTitle),
+                                                ThumbnailUrl = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                                                DurationText = dur,
+                                                UploadDateText = System.Net.WebUtility.HtmlDecode(pub),
+                                                ViewCountText = System.Net.WebUtility.HtmlDecode(views)
+                                            });
+                                        }
+                                    }
+                                }
+                                // Traditional videoRenderer
+                                else if (jo["videoRenderer"] is JObject vr)
+                                {
+                                    var vid = vr["videoId"]?.ToString();
+                                    if (!string.IsNullOrWhiteSpace(vid) && vid.Length == 11 && seenIds.Add(vid))
+                                    {
+                                        var title = "";
+                                        var titleRuns = vr["title"]?["runs"] as JArray;
+                                        if (titleRuns != null && titleRuns.Count > 0)
+                                            title = string.Join("", titleRuns.Select(r => r["text"]?.ToString() ?? ""));
+                                        else
+                                            title = vr["title"]?["simpleText"]?.ToString() ?? "";
+
+                                        var pub = vr["publishedTimeText"]?["simpleText"]?.ToString() ?? "";
+                                        var views = vr["shortViewCountText"]?["simpleText"]?.ToString() ?? "";
+                                        var dur = vr["lengthText"]?["simpleText"]?.ToString() ?? "Video";
+
+                                        if (!string.IsNullOrWhiteSpace(title))
+                                        {
+                                            results.Add(new VideoItem
+                                            {
+                                                Id = vid,
+                                                Title = System.Net.WebUtility.HtmlDecode(title),
+                                                ChannelTitle = System.Net.WebUtility.HtmlDecode(channelTitle),
+                                                ThumbnailUrl = $"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                                                DurationText = dur,
+                                                UploadDateText = System.Net.WebUtility.HtmlDecode(pub),
+                                                ViewCountText = System.Net.WebUtility.HtmlDecode(views)
+                                            });
+                                        }
+                                    }
+                                }
+
+                                foreach (var prop in jo.Properties()) ExtractChannelVideos(prop.Value);
+                            }
+                            else if (token is JArray ja)
+                            {
+                                foreach (var it in ja) ExtractChannelVideos(it);
+                            }
+                        }
+
+                        if (vObj != null) ExtractChannelVideos(vObj);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Channel feed extraction error: {ex.Message}");
+            }
+
+            // Fallback: If channel direct scraping returned nothing, use search sorted by date
+            if (results.Count == 0)
+            {
+                results = await SearchVideosAsync(channelQuery, 35, sortByUploadDate: true);
+            }
+
+            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+        }
+
         public static async Task<List<VideoItem>> GetSubscribedFeedAsync(string? channelName = null)
         {
             var channels = WillRyanProfileData.SubscribedChannels;
             if (!string.IsNullOrWhiteSpace(channelName))
             {
-                return await SearchVideosAsync(channelName, 30, sortByUploadDate: true);
+                return await GetChannelVideosFeedAsync(channelName);
             }
 
             var list = new List<VideoItem>();
