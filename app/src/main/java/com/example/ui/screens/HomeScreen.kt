@@ -55,6 +55,7 @@ import com.example.ui.theme.YouTubeRed
 fun HomeScreen(
     videos: List<VideoEntity>,
     historyVideos: List<VideoEntity>,
+    watchedVideoIds: Set<String> = emptySet(),
     categories: List<PlaylistCategoryEntity>,
     selectedCategory: String,
     searchQuery: String,
@@ -677,16 +678,17 @@ fun HomeScreen(
 
             // Main Feed Video 2-Column Grid & Real Live Search Results & Subscribed Channel Filtering
             // Automatically remove any video that has been watched, disliked, or muted from the feed
-            val watchedIds = remember(historyVideos) {
-                historyVideos.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
+            val watchedIds = remember(historyVideos, watchedVideoIds) {
+                val histSet = historyVideos.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
+                histSet + watchedVideoIds
             }
 
             val mutedChannelNames = remember(mutedChannels) {
                 mutedChannels.map { it.channelName.lowercase().trim() }.toSet()
             }
 
-            fun isVideoHidden(video: VideoEntity, allowWatched: Boolean = false): Boolean {
-                val isWatched = !allowWatched && (video.youtubeId in watchedIds)
+            fun isVideoHidden(video: VideoEntity): Boolean {
+                val isWatched = video.youtubeId in watchedIds
                 val isDisliked = video.youtubeId in dislikedVideoIds
                 val isMuted = video.channelName.lowercase().trim() in mutedChannelNames
                 return isWatched || isDisliked || isMuted
@@ -716,7 +718,7 @@ fun HomeScreen(
                     candidateList.filter { video ->
                         val vCh = video.channelName.lowercase().trim()
                         (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
-                        (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video, allowWatched = true)
+                        (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video)
                     }.distinctBy { it.youtubeId }
                 } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
                     val searchList = if (liveSearchResults.isNotEmpty()) {
@@ -727,7 +729,7 @@ fun HomeScreen(
                             it.channelName.contains(searchQuery, ignoreCase = true) 
                         }
                     }
-                    searchList.filter { !isVideoHidden(it, allowWatched = true) }.distinctBy { it.youtubeId }
+                    searchList.filter { !isVideoHidden(it) }.distinctBy { it.youtubeId }
                 } else if (selectedCategory == "🔔 Subscriptions") {
                     val subSet = subscribedChannelsList.map { it.lowercase().trim() }.filter { it.isNotBlank() }
                     candidateList.filter { video ->
@@ -735,7 +737,7 @@ fun HomeScreen(
                         val vTitle = video.title.lowercase().trim()
                         (subSet.any { sub -> vCh.contains(sub) || sub.contains(vCh) || vCh.replace(" ", "") == sub.replace(" ", "") } ||
                          (vCh.contains("youtube") && subSet.any { sub -> vTitle.contains(sub) })) &&
-                        !isVideoHidden(video, allowWatched = true)
+                        !isVideoHidden(video)
                     }.distinctBy { it.youtubeId }
                 } else if (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("24 hours", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true) || selectedCategory.equals("Today", ignoreCase = true)) {
                     val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
@@ -744,7 +746,7 @@ fun HomeScreen(
                             val timeLower = it.publishedTimeText.lowercase()
                             val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
                             (sec <= 86400L || timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day") || timeLower.contains("just now")) &&
-                            !isVideoHidden(it, allowWatched = true)
+                            !isVideoHidden(it)
                         }
                         .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
@@ -753,7 +755,7 @@ fun HomeScreen(
                         within24h
                     } else {
                         allCandidate
-                            .filter { !isVideoHidden(it, allowWatched = true) }
+                            .filter { !isVideoHidden(it) }
                             .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                             .take(25)
                     }
@@ -762,17 +764,10 @@ fun HomeScreen(
                         .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
                         .distinctBy { it.youtubeId }
                 } else {
-                    // Main Home Feed: filter out any video that has been watched, disliked, or muted!
-                    val filtered = candidateList
+                    // Main Home Feed: strictly filter out any video that has been watched, disliked, or muted!
+                    candidateList
                         .filter { !isVideoHidden(it) }
                         .distinctBy { it.youtubeId }
-                    // If aggressive watch filtering leaves fewer than 4 items, backfill with not-disliked candidate items
-                    if (filtered.size >= 4) {
-                        filtered
-                    } else {
-                        val notDisliked = candidateList.filter { it.youtubeId !in dislikedVideoIds && it.channelName.lowercase().trim() !in mutedChannelNames }
-                        (filtered + notDisliked).distinctBy { it.youtubeId }
-                    }
                 }
 
                 // Apply Upload Date Time Selector Filter to Search Results
@@ -866,6 +861,13 @@ fun HomeScreen(
                     }
                 }
             } else {
+                // Automatically prefetch more videos if unwatched count is low
+                LaunchedEffect(displayList.size) {
+                    if (displayList.size < 6 && searchQuery.isBlank()) {
+                        onLoadMore()
+                    }
+                }
+
                 val shortsList = remember(displayList, algorithmSettings.shortsMode) {
                     if (algorithmSettings.shortsMode == "Hidden") {
                         emptyList()

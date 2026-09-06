@@ -149,10 +149,8 @@ fun ShortsPlayerView(
         onDispose {
             try {
                 exoPlayer.removeListener(listener)
-                val finalSec = (exoPlayer.currentPosition / 1000).toInt()
-                if (finalSec > 0) {
-                    onPositionUpdate(finalSec)
-                }
+                val finalSec = (exoPlayer.currentPosition / 1000).toInt().coerceAtLeast(0)
+                onPositionUpdate(finalSec)
             } catch (e: Exception) { }
             exoPlayer.release()
             MediaPlaybackService.stop(context)

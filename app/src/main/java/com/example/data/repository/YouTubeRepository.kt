@@ -99,7 +99,21 @@ class YouTubeRepository(
 
     suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
         if (positionSeconds >= 0) {
-            videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), positionSeconds)
+            val existing = videoDao.getVideoById(youtubeId)
+            if (existing != null) {
+                videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), positionSeconds)
+            } else {
+                videoDao.insertVideo(
+                    VideoEntity(
+                        youtubeId = youtubeId,
+                        title = "YouTube Video ($youtubeId)",
+                        channelName = "YouTube",
+                        thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(youtubeId),
+                        lastPositionSeconds = positionSeconds,
+                        lastWatchedTimestamp = System.currentTimeMillis()
+                    )
+                )
+            }
         }
     }
 
@@ -126,7 +140,20 @@ class YouTubeRepository(
     suspend fun updateWatchHistory(youtubeId: String, lastPosSeconds: Int) {
         val existing = videoDao.getVideoById(youtubeId)
         val posToSave = if (lastPosSeconds > 0) lastPosSeconds else (existing?.lastPositionSeconds ?: 0)
-        videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), posToSave)
+        if (existing != null) {
+            videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), posToSave)
+        } else {
+            videoDao.insertVideo(
+                VideoEntity(
+                    youtubeId = youtubeId,
+                    title = "YouTube Video ($youtubeId)",
+                    channelName = "YouTube",
+                    thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(youtubeId),
+                    lastPositionSeconds = posToSave,
+                    lastWatchedTimestamp = System.currentTimeMillis()
+                )
+            )
+        }
     }
 
     suspend fun updateDownloadStatus(youtubeId: String, isDownloaded: Boolean, localFilePath: String, downloadSizeMb: Float) {

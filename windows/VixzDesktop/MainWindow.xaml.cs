@@ -8,8 +8,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
+using Newtonsoft.Json.Linq;
 using VixzDesktop.Models;
 using VixzDesktop.Services;
 
@@ -38,11 +40,32 @@ namespace VixzDesktop
 
         private bool _isAlwaysOnTop = false;
         private bool _isCustomFullscreen = false;
+        private readonly WebViewFrameTracker _frameTracker = new();
 
         public MainWindow()
         {
             InitializeComponent();
             Loaded += MainWindow_Loaded;
+
+            // Global Win32 thread message hook for F12 — catches keypress anywhere (including inside WebView2 HWND)
+            System.Windows.Interop.ComponentDispatcher.ThreadPreprocessMessage += (ref System.Windows.Interop.MSG msg, ref bool handled) =>
+            {
+                const int WM_KEYDOWN = 0x0100;
+                const int WM_SYSKEYDOWN = 0x0104;
+                const int VK_F12 = 0x7B;
+
+                if (msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN)
+                {
+                    if ((int)msg.wParam == VK_F12)
+                    {
+                        handled = true;
+                        Dispatcher.Invoke(() =>
+                        {
+                            VideoWebView.CoreWebView2?.OpenDevToolsWindow();
+                        });
+                    }
+                }
+            };
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -60,6 +83,16 @@ namespace VixzDesktop
             UpdateFolderChipHighlights();
 
             await InitializeWebViewAsync();
+
+            if (StorageService.Settings.UserAccount?.IsSignedIn == true)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(600);
+                    await Dispatcher.InvokeAsync(async () => await SyncAccountProfileAsync(silent: true));
+                });
+            }
+
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
         }
 
@@ -71,6 +104,7 @@ namespace VixzDesktop
                 var env = await WebViewManager.GetEnvironmentAsync();
                 SharedWebView2Environment = env; // expose for backwards compatibility
                 await VideoWebView.EnsureCoreWebView2Async(env);
+                _frameTracker.Attach(VideoWebView.CoreWebView2);
                 await WebViewManager.MaskWebViewIndicatorsAsync(VideoWebView.CoreWebView2);
 
                 // Enable F12 DevTools and modern desktop capabilities
@@ -157,6 +191,10 @@ namespace VixzDesktop
         var currentVideoId = urlParams.get('v') || '';
         var startSec = parseFloat(urlParams.get('t') || '0') || 0;
         var preferredQuality = urlParams.get('vq') || 'hd1080';
+
+        if (currentVideoId) {
+            fallbackToDirectIframe(currentVideoId, startSec);
+        }
 
         function applyHighQuality() {
             try {
@@ -457,6 +495,19 @@ namespace VixzDesktop
             } catch(e) {}
         }
 
+        function sendFrameCommand(func, args) {
+            try {
+                var f = document.getElementById('fallback-yt-frame') || document.querySelector('iframe');
+                if (f && f.contentWindow) {
+                    f.contentWindow.postMessage(JSON.stringify({
+                        event: 'command',
+                        func: func,
+                        args: args || []
+                    }), '*');
+                }
+            } catch(e) {}
+        }
+
         function pauseVideo() {
             if (isLocalMode) {
                 var vid = getLocalVideo();
@@ -464,8 +515,9 @@ namespace VixzDesktop
                 return;
             }
             if (player && typeof player.pauseVideo === 'function') {
-                player.pauseVideo();
+                try { player.pauseVideo(); } catch(e) {}
             }
+            sendFrameCommand('pauseVideo');
         }
 
         function playVideo() {
@@ -475,9 +527,10 @@ namespace VixzDesktop
                 return;
             }
             if (player && typeof player.playVideo === 'function') {
-                try { player.unMute(); } catch(e) {}
-                player.playVideo();
+                try { player.unMute(); player.playVideo(); } catch(e) {}
             }
+            sendFrameCommand('unMute');
+            sendFrameCommand('playVideo');
         }
 
         function togglePlay() {
@@ -847,20 +900,65 @@ namespace VixzDesktop
         public void UpdateAccountUi()
         {
             var account = StorageService.Settings.UserAccount;
-            if (account != null && account.IsSignedIn && !string.IsNullOrWhiteSpace(account.DisplayName))
+            if (account != null && account.IsSignedIn)
             {
-                AccountBtn.Content = $"👤 {account.DisplayName}";
+                var display = !string.IsNullOrWhiteSpace(account.DisplayName) && !account.DisplayName.Equals("Google User", StringComparison.OrdinalIgnoreCase)
+                    ? account.DisplayName
+                    : (!string.IsNullOrWhiteSpace(account.Email) ? account.Email : "Google Account");
+
+                AccountBtn.Content = $"👤 {display}";
                 AccountBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
-                AccountProfileName.Text = account.DisplayName;
+                AccountProfileName.Text = display;
+
+                if (!string.IsNullOrWhiteSpace(account.Email))
+                {
+                    AccountEmailText.Text = account.Email;
+                    AccountEmailText.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    AccountEmailText.Visibility = Visibility.Collapsed;
+                }
+
                 AccountStatusSubtext.Text = "Google Account Connected 🟢";
-                AccountAvatarInitial.Text = account.DisplayName.Length > 0 ? account.DisplayName[0].ToString().ToUpper() : "👤";
+
+                // Avatar rendering: real profile picture if available, fallback to gold initial
+                if (!string.IsNullOrWhiteSpace(account.AvatarUrl))
+                {
+                    try
+                    {
+                        var bi = new BitmapImage();
+                        bi.BeginInit();
+                        bi.UriSource = new Uri(account.AvatarUrl, UriKind.Absolute);
+                        bi.CacheOption = BitmapCacheOption.OnLoad;
+                        bi.EndInit();
+                        AccountAvatarImage.Source = bi;
+                        AccountAvatarImage.Visibility = Visibility.Visible;
+                        AccountAvatarInitial.Visibility = Visibility.Collapsed;
+                    }
+                    catch
+                    {
+                        AccountAvatarImage.Visibility = Visibility.Collapsed;
+                        AccountAvatarInitial.Visibility = Visibility.Visible;
+                        AccountAvatarInitial.Text = display.Length > 0 ? display[0].ToString().ToUpper() : "👤";
+                    }
+                }
+                else
+                {
+                    AccountAvatarImage.Visibility = Visibility.Collapsed;
+                    AccountAvatarInitial.Visibility = Visibility.Visible;
+                    AccountAvatarInitial.Text = display.Length > 0 ? display[0].ToString().ToUpper() : "👤";
+                }
             }
             else
             {
                 AccountBtn.Content = "👤 Sign In";
                 AccountBtn.Foreground = System.Windows.Media.Brushes.White;
                 AccountProfileName.Text = "Not Signed In";
+                AccountEmailText.Visibility = Visibility.Collapsed;
                 AccountStatusSubtext.Text = "Sign in to sync YouTube data";
+                AccountAvatarImage.Visibility = Visibility.Collapsed;
+                AccountAvatarInitial.Visibility = Visibility.Visible;
                 AccountAvatarInitial.Text = "👤";
             }
         }
@@ -1549,6 +1647,25 @@ namespace VixzDesktop
             FeedView.Visibility = Visibility.Visible;
             _sponsorBlockTimer?.Stop();
 
+            // When returning to the feed, ensure the watched video is removed from the visible list
+            if (_currentVideo != null && FeedTitleText?.Text != "📜 Watch History" && FeedTitleText?.Text != "💾 Downloaded Videos & Audio")
+            {
+                var targetId = _currentVideo.Id;
+                if (!string.IsNullOrEmpty(targetId))
+                {
+                    _rawUnfilteredFeed?.RemoveAll(v => v.Id == targetId);
+                    if (_currentFeed != null)
+                    {
+                        var removed = _currentFeed.RemoveAll(v => v.Id == targetId);
+                        if (removed > 0 && VideoItemsControl != null)
+                        {
+                            VideoItemsControl.ItemsSource = null;
+                            VideoItemsControl.ItemsSource = _currentFeed;
+                        }
+                    }
+                }
+            }
+
             try
             {
                 if (VideoWebView?.CoreWebView2 != null)
@@ -1954,13 +2071,16 @@ namespace VixzDesktop
             _currentVideo = video;
             StorageService.AddHistory(video);
 
-            // Immediately drop the video from the discovery feed so it's gone when the user goes back
-            if (_isDiscoveryFeed)
+            // Drop the video from the feed immediately so it's gone when the user goes back
+            if (FeedTitleText?.Text != "📜 Watch History" && FeedTitleText?.Text != "💾 Downloaded Videos & Audio")
             {
-                _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                _currentFeed.RemoveAll(v => v.Id == video.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
+                _rawUnfilteredFeed?.RemoveAll(v => v.Id == video.Id);
+                _currentFeed?.RemoveAll(v => v.Id == video.Id);
+                if (VideoItemsControl != null)
+                {
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                }
             }
 
             CurrentVideoTitle.Text = video.Title;
@@ -2818,6 +2938,7 @@ namespace VixzDesktop
 
             var path = await ScreenshotService.CaptureAndSaveAsync(
                 VideoWebView,
+                _frameTracker.Frames,
                 PlayerContainer,
                 _currentVideo?.Title ?? "Video",
                 currentSec,
@@ -3189,7 +3310,8 @@ namespace VixzDesktop
 
         private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.F12)
+            var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (actualKey == Key.F12)
             {
                 e.Handled = true;
                 VideoWebView.CoreWebView2?.OpenDevToolsWindow();
@@ -3301,12 +3423,142 @@ namespace VixzDesktop
 
         #region User Account & Google Profile
 
+        private bool _isSyncingAccount = false;
+
+        public async Task<UserAccount?> SyncAccountProfileAsync(bool silent = true)
+        {
+            if (_isSyncingAccount) return StorageService.Settings.UserAccount;
+            _isSyncingAccount = true;
+
+            try
+            {
+                var env = await WebViewManager.GetEnvironmentAsync();
+                await BackgroundSyncWebView.EnsureCoreWebView2Async(env);
+                await WebViewManager.MaskWebViewIndicatorsAsync(BackgroundSyncWebView.CoreWebView2);
+                BackgroundSyncWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
+
+                bool hasAuth = await WebViewManager.HasYouTubeAuthCookiesAsync(BackgroundSyncWebView.CoreWebView2);
+                if (!hasAuth)
+                {
+                    if (!silent) ShowToast("⚠️ No Google account session found");
+                    return null;
+                }
+
+                var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop", "account_sync.log");
+                File.AppendAllText(logFile, $"[{DateTime.Now}] Starting sync... HasAuth={hasAuth}\n");
+
+                var tcs = new TaskCompletionSource<bool>();
+                void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs e)
+                {
+                    BackgroundSyncWebView.CoreWebView2.NavigationCompleted -= OnNavCompleted;
+                    tcs.TrySetResult(e.IsSuccess);
+                }
+
+                BackgroundSyncWebView.CoreWebView2.NavigationCompleted += OnNavCompleted;
+                BackgroundSyncWebView.CoreWebView2.Navigate("https://www.youtube.com");
+
+                var completed = await Task.WhenAny(tcs.Task, Task.Delay(10000));
+                bool navOk = completed == tcs.Task && await tcs.Task;
+                File.AppendAllText(logFile, $"[{DateTime.Now}] Navigation to youtube.com finished: {navOk}\n");
+
+                if (navOk)
+                {
+                    UserAccount? updated = null;
+
+                    // Poll up to 4 attempts on youtube.com waiting for Polymer topbar to hydrate
+                    for (int attempt = 1; attempt <= 4; attempt++)
+                    {
+                        await Task.Delay(attempt == 1 ? 1200 : 1500);
+                        updated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] YouTube attempt {attempt}: Name='{updated?.DisplayName}', Email='{updated?.Email}', Avatar='{updated?.AvatarUrl}'\n");
+                        if (updated != null && !string.IsNullOrWhiteSpace(updated.Email) && updated.DisplayName != "Google User")
+                        {
+                            break;
+                        }
+                    }
+
+                    // Fallback 1: Navigate to https://www.youtube.com/account (dedicated profile & channel page)
+                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email) || updated.DisplayName == "Google User")
+                    {
+                        var tcsAccount = new TaskCompletionSource<bool>();
+                        void OnAccountNav(object? s, CoreWebView2NavigationCompletedEventArgs e)
+                        {
+                            BackgroundSyncWebView.CoreWebView2.NavigationCompleted -= OnAccountNav;
+                            tcsAccount.TrySetResult(e.IsSuccess);
+                        }
+                        BackgroundSyncWebView.CoreWebView2.NavigationCompleted += OnAccountNav;
+                        BackgroundSyncWebView.CoreWebView2.Navigate("https://www.youtube.com/account");
+                        var compAcc = await Task.WhenAny(tcsAccount.Task, Task.Delay(8000));
+                        bool accNavOk = compAcc == tcsAccount.Task && await tcsAccount.Task;
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] Navigation to youtube.com/account: {accNavOk}\n");
+                        if (accNavOk)
+                        {
+                            await Task.Delay(1500);
+                            var accUpdated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
+                            File.AppendAllText(logFile, $"[{DateTime.Now}] Extracted from /account: Name='{accUpdated?.DisplayName}', Email='{accUpdated?.Email}', Avatar='{accUpdated?.AvatarUrl}'\n");
+                            if (accUpdated != null) updated = accUpdated;
+                        }
+                    }
+
+                    // Fallback 2: Navigate to https://myaccount.google.com (to get real full name and profile details)
+                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email) || updated.DisplayName == "Google User" || updated.DisplayName.Contains("@"))
+                    {
+                        var tcsMyAcc = new TaskCompletionSource<bool>();
+                        void OnMyAccNav(object? s, CoreWebView2NavigationCompletedEventArgs e)
+                        {
+                            BackgroundSyncWebView.CoreWebView2.NavigationCompleted -= OnMyAccNav;
+                            tcsMyAcc.TrySetResult(e.IsSuccess);
+                        }
+                        BackgroundSyncWebView.CoreWebView2.NavigationCompleted += OnMyAccNav;
+                        BackgroundSyncWebView.CoreWebView2.Navigate("https://myaccount.google.com");
+                        var compMyAcc = await Task.WhenAny(tcsMyAcc.Task, Task.Delay(8000));
+                        bool myAccNavOk = compMyAcc == tcsMyAcc.Task && await tcsMyAcc.Task;
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] Navigation to myaccount.google.com: {myAccNavOk}\n");
+                        if (myAccNavOk)
+                        {
+                            await Task.Delay(1500);
+                            var gUpdated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
+                            File.AppendAllText(logFile, $"[{DateTime.Now}] Extracted from myaccount.google.com: Name='{gUpdated?.DisplayName}', Email='{gUpdated?.Email}', Avatar='{gUpdated?.AvatarUrl}'\n");
+                            if (gUpdated != null) updated = gUpdated;
+                        }
+                    }
+
+                    if (updated != null)
+                    {
+                        UpdateAccountUi();
+                        if (!silent)
+                        {
+                            var who = !string.IsNullOrWhiteSpace(updated.Email) ? updated.Email : updated.DisplayName;
+                            ShowToast($"✅ Connected as {who}");
+                        }
+                        return updated;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop", "account_sync.log");
+                File.AppendAllText(logFile, $"[{DateTime.Now}] Sync error: {ex}\n");
+                System.Diagnostics.Debug.WriteLine($"Account sync error: {ex.Message}");
+            }
+            finally
+            {
+                _isSyncingAccount = false;
+            }
+
+            return StorageService.Settings.UserAccount;
+        }
+
         private void AccountBtn_Click(object sender, RoutedEventArgs e)
         {
             var account = StorageService.Settings.UserAccount;
             if (account != null && account.IsSignedIn)
             {
                 AccountPopup.IsOpen = !AccountPopup.IsOpen;
+                if (AccountPopup.IsOpen && (string.IsNullOrWhiteSpace(account.Email) || account.DisplayName == "Google User"))
+                {
+                    _ = SyncAccountProfileAsync(silent: true);
+                }
             }
             else
             {
@@ -3326,7 +3578,10 @@ namespace VixzDesktop
             if (win.ShowDialog() == true || win.IsSuccess)
             {
                 UpdateAccountUi();
-                ShowToast($"👤 Signed in as {StorageService.Settings.UserAccount.DisplayName}!");
+                var who = !string.IsNullOrWhiteSpace(StorageService.Settings.UserAccount.Email)
+                    ? StorageService.Settings.UserAccount.Email
+                    : StorageService.Settings.UserAccount.DisplayName;
+                ShowToast($"👤 Signed in as {who}!");
                 if (_currentVideo != null && VideoWebView.CoreWebView2 != null)
                 {
                     _ = PlayVideoAsync(_currentVideo);
@@ -3341,7 +3596,8 @@ namespace VixzDesktop
         private async void SyncAccountSubscriptions_Click(object sender, RoutedEventArgs e)
         {
             AccountPopup.IsOpen = false;
-            ShowToast("🔄 Syncing subscriptions & feed...");
+            ShowToast("🔄 Syncing Google account & subscriptions...");
+            await SyncAccountProfileAsync(silent: false);
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
             ShowToast("✅ Subscriptions & feed synced!");
         }
@@ -3590,6 +3846,63 @@ namespace VixzDesktop
             SpeechService.Instance.StopSpeaking();
             SpeechService.Instance.StopListening();
             ResetAiMicBtnUi();
+        }
+
+        // ---- AI Font Size Controls ----
+        private const double AiFontSizeDefault = 14.0;
+
+        private void AiFontSizeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (AiMessageStack == null) return;
+            ApplyAiFontSize(e.NewValue);
+        }
+
+        private void AiFontResetBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (AiFontSizeSlider != null)
+                AiFontSizeSlider.Value = AiFontSizeDefault;
+        }
+
+        private void AiChatScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            // Ctrl+Scroll changes font size; plain scroll handled normally
+            if (System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.LeftCtrl) ||
+                System.Windows.Input.Keyboard.IsKeyDown(System.Windows.Input.Key.RightCtrl))
+            {
+                e.Handled = true;
+                double delta = e.Delta > 0 ? 0.5 : -0.5;
+                double newVal = Math.Clamp((AiFontSizeSlider?.Value ?? AiFontSizeDefault) + delta,
+                                           AiFontSizeSlider?.Minimum ?? 11,
+                                           AiFontSizeSlider?.Maximum ?? 20);
+                if (AiFontSizeSlider != null) AiFontSizeSlider.Value = newVal;
+            }
+        }
+
+        private void ApplyAiFontSize(double size)
+        {
+            // Walk all TextBlocks inside AiMessageStack and scale them
+            foreach (var tb in FindVisualChildren<TextBlock>(AiMessageStack))
+            {
+                // Scale relative to the element's original role:
+                // Headers (bold) stay slightly smaller; body text gets the full size
+                if (tb.FontWeight == FontWeights.Bold)
+                    tb.FontSize = Math.Max(size - 1.5, 9);
+                else
+                    tb.FontSize = size;
+            }
+        }
+
+        private static IEnumerable<T> FindVisualChildren<T>(System.Windows.DependencyObject parent) where T : System.Windows.DependencyObject
+        {
+            if (parent == null) yield break;
+            int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
+            {
+                var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+                if (child is T t) yield return t;
+                foreach (var desc in FindVisualChildren<T>(child))
+                    yield return desc;
+            }
         }
 
         private void ToggleAiCopilotDrawer()
@@ -3929,7 +4242,7 @@ namespace VixzDesktop
                     BorderBrush = (System.Windows.Media.Brush)FindResource("AccentGold"),
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(12),
-                    Padding = new Thickness(12),
+                    Padding = new Thickness(14, 14, 14, 14),
                     Margin = new Thickness(0, 4, 0, 6)
                 };
 
@@ -3940,9 +4253,9 @@ namespace VixzDesktop
                 {
                     Text = "📌 EXECUTIVE SUMMARY",
                     Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
-                    FontSize = 10.5,
+                    FontSize = 12,
                     FontWeight = FontWeights.Bold,
-                    Margin = new Thickness(0, 0, 0, 4)
+                    Margin = new Thickness(0, 0, 0, 6)
                 };
                 cardStack.Children.Add(tldrHeader);
 
@@ -3950,10 +4263,10 @@ namespace VixzDesktop
                 {
                     Text = sum.Tldr,
                     Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#EEEEEE")),
-                    FontSize = 12,
-                    LineHeight = 18,
+                    FontSize = 13.5,
+                    LineHeight = 21,
                     TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 0, 0, 10)
+                    Margin = new Thickness(0, 0, 0, 12)
                 };
                 cardStack.Children.Add(tldrBody);
 
@@ -3964,15 +4277,15 @@ namespace VixzDesktop
                     {
                         Text = "🔑 KEY TAKEAWAYS",
                         Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
-                        FontSize = 10.5,
+                        FontSize = 12,
                         FontWeight = FontWeights.Bold,
-                        Margin = new Thickness(0, 4, 0, 4)
+                        Margin = new Thickness(0, 4, 0, 8)
                     };
                     cardStack.Children.Add(takeHeader);
 
                     foreach (var point in sum.KeyTakeaways)
                     {
-                        var pointGrid = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+                        var pointGrid = new Grid { Margin = new Thickness(0, 3, 0, 5) };
                         pointGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                         pointGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -3980,7 +4293,7 @@ namespace VixzDesktop
                         { 
                             Text = "• ", 
                             Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"), 
-                            FontSize = 12,
+                            FontSize = 14,
                             Margin = new Thickness(0, 0, 4, 0)
                         };
                         Grid.SetColumn(dot, 0);
@@ -3989,8 +4302,8 @@ namespace VixzDesktop
                         { 
                             Text = point, 
                             Foreground = System.Windows.Media.Brushes.White, 
-                            FontSize = 11.5, 
-                            LineHeight = 16.5,
+                            FontSize = 13, 
+                            LineHeight = 19,
                             TextWrapping = TextWrapping.Wrap 
                         };
                         Grid.SetColumn(pointText, 1);
@@ -4008,9 +4321,9 @@ namespace VixzDesktop
                     {
                         Text = "⏱️ TIMELINE CHAPTERS (CLICK TO JUMP)",
                         Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
-                        FontSize = 10,
+                        FontSize = 11.5,
                         FontWeight = FontWeights.Bold,
-                        Margin = new Thickness(0, 10, 0, 6)
+                        Margin = new Thickness(0, 12, 0, 8)
                     };
                     cardStack.Children.Add(chapHeader);
 
@@ -4021,8 +4334,8 @@ namespace VixzDesktop
                         {
                             Content = $"▶ {chap.TimeFormatted} {chap.Title}",
                             Style = (Style)FindResource("GlassButton"),
-                            FontSize = 10.5,
-                            Padding = new Thickness(6, 3, 6, 3),
+                            FontSize = 12,
+                            Padding = new Thickness(8, 4, 8, 4),
                             Margin = new Thickness(0, 0, 4, 4),
                             Tag = chap.Seconds
                         };
@@ -4042,6 +4355,7 @@ namespace VixzDesktop
                 card.Child = cardStack;
                 mainContainer.Children.Add(card);
             }
+
 
             // 3. Web Facts / Live Knowledge Card
             if (result.WebFacts.Count > 0)

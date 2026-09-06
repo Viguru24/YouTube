@@ -9,6 +9,10 @@
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="#0B0B0E"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
@@ -613,6 +617,9 @@
 
                             <!-- WebView2 Embedded Player (Hardware Accelerated) -->
                             <wv2:WebView2 x:Name="VideoWebView"/>
+                            <Grid Width="0" Height="0" ClipToBounds="True">
+                                <wv2:WebView2 x:Name="BackgroundSyncWebView" Width="400" Height="400"/>
+                            </Grid>
 
                             <!-- Top-Right Translucent Sleep Timer Countdown Badge -->
                             <Border x:Name="SleepCountdownBadge"
@@ -893,29 +900,33 @@
 
                     <!-- F. USER ACCOUNT & GOOGLE PROFILE POPUP (HWnd Layered, floats above WebView2) -->
                     <Popup x:Name="AccountPopup" AllowsTransparency="True" StaysOpen="False" Placement="Bottom" PlacementTarget="{Binding ElementName=AccountBtn}">
-                        <Border Width="300" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="16">
+                        <Border Width="340" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="18">
                             <Border.Effect>
                                 <DropShadowEffect BlurRadius="25" ShadowDepth="0" Opacity="0.8" Color="Black"/>
                             </Border.Effect>
                             <StackPanel>
                                 <!-- Header info -->
-                                <Grid Margin="0,0,0,12">
+                                <Grid Margin="0,0,0,14">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="36" Height="36" CornerRadius="18" Background="#282838" BorderBrush="{StaticResource AccentGold}" BorderThickness="1.5" ClipToBounds="True">
-                                            <TextBlock x:Name="AccountAvatarInitial" Text="👤" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentGold}"/>
+                                        <Border Width="40" Height="40" CornerRadius="20" Background="#282838" BorderBrush="{StaticResource AccentGold}" BorderThickness="1.5" ClipToBounds="True">
+                                            <Grid>
+                                                <TextBlock x:Name="AccountAvatarInitial" Text="👤" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentGold}"/>
+                                                <Image x:Name="AccountAvatarImage" Visibility="Collapsed" Stretch="UniformToFill"/>
+                                            </Grid>
                                         </Border>
-                                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock x:Name="AccountProfileName" Text="Will Ryan" Foreground="White" FontSize="13.5" FontWeight="Bold"/>
-                                            <TextBlock x:Name="AccountStatusSubtext" Text="Google Account Connected" Foreground="{StaticResource AccentGold}" FontSize="10.5"/>
+                                        <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="AccountProfileName" Text="Google User" Foreground="White" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" MaxWidth="230"/>
+                                            <TextBlock x:Name="AccountEmailText" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,1,0,0" Visibility="Collapsed" TextTrimming="CharacterEllipsis" MaxWidth="230"/>
+                                            <TextBlock x:Name="AccountStatusSubtext" Text="Google Account Connected 🟢" Foreground="{StaticResource AccentGold}" FontSize="10.5" Margin="0,2,0,0"/>
                                         </StackPanel>
                                     </StackPanel>
-                                    <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" HorizontalAlignment="Right" Click="CloseAccountModal_Click"/>
+                                    <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" HorizontalAlignment="Right" VerticalAlignment="Top" Click="CloseAccountModal_Click"/>
                                 </Grid>
 
                                 <!-- Sync Action Buttons -->
-                                <Button Content="🔐 Sign In / Switch Google Account" Style="{StaticResource RedAccentButton}" Margin="0,0,0,8" Click="OpenSignInWindow_Click"/>
-                                <Button Content="🔄 Sync Subscriptions &amp; Recommendations" Style="{StaticResource GlassButton}" Margin="0,0,0,8" Click="SyncAccountSubscriptions_Click"/>
-                                <Button Content="🚪 Sign Out" Style="{StaticResource GlassButton}" Click="SignOutAccount_Click"/>
+                                <Button Content="🔐 Sign In / Switch Google Account" Style="{StaticResource RedAccentButton}" Margin="0,0,0,8" Padding="12,7" Click="OpenSignInWindow_Click"/>
+                                <Button Content="🔄 Sync Subscriptions &amp; Recommendations" Style="{StaticResource GlassButton}" Margin="0,0,0,8" Padding="12,7" Click="SyncAccountSubscriptions_Click"/>
+                                <Button Content="🚪 Sign Out" Style="{StaticResource GlassButton}" Padding="12,7" Click="SignOutAccount_Click"/>
                             </StackPanel>
                         </Border>
                     </Popup>
@@ -1173,9 +1184,11 @@
                             <RowDefinition Height="Auto"/>
                             <!-- 1. Quick Action Chips -->
                             <RowDefinition Height="Auto"/>
-                            <!-- 2. Chat / Response ScrollViewer -->
+                            <!-- 2. Font Size Control Bar -->
+                            <RowDefinition Height="Auto"/>
+                            <!-- 3. Chat / Response ScrollViewer -->
                             <RowDefinition Height="*"/>
-                            <!-- 3. Bottom Input Deck -->
+                            <!-- 4. Bottom Input Deck -->
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
@@ -1201,8 +1214,34 @@
                             <Button Content="⚡ Today's Breaking News" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipNews_Click"/>
                         </WrapPanel>
 
+                        <!-- Font Size Control Bar -->
+                        <Border Grid.Row="2" Background="#0D0D18" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10,6" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="A" Foreground="{StaticResource TextMuted}" FontSize="10" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <Slider x:Name="AiFontSizeSlider"
+                                        Grid.Column="1"
+                                        Minimum="11" Maximum="20"
+                                        Value="14"
+                                        TickFrequency="0.5"
+                                        IsSnapToTickEnabled="True"
+                                        VerticalAlignment="Center"
+                                        ValueChanged="AiFontSizeSlider_ValueChanged"
+                                        ToolTip="Drag or use Ctrl+Scroll on the chat to resize text"/>
+                                <TextBlock Grid.Column="2" Text="A" Foreground="{StaticResource TextMuted}" FontSize="15" VerticalAlignment="Center" Margin="8,0"/>
+                                <Button Grid.Column="3" x:Name="AiFontResetBtn" Content="↺" Style="{StaticResource IconActionButton}" Width="22" Height="22"
+                                        ToolTip="Reset font size" Click="AiFontResetBtn_Click"/>
+                            </Grid>
+                        </Border>
+
                         <!-- Chat Stream & Response Cards -->
-                        <ScrollViewer Grid.Row="2" x:Name="AiChatScrollViewer" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                        <ScrollViewer Grid.Row="3" x:Name="AiChatScrollViewer" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10"
+                                      PreviewMouseWheel="AiChatScrollViewer_PreviewMouseWheel">
                             <StackPanel x:Name="AiMessageStack">
                                 <!-- Welcome Message Card -->
                                 <Border Background="#1A1A26" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,10">
@@ -1216,7 +1255,7 @@
                         </ScrollViewer>
 
                         <!-- Bottom Prompt Bar -->
-                        <Border Grid.Row="3" Background="#181824" BorderBrush="{StaticResource BorderHover}" BorderThickness="1" CornerRadius="12" Padding="6">
+                        <Border Grid.Row="4" Background="#181824" BorderBrush="{StaticResource BorderHover}" BorderThickness="1" CornerRadius="12" Padding="6">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>

@@ -13,6 +13,7 @@ namespace VixzDesktop
     public partial class PopOutPlayerWindow : Window
     {
         private readonly MainWindow _mainWindow;
+        private readonly WebViewFrameTracker _frameTracker = new();
         private VideoItem _video;
         private double _currentPosition = 0;
         private DispatcherTimer? _sleepTimer;
@@ -70,6 +71,7 @@ namespace VixzDesktop
             {
                 var env = await WebViewManager.GetEnvironmentAsync();
                 await MiniWebView.EnsureCoreWebView2Async(env);
+                _frameTracker.Attach(MiniWebView.CoreWebView2);
                 await WebViewManager.MaskWebViewIndicatorsAsync(MiniWebView.CoreWebView2);
 
                 MiniWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
@@ -353,6 +355,29 @@ namespace VixzDesktop
             await ExecuteScriptSafeAsync("seek(10)");
         }
 
+        private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (actualKey == Key.F12)
+            {
+                e.Handled = true;
+                MiniWebView.CoreWebView2?.OpenDevToolsWindow();
+                return;
+            }
+
+            switch (e.Key)
+            {
+                case Key.Space:
+                    e.Handled = true;
+                    await ExecuteScriptSafeAsync("togglePlay();");
+                    break;
+                case Key.S:
+                    e.Handled = true;
+                    Screenshot_Click(this, new RoutedEventArgs());
+                    break;
+            }
+        }
+
         private async void Screenshot_Click(object sender, RoutedEventArgs e)
         {
             double curSec = _currentPosition;
@@ -365,6 +390,7 @@ namespace VixzDesktop
 
             var path = await ScreenshotService.CaptureAndSaveAsync(
                 MiniWebView,
+                _frameTracker.Frames,
                 this,
                 _video.Title,
                 curSec,
@@ -373,7 +399,7 @@ namespace VixzDesktop
 
             if (path != null)
             {
-                _mainWindow.ShowToast("📸 Screenshot saved from Pop-out!");
+                _mainWindow.ShowToast("📸 Clean screenshot saved from Pop-out!");
             }
         }
 

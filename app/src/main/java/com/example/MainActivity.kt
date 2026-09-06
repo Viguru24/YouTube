@@ -277,6 +277,7 @@ fun MainAppContent(
     val favoriteVideos by viewModel.favoriteVideos.collectAsStateWithLifecycle()
     val watchLaterVideos by viewModel.watchLaterVideos.collectAsStateWithLifecycle()
     val watchHistory by viewModel.watchHistory.collectAsStateWithLifecycle()
+    val watchedVideoIds by viewModel.watchedVideoIds.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val subscribedCreators by viewModel.subscribedCreators.collectAsStateWithLifecycle()
     val dislikedVideoIds by viewModel.dislikedVideoIds.collectAsStateWithLifecycle()
@@ -511,6 +512,7 @@ fun MainAppContent(
                         0 -> HomeScreen(
                             videos = videos,
                             historyVideos = watchHistory,
+                            watchedVideoIds = watchedVideoIds,
                             categories = categories,
                             selectedCategory = selectedCategory,
                             searchQuery = searchQuery,

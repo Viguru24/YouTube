@@ -75,8 +75,11 @@ object RecommendationEngine {
         val boostedLower = settings.boostedTopics.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         val demotedLower = settings.demotedCreators.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
+        val watchedIds = watchHistory.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
+
         val unmutedVideos = videos.filter { video ->
             if (video.youtubeId in dislikedVideoIds) return@filter false
+            if (video.youtubeId in watchedIds) return@filter false
             val titleLower = video.title.lowercase()
             val chanLower = video.channelName.lowercase()
             chanLower !in mutedNames &&

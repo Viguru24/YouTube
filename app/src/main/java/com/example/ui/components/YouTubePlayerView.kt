@@ -282,12 +282,10 @@ fun YouTubePlayerView(
             try {
                 exoPlayer.removeListener(listener)
                 val pos = exoPlayer.currentPosition
-                if (pos > 0) {
-                    savedPositionMs = pos
-                    val sec = (pos / 1000).toInt()
-                    playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
-                    onPositionUpdate(sec)
-                }
+                savedPositionMs = pos
+                val sec = (pos / 1000).toInt().coerceAtLeast(0)
+                playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
+                onPositionUpdate(sec)
             } catch (e: Exception) {
                 // Ignore
             }

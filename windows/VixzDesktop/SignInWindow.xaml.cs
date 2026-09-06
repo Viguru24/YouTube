@@ -107,32 +107,21 @@ namespace VixzDesktop
                 {
                     StatusText.Text = "🟢 YouTube Account Authenticated! Finalizing profile...";
 
-                    // Extract display info from page
-                    string nameScript = @"(function() {
-                        try {
-                            if (window.ytcfg && typeof ytcfg.get === 'function') {
-                                return ytcfg.get('USER_NAME') || ytcfg.get('ACCOUNT_NAME') || '';
-                            }
-                        } catch(e) {}
-                        return '';
-                    })()";
-                    var nameRaw = await AuthWebView.ExecuteScriptAsync(nameScript);
-                    var displayName = CleanJsonString(nameRaw);
-
-                    if (string.IsNullOrWhiteSpace(displayName))
+                    var account = await AccountSyncService.ExtractAndUpdateAccountAsync(AuthWebView.CoreWebView2);
+                    if (account == null)
                     {
-                        displayName = "Google User";
+                        account = new UserAccount
+                        {
+                            IsSignedIn = true,
+                            DisplayName = "Google Account",
+                            Email = "",
+                            LastSyncTime = DateTime.UtcNow
+                        };
+                        StorageService.SetUserAccount(account);
                     }
 
-                    var account = new UserAccount
-                    {
-                        IsSignedIn = true,
-                        DisplayName = displayName,
-                        Email = "",
-                        LastSyncTime = DateTime.UtcNow
-                    };
-
-                    StorageService.SetUserAccount(account);
+                    var who = !string.IsNullOrWhiteSpace(account.Email) ? account.Email : account.DisplayName;
+                    StatusText.Text = $"🟢 Connected as {who}!";
                     IsSuccess = true;
 
                     await Task.Delay(800);
@@ -180,31 +169,19 @@ namespace VixzDesktop
                 {
                     bool hasLoginCookie = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
 
-                    string nameScript = @"(function() {
-                        try {
-                            if (window.ytcfg && typeof ytcfg.get === 'function') {
-                                return ytcfg.get('USER_NAME') || ytcfg.get('ACCOUNT_NAME') || '';
-                            }
-                        } catch(e) {}
-                        return '';
-                    })()";
-                    var nameRaw = await AuthWebView.ExecuteScriptAsync(nameScript);
-                    var displayName = CleanJsonString(nameRaw);
-
-                    if (string.IsNullOrWhiteSpace(displayName))
+                    var account = await AccountSyncService.ExtractAndUpdateAccountAsync(AuthWebView.CoreWebView2);
+                    if (account == null)
                     {
-                        displayName = hasLoginCookie ? "Google User" : WillRyanProfileData.ProfileName;
+                        account = new UserAccount
+                        {
+                            IsSignedIn = hasLoginCookie,
+                            DisplayName = hasLoginCookie ? "Google Account" : WillRyanProfileData.ProfileName,
+                            Email = "",
+                            LastSyncTime = DateTime.UtcNow
+                        };
+                        StorageService.SetUserAccount(account);
                     }
 
-                    var account = new UserAccount
-                    {
-                        IsSignedIn = true,
-                        DisplayName = displayName,
-                        Email = "",
-                        LastSyncTime = DateTime.UtcNow
-                    };
-
-                    StorageService.SetUserAccount(account);
                     IsSuccess = true;
                     DialogResult = true;
                     Close();

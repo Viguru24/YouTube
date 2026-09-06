@@ -454,9 +454,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val combined = (profileBatch + discoveryBatch)
 
                 val disliked = _dislikedVideoIds.value
+                val watched = watchedVideoIds.value
                 val fresh = combined
                     .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                    .filter { it.youtubeId !in disliked }
+                    .filter { it.youtubeId !in disliked && it.youtubeId !in watched && it.lastWatchedTimestamp == 0L && it.lastPositionSeconds == 0 }
                     .distinctBy { it.youtubeId }
 
                 if (fresh.isNotEmpty()) {
@@ -494,7 +495,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     try { repository.deleteVideo(junk) } catch (e: Exception) { }
                 }
 
-                val valid = keepVideos.filter { it.youtubeId !in _dislikedVideoIds.value }
+                val watched = watchedVideoIds.value
+                val valid = keepVideos.filter {
+                    it.youtubeId !in _dislikedVideoIds.value &&
+                    it.youtubeId !in watched &&
+                    it.lastWatchedTimestamp == 0L &&
+                    it.lastPositionSeconds == 0
+                }
                 if (valid.isNotEmpty()) {
                     _categoryVideos.value = valid
                     valid.firstOrNull()?.let { top ->
@@ -571,8 +578,12 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     } else {
                         repository.getVideosByCategoryDirect(category)
                     }
+                    val watched = watchedVideoIds.value
                     val validCached = cached.filter {
                         it.youtubeId !in _dislikedVideoIds.value &&
+                        it.youtubeId !in watched &&
+                        it.lastWatchedTimestamp == 0L &&
+                        it.lastPositionSeconds == 0 &&
                         !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
                     }
                     if (validCached.isNotEmpty()) {
@@ -598,7 +609,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     }
                     val filtered = fetched
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                        .filter { it.youtubeId !in _dislikedVideoIds.value }
+                        .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched && it.lastWatchedTimestamp == 0L && it.lastPositionSeconds == 0 }
                         .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
 
                     if (filtered.isNotEmpty()) {
@@ -638,9 +649,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value, forceRefresh = true)
                 } catch (e: Exception) { emptyList() }
 
+                val watched = watchedVideoIds.value
                 val combined = (profileFeed + discoveryFeed)
                     .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                    .filter { it.youtubeId !in _dislikedVideoIds.value }
+                    .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched }
                     .distinctBy { it.youtubeId }
 
                 val allCached = try { repository.getAllVideosDirect() } catch (e: Exception) { emptyList() }
@@ -654,7 +666,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     mutedChannels = mutedChannels.value,
                     dislikedVideoIds = _dislikedVideoIds.value,
                     settings = _algorithmSettings.value
-                )
+                ).filter { it.youtubeId !in watched }
 
                 if (ranked.isNotEmpty()) {
                     _categoryVideos.value = ranked
@@ -688,6 +700,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         isLoadingMore = true
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                val watched = watchedVideoIds.value
                 if (currentCategory == "All") {
                     feedBatchIndex++
                     val profileBatch = try {
@@ -707,7 +720,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                     val combined = (profileBatch + discoveryBatch)
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                        .filter { it.youtubeId !in _dislikedVideoIds.value }
+                        .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched }
                         .distinctBy { it.youtubeId }
 
                     if (combined.isNotEmpty()) {
@@ -727,7 +740,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(additionalQueries.random())
                     val unDisliked = newBatch
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                        .filter { it.youtubeId !in _dislikedVideoIds.value }
+                        .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched }
 
                     if (unDisliked.isNotEmpty()) {
                         val updated = (_categoryVideos.value + unDisliked).distinctBy { it.youtubeId }
@@ -748,7 +761,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 channelBatchIndex++
+                val watched = watchedVideoIds.value
                 val newBatch = com.example.data.remote.YouTubeLiveSearchService.fetchChannelVideosBatch(channel, channelBatchIndex)
+                    .filter { it.youtubeId !in watched }
                 if (newBatch.isNotEmpty()) {
                     val updated = (_categoryVideos.value + newBatch)
                         .distinctBy { it.youtubeId }
@@ -771,8 +786,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         channelBatchIndex = 0
         if (channelName.isNotBlank()) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val watched = watchedVideoIds.value
                 // Step A: Instant 0ms cached channel videos from local DB
                 val cached = repository.getVideosByChannelDirect(channelName)
+                    .filter { it.youtubeId !in watched && it.lastWatchedTimestamp == 0L && it.lastPositionSeconds == 0 }
                 if (cached.isNotEmpty()) {
                     _categoryVideos.value = cached.sortedWith(
                         compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
@@ -781,6 +798,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                 // Step B: Parallel Live Channel Fetch from YouTube (Always live & forced fresh)
                 val latestVideos = com.example.data.remote.YouTubeLiveSearchService.fetchChannelLatestVideos(channelName, forceRefresh = true)
+                    .filter { it.youtubeId !in watched }
                 if (latestVideos.isNotEmpty()) {
                     val merged = (latestVideos + _categoryVideos.value)
                         .distinctBy { it.youtubeId }
@@ -860,6 +878,31 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val watchHistory: StateFlow<List<VideoEntity>> = repository.watchHistory
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Immediate in-memory watched IDs (synced synchronously on play / pause / exit / end)
+    private val _inMemoryWatchedIds = MutableStateFlow<Set<String>>(emptySet())
+
+    val watchedVideoIds: StateFlow<Set<String>> = kotlinx.coroutines.flow.combine(
+        repository.watchHistory,
+        _inMemoryWatchedIds
+    ) { history, inMemory ->
+        val historyIds = history.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }.map { it.youtubeId }.toSet()
+        historyIds + inMemory
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    fun markVideoAsWatched(youtubeId: String, positionSeconds: Int = 0) {
+        if (youtubeId.isBlank()) return
+        _inMemoryWatchedIds.value = _inMemoryWatchedIds.value + youtubeId
+        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != youtubeId }
+        _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != youtubeId }
+        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != youtubeId }
+        _shortsQueue.value = _shortsQueue.value.filter { it.youtubeId != youtubeId }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                repository.updatePlaybackPosition(youtubeId, positionSeconds)
+            } catch (e: Exception) { }
+        }
+    }
+
     // Active playing video state & Shorts mode tracking
     private val _activeVideoId = MutableStateFlow<String?>(null)
     val activeVideoId: StateFlow<String?> = _activeVideoId.asStateFlow()
@@ -935,9 +978,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
 
         // Immediately filter out from active feed lists and background buffer so returning to feed shows it removed
-        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != video.youtubeId }
-        _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != video.youtubeId }
-        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != video.youtubeId }
+        markVideoAsWatched(video.youtubeId, video.lastPositionSeconds)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val now = System.currentTimeMillis()
@@ -975,6 +1016,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun playShort(video: VideoEntity) {
         android.util.Log.d("YouTubeViewModel", "playShort called: id=${video.youtubeId}, title=${video.title}")
+        markVideoAsWatched(video.youtubeId, 0)
         val shortVid = video.copy(category = "Shorts")
 
         // Record in session history
@@ -1068,13 +1110,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
             // 2. User is at the frontier: select a 100% BRAND NEW UNSEEN SHORT (NEVER REPEATS)
             val disliked = _dislikedVideoIds.value
-            var candidate = _shortsQueue.value.firstOrNull { it.youtubeId !in _seenShortIds && it.youtubeId !in disliked }
+            val watched = watchedVideoIds.value
+            var candidate = _shortsQueue.value.firstOrNull { it.youtubeId !in _seenShortIds && it.youtubeId !in disliked && it.youtubeId !in watched }
 
             // If no unplayed shorts remaining in queue, fetch fresh batch immediately
             if (candidate == null) {
                 try {
                     val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                    val unDisliked = freshShorts.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds }
+                    val unDisliked = freshShorts.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds && it.youtubeId !in watched }
                     _shortsQueue.value = (_shortsQueue.value + unDisliked).distinctBy { it.youtubeId }
                     unDisliked.forEach { repository.saveVideo(it) }
                     candidate = unDisliked.firstOrNull()
@@ -1084,7 +1127,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             // Fallback: Check category videos for any unplayed Short
             if (candidate == null) {
                 candidate = _categoryVideos.value.firstOrNull { 
-                    com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in _seenShortIds && it.youtubeId !in disliked 
+                    com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in _seenShortIds && it.youtubeId !in disliked && it.youtubeId !in watched
                 }
             }
 
@@ -1095,10 +1138,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 playVideo(candidate, isShort = true)
 
                 // Background refill when buffer gets low
-                if (_shortsQueue.value.count { it.youtubeId !in _seenShortIds } < 8) {
+                if (_shortsQueue.value.count { it.youtubeId !in _seenShortIds && it.youtubeId !in watched } < 8) {
                     try {
                         val fresh = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
-                        val valid = fresh.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds }
+                        val valid = fresh.filter { it.youtubeId !in disliked && it.youtubeId !in _seenShortIds && it.youtubeId !in watched }
                         _shortsQueue.value = (_shortsQueue.value + valid).distinctBy { it.youtubeId }
                         valid.forEach { repository.saveVideo(it) }
                     } catch (e: Exception) { }
@@ -1120,15 +1163,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
         if (positionSeconds >= 0) {
-            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                repository.updatePlaybackPosition(youtubeId, positionSeconds)
-            }
+            markVideoAsWatched(youtubeId, positionSeconds)
         }
     }
 
     fun setActiveVideo(youtubeId: String, startSeconds: Int = 0) {
         _isPlayingAsShort.value = false
         _activeVideoId.value = youtubeId
+        markVideoAsWatched(youtubeId, startSeconds)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val existing = repository.getVideoDirect(youtubeId)
             val posToKeep = if (startSeconds > 0) {
@@ -1154,6 +1196,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearActiveVideo() {
+        val current = _activeVideo.value
+        if (current != null) {
+            markVideoAsWatched(current.youtubeId, current.lastPositionSeconds)
+        }
         _activeVideoId.value = null
         _activeVideo.value = null
         _isPlayingAsShort.value = null

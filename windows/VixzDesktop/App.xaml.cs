@@ -8,6 +8,25 @@ namespace VixzDesktop
     {
         protected override void OnStartup(StartupEventArgs e)
         {
+            try
+            {
+                var currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                var existingProcesses = System.Diagnostics.Process.GetProcessesByName("VixzDesktop");
+                foreach (var p in existingProcesses)
+                {
+                    if (p.Id != currentPid)
+                    {
+                        try
+                        {
+                            p.Kill();
+                            p.WaitForExit(800);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
             base.OnStartup(e);
 
             AppDomain.CurrentDomain.UnhandledException += (s, args) =>
