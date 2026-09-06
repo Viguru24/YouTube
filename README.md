@@ -6,17 +6,17 @@
 
 <br/>
 
-[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.6-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)
+[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.7-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk)
 [![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
-[![Windows App](https://img.shields.io/badge/🖥️%20Windows%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
+[![Windows PC App](https://img.shields.io/badge/🖥️%20Windows%20PC%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
-  <a href="#-whats-new-in-v196">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v197">🆕 <b>What's New (v1.9.7)</b></a> •
+  <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows PC Version</b></a> •
   <a href="#-key-features">✨ <b>Features</b></a> •
-  <a href="#-feature-comparison">📊 <b>Comparison</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
   <a href="#-tech-stack">🛠️ <b>Tech Stack</b></a>
 </p>
@@ -25,19 +25,38 @@
 
 ---
 
-## ⚡ Quick 1-Minute Install Guide
+## 🆕 What's New in v1.9.7
 
-- 🌐 **12-Language In-App Localization:** Complete UI translations for **English, Español, Français, Deutsch, Português, Italiano, Русский, 日本語, 한국어, 简体中文, हिन्दी, العربية**.
-- ⚡ **0ms Instant Live UI Switching:** Change languages in Settings with instant zero-reload UI updates without interrupting video playback.
-- ✨ **Ecosystem Spotlight:** Seamless 1-tap discovery of **Cosmo Whisper** (*AI Transcription*), **Cosmo Symphony** (*Media Tool*), and **Vixz Desktop** (*Windows YouTube Player*).
-- ⏰ **Optimized "Last 24h" Filter:** Enhanced real-time upload parsing and creator feed synchronization.
+- 🎮 **Dedicated Paused Action Strip:** Sleek new pause overlay featuring Prev/Next buttons, 1-tap PiP pop-out, and Thumbs Down with immediate auto-skip to the next video.
+- ⧉ **Dual Visible PiP Triggers:** Pop-Out Picture-in-Picture buttons available on both the top bar and the bottom utility deck.
+- 🔄 **180° Hardware Reverse Rotation Flip:** Instant display flip button that overrides Android system orientation locks.
+- 🎙️ **Voice Search Support:** Speak naturally with in-app microphone voice recognition for instant video searching.
+- 🔍 **Pinch-to-Zoom up to 5x:** Fluid multi-touch video zooming paired with precision outer-border brightness & volume gestures.
+- ⚡ **Dominant Recency Feed Sync:** Parallel background channel fetching (30 uploads each) with heavy recency boosting (+1200 pts) for ultra-fresh uploads.
+- 🔗 **Full Link Interception:** Tapping creator channels or video links inside player cards stays strictly within Vixz.
+
+---
+
+## 🖥️ Vixz Desktop (Windows PC Version)
+
+Prefer watching on your laptop or desktop? Experience **[Vixz Desktop](https://github.com/Viguru24/VixzDesktop)** — the ultimate Windows 10/11 YouTube companion:
+
+- 🎨 **Fluent Acrylic Glassmorphism:** Rich, dynamic Windows design with zero generic web wrappers.
+- 🛡️ **Zero Commercial Ads & SponsorBlock:** Automatically skips pre-rolls, banner pop-ups, and in-video sponsor segments with millisecond precision.
+- 🤖 **AI Copilot with Voice & TTS:** Ask questions about any video, summarize key takeaways with interactive timestamps, and listen with **🔊 Read Aloud (Text-to-Speech)**.
+- 🎙️ **Voice Search & Commands:** Use speech recognition to find videos or execute commands hands-free.
+- 📥 **1-Click 1080p MP4 Downloader:** Save pristine video and audio directly to your local drive for offline viewing.
+- ⧉ **Always-On-Top Floating PiP Mini-Player:** Keep videos floating while working in other apps.
+- 🌙 **Sleep Timer with Audio Fade-Out:** Automatically winds down playback with smooth audio attenuation.
+
+👉 **[📥 Download Vixz Desktop for Windows (.MSIX)](https://github.com/Viguru24/VixzDesktop/releases/download/v1.0.0/VixzDesktop-v1.0.0.msix)** • **[Explore the GitHub Repo](https://github.com/Viguru24/VixzDesktop)**
 
 ---
 
 ## ⚡ Quick Install Guide
 
 ### Option A: Direct APK Install
-1. **[📥 Download the Latest Vixz APK (v1.9.6)](https://github.com/Viguru24/YouTube/releases/download/v1.9.6/Vixz-YouTube-Player-v1.9.6.apk)** directly to your Android device.
+1. **[📥 Download the Latest Vixz APK (v1.9.7)](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk)** directly to your Android device.
 2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!

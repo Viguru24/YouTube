@@ -72,6 +72,9 @@ interface VideoDao {
     @Delete
     suspend fun deleteVideo(video: VideoEntity)
 
+    @Query("DELETE FROM videos WHERE youtubeId = :youtubeId")
+    suspend fun deleteVideoById(youtubeId: String)
+
     @Query("DELETE FROM videos WHERE addedTimestamp < :cutoffTimestamp AND isFavorite = 0 AND isWatchLater = 0 AND isDownloaded = 0 AND lastWatchedTimestamp = 0 AND lastPositionSeconds = 0")
     suspend fun deleteStaleUnsavedVideos(cutoffTimestamp: Long)
 

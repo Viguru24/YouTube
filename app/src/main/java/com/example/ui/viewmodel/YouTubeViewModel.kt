@@ -42,6 +42,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 onSuccess = { localPath, sizeMb ->
                     viewModelScope.launch {
                         repository.updateDownloadStatus(video.youtubeId, true, localPath, sizeMb)
+                        if (_activeVideo.value?.youtubeId == video.youtubeId) {
+                            _activeVideo.value = _activeVideo.value?.copy(
+                                isDownloaded = true,
+                                localFilePath = localPath,
+                                downloadSizeMb = sizeMb
+                            )
+                        }
                         onComplete()
                     }
                 },
@@ -56,6 +63,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             com.example.data.remote.VideoDownloadManager.deleteDownloadedVideo(getApplication(), video.youtubeId)
             repository.updateDownloadStatus(video.youtubeId, false, "", 0.0f)
+            if (_activeVideo.value?.youtubeId == video.youtubeId) {
+                _activeVideo.value = _activeVideo.value?.copy(
+                    isDownloaded = false,
+                    localFilePath = "",
+                    downloadSizeMb = 0.0f
+                )
+            }
         }
     }
 
@@ -96,7 +110,70 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         loadSavedAccounts()
         viewModelScope.launch {
             repository.cleanupStaleRecommendations()
+            try {
+                repository.deleteVideoById("RTWDJ1tUPKs")
+            } catch (e: Exception) { }
         }
+    }
+
+    fun deriveDisplayNameFromEmail(email: String): String {
+        if (email.isBlank() || !email.contains("@")) return ""
+        val rawUsername = email.substringBefore("@")
+        // Remove trailing digits e.g. "Joeblack10810" -> "Joeblack"
+        val withoutDigits = rawUsername.replace(Regex("\\d+$"), "")
+        val base = if (withoutDigits.isNotBlank()) withoutDigits else rawUsername
+        // Replace separators (., _, -, +) with space
+        var spaced = base.replace(Regex("[._\\-+]+"), " ")
+        // Split camelCase e.g. "JoeBlack" -> "Joe Black"
+        spaced = spaced.replace(Regex("([a-z])([A-Z])"), "$1 $2")
+        val words = spaced.split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (words.isEmpty()) return base
+        return words.joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { if (it.isJavaIdentifierStart()) it.titlecase() else it.toString() }
+        }
+    }
+
+    fun deriveInitials(name: String, email: String = ""): String {
+        val cleanName = name.trim()
+        val isGenericName = cleanName.isBlank() ||
+                cleanName.equals("Guest User", ignoreCase = true) ||
+                cleanName.equals("Google User", ignoreCase = true) ||
+                cleanName.equals("Local User", ignoreCase = true) ||
+                cleanName.equals("Guest", ignoreCase = true) ||
+                cleanName.equals("User", ignoreCase = true)
+
+        if (!isGenericName) {
+            val parts = cleanName.split(Regex("[\\s._\\-]+")).filter { it.isNotBlank() }
+            if (parts.size >= 2) {
+                val first = parts[0].firstOrNull()?.uppercaseChar() ?: ""
+                val second = parts[1].firstOrNull()?.uppercaseChar() ?: ""
+                val res = "$first$second"
+                if (res.isNotBlank()) return res
+            } else if (parts.size == 1) {
+                val word = parts[0]
+                val caps = word.filter { it.isUpperCase() }
+                if (caps.length >= 2) {
+                    return caps.take(2)
+                }
+                return word.take(2).uppercase()
+            }
+        }
+
+        if (email.isNotBlank() && email != "local@vixz.app") {
+            val derived = deriveDisplayNameFromEmail(email)
+            if (derived.isNotBlank()) {
+                val parts = derived.split(Regex("\\s+")).filter { it.isNotBlank() }
+                if (parts.size >= 2) {
+                    val first = parts[0].firstOrNull()?.uppercaseChar() ?: ""
+                    val second = parts[1].firstOrNull()?.uppercaseChar() ?: ""
+                    return "$first$second"
+                } else if (parts.size == 1) {
+                    return parts[0].take(2).uppercase()
+                }
+            }
+        }
+
+        return if (!isGenericName) cleanName.take(1).uppercase() else ""
     }
 
     private fun loadSavedAccounts() {
@@ -109,55 +186,97 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 for (line in lines) {
                     val parts = line.split("|")
                     if (parts.size >= 2) {
-                        val name = parts[0]
-                        val email = parts[1]
-                        val initials = name.split(" ").mapNotNull { it.firstOrNull()?.toString() }.take(2).joinToString("").ifEmpty { "G" }.uppercase()
-                        accountsList.add(GoogleAccount(name = name, email = email, avatarInitials = initials, isSignedIn = true))
+                        var name = parts[0].trim()
+                        val email = parts[1].trim()
+                        val avatarUrl = if (parts.size >= 3) parts[2].trim() else ""
+
+                        val isGeneric = name.isBlank() ||
+                                name.equals("Guest User", ignoreCase = true) ||
+                                name.equals("Google User", ignoreCase = true) ||
+                                name.equals("Local User", ignoreCase = true) ||
+                                name.equals("Guest", ignoreCase = true)
+
+                        if (isGeneric && email.isNotBlank() && email != "local@vixz.app") {
+                            val derived = deriveDisplayNameFromEmail(email)
+                            if (derived.isNotBlank()) name = derived
+                        }
+
+                        val initials = deriveInitials(name, email)
+                        val isValidEmail = email.isNotBlank() && email != "local@vixz.app"
+                        accountsList.add(
+                            GoogleAccount(
+                                name = name,
+                                email = email,
+                                avatarInitials = initials,
+                                avatarUrl = avatarUrl,
+                                isSignedIn = isValidEmail
+                            )
+                        )
                     }
                 }
             } catch (e: Exception) {}
         }
 
-        if (accountsList.isEmpty()) {
-            accountsList.add(GoogleAccount(name = "Local User", email = "local@vixz.app", avatarInitials = "U", isSignedIn = true))
-        }
+        // Filter out any dummy account if real accounts exist
+        val realAccounts = accountsList.filter { it.email.isNotBlank() && it.email != "local@vixz.app" }
+        val finalList = if (realAccounts.isNotEmpty()) realAccounts else accountsList
 
-        _savedAccounts.value = accountsList
+        _savedAccounts.value = finalList
 
         // Restore last signed-in account automatically
-        val lastEmail = prefs.getString("last_email", accountsList.first().email) ?: accountsList.first().email
-        val lastAccount = accountsList.find { it.email == lastEmail } ?: accountsList.first()
-        _googleAccount.value = lastAccount
+        val lastEmail = prefs.getString("last_email", "") ?: ""
+        val activeAccount = finalList.find { it.email == lastEmail }
+            ?: finalList.firstOrNull { it.isSignedIn }
+            ?: GoogleAccount(isSignedIn = false)
+
+        _googleAccount.value = activeAccount
+
+        // Persist sanitized accounts list
+        if (finalList.isNotEmpty()) {
+            val encoded = finalList.joinToString(";") { "${it.name}|${it.email}|${it.avatarUrl}" }
+            prefs.edit().putString("accounts_list", encoded).apply()
+        }
     }
 
-    fun signInGoogle(name: String, email: String) {
-        val initials = name.split(" ")
-            .mapNotNull { it.firstOrNull()?.toString() }
-            .take(2)
-            .joinToString("")
-            .ifEmpty { "G" }
-            .uppercase()
+    fun signInGoogle(name: String, email: String, avatarUrl: String = "") {
+        val cleanEmail = email.trim()
+        var cleanName = name.trim()
+
+        val isGeneric = cleanName.isBlank() ||
+                cleanName.equals("Guest User", ignoreCase = true) ||
+                cleanName.equals("Google User", ignoreCase = true) ||
+                cleanName.equals("Local User", ignoreCase = true) ||
+                cleanName.equals("Guest", ignoreCase = true)
+
+        if (isGeneric && cleanEmail.isNotBlank() && cleanEmail != "local@vixz.app") {
+            val derived = deriveDisplayNameFromEmail(cleanEmail)
+            if (derived.isNotBlank()) cleanName = derived
+        }
+        if (cleanName.isBlank()) cleanName = "User"
+
+        val initials = deriveInitials(cleanName, cleanEmail)
 
         val newAcc = GoogleAccount(
-            name = name,
-            email = email,
+            name = cleanName,
+            email = cleanEmail,
             avatarInitials = initials,
-            isSignedIn = true
+            avatarUrl = avatarUrl,
+            isSignedIn = cleanEmail.isNotBlank()
         )
 
         _googleAccount.value = newAcc
 
         // Update persistent accounts list
         val currentList = _savedAccounts.value.toMutableList()
-        currentList.removeAll { it.email == email }
+        currentList.removeAll { it.email.equals(cleanEmail, ignoreCase = true) }
         currentList.add(0, newAcc)
         _savedAccounts.value = currentList
 
         // Persist to SharedPreferences
-        val encoded = currentList.joinToString(";") { "${it.name}|${it.email}" }
+        val encoded = currentList.joinToString(";") { "${it.name}|${it.email}|${it.avatarUrl}" }
         prefs.edit()
             .putString("accounts_list", encoded)
-            .putString("last_email", email)
+            .putString("last_email", cleanEmail)
             .apply()
 
         // Automatically trigger Google Account Real Playlists & Channel Subscriptions Sync!
@@ -165,7 +284,25 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun switchAccount(acc: GoogleAccount) {
-        signInGoogle(acc.name, acc.email)
+        _googleAccount.value = acc
+        prefs.edit().putString("last_email", acc.email).apply()
+        syncGoogleAccountData()
+    }
+
+    fun removeAccount(email: String) {
+        val currentList = _savedAccounts.value.toMutableList()
+        currentList.removeAll { it.email.equals(email, ignoreCase = true) }
+        _savedAccounts.value = currentList
+        val encoded = currentList.joinToString(";") { "${it.name}|${it.email}|${it.avatarUrl}" }
+        prefs.edit().putString("accounts_list", encoded).apply()
+
+        if (_googleAccount.value.email.equals(email, ignoreCase = true)) {
+            if (currentList.isNotEmpty()) {
+                switchAccount(currentList.first())
+            } else {
+                signOutGoogle()
+            }
+        }
     }
 
     fun syncGoogleAccountData() {
@@ -184,11 +321,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun signOutGoogle() {
         _googleAccount.value = GoogleAccount(
-            name = "Guest User",
+            name = "Guest",
             email = "",
-            avatarInitials = "?",
+            avatarInitials = "",
+            avatarUrl = "",
             isSignedIn = false
         )
+        prefs.edit().remove("last_email").apply()
     }
 
     // Search query & Category filter state
@@ -225,6 +364,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             .putString("download_resolution", settings.downloadResolution)
             .putStringSet("blocked_keywords", settings.blockedKeywords.toSet())
             .putStringSet("boosted_topics", settings.boostedTopics.toSet())
+            .putStringSet("demoted_creators", settings.demotedCreators.toSet())
             .apply()
     }
 
@@ -239,7 +379,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             autoDeleteDownloads = algoPrefs.getString("auto_delete", "Never") ?: "Never",
             downloadResolution = algoPrefs.getString("download_resolution", "720p") ?: "720p",
             blockedKeywords = algoPrefs.getStringSet("blocked_keywords", emptySet())?.toList() ?: emptyList(),
-            boostedTopics = algoPrefs.getStringSet("boosted_topics", emptySet())?.toList() ?: emptyList()
+            boostedTopics = algoPrefs.getStringSet("boosted_topics", emptySet())?.toList() ?: emptyList(),
+            demotedCreators = algoPrefs.getStringSet("demoted_creators", emptySet())?.toList() ?: emptyList()
         )
     }
 
@@ -332,6 +473,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // In-memory instant search cache to speed up back-and-forth navigation
+    private val _searchCache = java.util.concurrent.ConcurrentHashMap<String, List<VideoEntity>>()
+
     init {
         // 1. Instant 0ms Cache Load on Startup & Thorough Database Purge of Unsubscribed/Foreign Content
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -353,10 +497,11 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val valid = keepVideos.filter { it.youtubeId !in _dislikedVideoIds.value }
                 if (valid.isNotEmpty()) {
                     _categoryVideos.value = valid
+                    valid.firstOrNull()?.let { top ->
+                        com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
+                    }
                 }
             }
-            // Trigger fresh feed load from subscribed channels
-            refreshTrendingFeed()
         }
 
         // 2. Continuous background updater: keeps the feed buffer refreshed with subscribed creator content
@@ -373,26 +518,40 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 3. Search: SWR Flow (Instant Local DB Matches -> Smooth Debounced Background Network Search)
+        // 3. Search: SWR Flow (Instant In-Memory Cache -> Instant Local DB Matches -> Smooth Background Network Search)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             searchQuery
-                .debounce(650L)
+                .debounce(350L)
                 .collectLatest { query ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
                         currentSearchBatchIndex = 0
-                        // Step A: Instant cached search results
-                        val cachedMatches = repository.searchVideosDirect(trimmed)
-                        if (cachedMatches.isNotEmpty()) {
-                            _liveSearchResults.value = cachedMatches
+
+                        // Step 0: Check Instant In-Memory Cache first (<1ms)
+                        val memoryCached = _searchCache[trimmed.lowercase()]
+                        if (!memoryCached.isNullOrEmpty()) {
+                            _liveSearchResults.value = memoryCached
+                        } else {
+                            // Step A: Instant cached search results from Room DB
+                            val cachedMatches = repository.searchVideosDirect(trimmed)
+                            if (cachedMatches.isNotEmpty()) {
+                                _liveSearchResults.value = cachedMatches
+                                _searchCache[trimmed.lowercase()] = cachedMatches
+                            }
                         }
 
-                        // Step B: Smooth Live Network Search without blocking typing
-                        val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = true)
-                        if (realVideos.isNotEmpty()) {
-                            _liveSearchResults.value = realVideos.distinctBy { it.youtubeId }
-                            realVideos.forEach { v -> repository.saveVideo(v) }
+                        // Step B: Live Network Search in background without blocking
+                        try {
+                            val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = true)
+                            if (realVideos.isNotEmpty()) {
+                                val distinct = realVideos.distinctBy { it.youtubeId }
+                                _liveSearchResults.value = distinct
+                                _searchCache[trimmed.lowercase()] = distinct
+                                realVideos.forEach { v -> repository.saveVideo(v) }
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("YouTubeViewModel", "Live search failed: ${e.message}")
                         }
                     } else {
                         currentSearchBatchIndex = 0
@@ -406,36 +565,36 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             selectedCategory.collectLatest { category ->
                 feedBatchIndex = 0
                 try {
-                    // Step A: Only fallback to cache if current list is completely empty
-                    if (_categoryVideos.value.isEmpty()) {
-                        val cached = if (category == "All") {
-                            repository.getAllVideosDirect()
-                        } else {
-                            repository.getVideosByCategoryDirect(category)
-                        }
-                        val validRecent = cached.filter {
-                            it.youtubeId !in _dislikedVideoIds.value &&
-                            !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) &&
-                            YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) <= 86400L * 2 // Only recent (<= 48h)
-                        }
-                        if (validRecent.isNotEmpty()) {
-                            _categoryVideos.value = validRecent
+                    // Step A: Instant Local DB Cache (<1ms)
+                    val cached = if (category == "All") {
+                        repository.getAllVideosDirect()
+                    } else {
+                        repository.getVideosByCategoryDirect(category)
+                    }
+                    val validCached = cached.filter {
+                        it.youtubeId !in _dislikedVideoIds.value &&
+                        !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
+                    }
+                    if (validCached.isNotEmpty()) {
+                        _categoryVideos.value = validCached
+                        validCached.firstOrNull()?.let { top ->
+                            com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
                         }
                     }
 
                     // Step B: Parallel Live Network Sync with Strict Upload Date Sorting
                     val fetched = if (category == "All") {
                         val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = false)
                         } catch (e: Exception) { emptyList() }
 
                         val freshTechNews = try {
-                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("breaking news latest uploads today", sortByUploadDate = true, forceRefresh = true)
+                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("breaking news latest uploads today", sortByUploadDate = true, forceRefresh = false)
                         } catch (e: Exception) { emptyList() }
 
                         (profileFeed + freshTechNews).distinctBy { it.youtubeId }
                     } else {
-                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = true)
+                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = false)
                     }
                     val filtered = fetched
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
@@ -445,6 +604,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     if (filtered.isNotEmpty()) {
                         _categoryVideos.value = filtered
                         filtered.forEach { v -> repository.saveVideo(v) }
+                        filtered.firstOrNull()?.let { top ->
+                            com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
+                        }
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("YouTubeViewModel", "Category fetch error: ${e.message}")
@@ -752,6 +914,26 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         _activeVideoId.value = video.youtubeId
         _activeVideo.value = video
 
+        val isOffline = video.isDownloaded ||
+                com.example.data.remote.VideoDownloadManager.isVideoDownloadedLocally(getApplication(), video.youtubeId, video.localFilePath)
+
+        if (!isOffline) {
+            // Only pre-warm remote stream extraction if the video is not downloaded locally
+            com.example.data.remote.YouTubeStreamExtractor.prewarmStream(video.youtubeId, viewModelScope)
+            val allVideos = _categoryVideos.value
+            val currentIndex = allVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+            if (currentIndex != -1 && currentIndex + 1 < allVideos.size) {
+                val nextVid = allVideos[currentIndex + 1]
+                val nextIsOffline = nextVid.isDownloaded ||
+                        com.example.data.remote.VideoDownloadManager.isVideoDownloadedLocally(getApplication(), nextVid.youtubeId, nextVid.localFilePath)
+                if (!nextIsOffline) {
+                    com.example.data.remote.YouTubeStreamExtractor.prewarmStream(nextVid.youtubeId, viewModelScope)
+                }
+            }
+        } else {
+            android.util.Log.d("YouTubeViewModel", "playVideo: ${video.youtubeId} is downloaded offline. Skipping remote prewarm.")
+        }
+
         // Immediately filter out from active feed lists and background buffer so returning to feed shows it removed
         _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != video.youtubeId }
         _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != video.youtubeId }
@@ -759,9 +941,35 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val now = System.currentTimeMillis()
-            val updated = video.copy(lastWatchedTimestamp = now)
+            val existing = repository.getVideoDirect(video.youtubeId)
+            val posToKeep = if (video.lastPositionSeconds > 0) {
+                video.lastPositionSeconds
+            } else {
+                existing?.lastPositionSeconds ?: 0
+            }
+            val isDownloadedState = (existing?.isDownloaded == true) || video.isDownloaded || isOffline
+            val localPathToKeep = existing?.localFilePath?.ifBlank { null } ?: video.localFilePath
+            val sizeMbToKeep = if ((existing?.downloadSizeMb ?: 0f) > 0f) existing?.downloadSizeMb ?: 0f else video.downloadSizeMb
+
+            if (_activeVideo.value?.youtubeId == video.youtubeId) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    _activeVideo.value = _activeVideo.value?.copy(
+                        lastPositionSeconds = posToKeep,
+                        isDownloaded = isDownloadedState,
+                        localFilePath = localPathToKeep,
+                        downloadSizeMb = sizeMbToKeep
+                    )
+                }
+            }
+            val updated = (existing ?: video).copy(
+                lastWatchedTimestamp = now,
+                lastPositionSeconds = posToKeep,
+                isDownloaded = isDownloadedState,
+                localFilePath = localPathToKeep,
+                downloadSizeMb = sizeMbToKeep
+            )
             repository.saveVideo(updated)
-            repository.updateWatchHistory(video.youtubeId, video.lastPositionSeconds)
+            repository.updateWatchHistory(video.youtubeId, posToKeep)
         }
     }
 
@@ -823,6 +1031,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         val newDisliked = _dislikedVideoIds.value + video.youtubeId
         _dislikedVideoIds.value = newDisliked
         saveDislikedVideoIds(newDisliked)
+
+        // Lower channel in algorithm without disconnecting subscription
+        val chanName = video.channelName.trim()
+        val currentDemoted = _algorithmSettings.value.demotedCreators.toMutableList()
+        if (chanName.isNotBlank() && !currentDemoted.any { it.equals(chanName, ignoreCase = true) }) {
+            currentDemoted.add(chanName)
+            updateAlgorithmSettings(_algorithmSettings.value.copy(demotedCreators = currentDemoted))
+        }
 
         // If favorited, unfavorite
         if (video.isFavorite) {
@@ -903,7 +1119,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
-        if (positionSeconds > 0) {
+        if (positionSeconds >= 0) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 repository.updatePlaybackPosition(youtubeId, positionSeconds)
             }
@@ -914,16 +1130,26 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         _isPlayingAsShort.value = false
         _activeVideoId.value = youtubeId
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val video = repository.getVideoDirect(youtubeId) ?: VideoEntity(
+            val existing = repository.getVideoDirect(youtubeId)
+            val posToKeep = if (startSeconds > 0) {
+                startSeconds
+            } else {
+                existing?.lastPositionSeconds ?: 0
+            }
+            val video = (existing ?: VideoEntity(
                 youtubeId = youtubeId,
                 title = "YouTube Video ($youtubeId)",
                 channelName = "Personal YouTube",
                 thumbnailUrl = YouTubeUtils.getThumbnailUrl(youtubeId),
                 durationText = "10:00",
-                category = "General"
-            )
-            _activeVideo.value = video
-            repository.updateWatchHistory(youtubeId, startSeconds)
+                category = "General",
+                lastPositionSeconds = posToKeep
+            )).copy(lastPositionSeconds = posToKeep, lastWatchedTimestamp = System.currentTimeMillis())
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _activeVideo.value = video
+            }
+            repository.saveVideo(video)
+            repository.updateWatchHistory(youtubeId, posToKeep)
         }
     }
 
@@ -1086,14 +1312,35 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     fun toggleDislikeVideo(video: VideoEntity, onSkipNext: (() -> Unit)? = null) {
         val current = _dislikedVideoIds.value
         val isDisliked = video.youtubeId in current
+        val chanName = video.channelName.trim()
+        val currentDemoted = _algorithmSettings.value.demotedCreators.toMutableList()
+
         if (isDisliked) {
             val next = current - video.youtubeId
             _dislikedVideoIds.value = next
             saveDislikedVideoIds(next)
+
+            // Untoggling dislike: remove creator from demoted list
+            if (chanName.isNotBlank() && currentDemoted.any { it.equals(chanName, ignoreCase = true) }) {
+                currentDemoted.removeAll { it.equals(chanName, ignoreCase = true) }
+                updateAlgorithmSettings(_algorithmSettings.value.copy(demotedCreators = currentDemoted))
+            }
         } else {
             val next = current + video.youtubeId
             _dislikedVideoIds.value = next
             saveDislikedVideoIds(next)
+
+            // Lower channel in algorithm ranking without disconnecting subscription
+            if (chanName.isNotBlank() && !currentDemoted.any { it.equals(chanName, ignoreCase = true) }) {
+                currentDemoted.add(chanName)
+                updateAlgorithmSettings(_algorithmSettings.value.copy(demotedCreators = currentDemoted))
+            }
+
+            // If it was favorited, unfavorite
+            if (video.isFavorite) {
+                toggleFavorite(video.youtubeId, true)
+            }
+
             onSkipNext?.invoke()
         }
     }
@@ -1205,6 +1452,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             selectedSubscribedChannel.value = trimmed
         }
         refreshTrendingFeed()
+    }
+
+    fun resetAlgorithm() {
+        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        algoPrefs.edit().clear().apply()
+        val defaultSettings = com.example.data.repository.AlgorithmSettings()
+        _algorithmSettings.value = defaultSettings
+        _dislikedVideoIds.value = emptySet()
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.clearHistory()
+            repository.clearUnsavedRecommendations()
+            refreshTrendingFeed()
+        }
     }
 
     fun clearHistory() {

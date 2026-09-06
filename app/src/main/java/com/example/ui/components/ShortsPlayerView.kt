@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
+import com.example.ui.theme.YouTubeRed
 import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -107,13 +108,13 @@ fun ShortsPlayerView(
 
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 90_000,
-                /* maxBufferMs = */ 240_000,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+                /* minBufferMs = */ 8_000,
+                /* maxBufferMs = */ 25_000,
+                /* bufferForPlaybackMs = */ 200,
+                /* bufferForPlaybackAfterRebufferMs = */ 400
             )
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(30_000, true)
+            .setBackBuffer(8_000, true)
             .build()
 
         ExoPlayer.Builder(context)
@@ -268,8 +269,10 @@ fun ShortsPlayerView(
             if (localFile.exists() && localFile.length() > 1024 * 100) {
                 val localUri = android.net.Uri.fromFile(localFile).toString()
                 streamUrl = localUri
-                val mediaItem = MediaItem.fromUri(localUri)
-                exoPlayer.setMediaItem(mediaItem)
+                val fileDataSourceFactory = androidx.media3.datasource.FileDataSource.Factory()
+                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(fileDataSourceFactory)
+                    .createMediaSource(MediaItem.fromUri(localUri))
+                exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()
                 exoPlayer.play()
                 addLog("⚡ Playing from offline storage")
@@ -754,7 +757,7 @@ fun ShortsPlayerView(
                         Icon(
                             imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                             contentDescription = "Dislike",
-                            tint = if (localIsDisliked) Color(0xFFE53935) else Color.White,
+                            tint = if (localIsDisliked) YouTubeRed else Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }

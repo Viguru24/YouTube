@@ -6,8 +6,7 @@ $wscript = New-Object -ComObject WScript.Shell
 
 $desktopPaths = @(
     [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop),
-    "C:\Users\louis\Desktop",
-    "C:\Users\louis\OneDrive\Desktop"
+    "C:\Users\louis\Desktop"
 ) | Select-Object -Unique | Where-Object { Test-Path $_ }
 
 foreach ($d in $desktopPaths) {

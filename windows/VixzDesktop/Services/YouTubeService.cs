@@ -102,7 +102,7 @@ namespace VixzDesktop.Services
                 }
             }
 
-            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
         }
 
         public static async Task<List<VideoItem>> FetchNextSearchBatchAsync(string query, HashSet<string> existingIds, int takeCount = 35)
@@ -136,7 +136,7 @@ namespace VixzDesktop.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Error fetching next search batch: {ex.Message}");
             }
-            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
         }
 
         private static void WalkJsonTree(JToken token, List<VideoItem> results, HashSet<string> seenIds, int maxResults)
@@ -459,7 +459,7 @@ namespace VixzDesktop.Services
                 results = await SearchVideosAsync(channelQuery, 35, sortByUploadDate: true);
             }
 
-            return results.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
         }
 
         public static async Task<List<VideoItem>> GetSubscribedFeedAsync(string? channelName = null)
@@ -581,7 +581,7 @@ namespace VixzDesktop.Services
             string? durationFilter,
             string? sortBy)
         {
-            var list = videos.Where(v => !StorageService.IsDisliked(v.Id)).ToList();
+            var list = videos.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
 
             // 1. Duration Filter
             if (!string.IsNullOrWhiteSpace(durationFilter))

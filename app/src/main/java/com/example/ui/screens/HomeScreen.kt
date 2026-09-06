@@ -372,16 +372,36 @@ fun HomeScreen(
                                 Box(contentAlignment = Alignment.BottomEnd) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = YouTubeRed,
+                                        color = if (googleAccount.isSignedIn) YouTubeRed else MaterialTheme.colorScheme.surfaceVariant,
                                         modifier = Modifier.size(36.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = if (googleAccount.isSignedIn) googleAccount.avatarInitials else "GU",
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
+                                            if (googleAccount.isSignedIn) {
+                                                if (googleAccount.avatarUrl.isNotBlank()) {
+                                                    AsyncImage(
+                                                        model = googleAccount.avatarUrl,
+                                                        contentDescription = "Profile",
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .clip(CircleShape),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Text(
+                                                        text = googleAccount.avatarInitials.ifBlank { "U" },
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp
+                                                    )
+                                                }
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Person,
+                                                    contentDescription = "Guest",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Box(
@@ -419,7 +439,7 @@ fun HomeScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile (${googleAccount.avatarInitials})" else "👤 ${strings.profileAccount}") },
+                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile: ${googleAccount.name.ifBlank { "Account" }} (${googleAccount.avatarInitials})" else "👤 ${strings.profileAccount} (Guest)") },
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenGoogleAuth()

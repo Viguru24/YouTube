@@ -34,20 +34,60 @@ object VideoDownloadManager {
     private val activeDownloads = ConcurrentHashMap<String, Boolean>()
 
     fun getDownloadDir(context: Context): File {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) 
-            ?: File(context.filesDir, "offline_videos")
+        val dir = File(context.getExternalFilesDir(null) ?: context.filesDir, ".offline_videos")
         if (!dir.exists()) {
             dir.mkdirs()
+        }
+        val noMedia = File(dir, ".nomedia")
+        if (!noMedia.exists()) {
+            try { noMedia.createNewFile() } catch (e: Exception) { }
         }
         return dir
     }
 
-    fun getLocalVideoFile(context: Context, youtubeId: String): File {
-        return File(getDownloadDir(context), "${youtubeId}.mp4")
+    fun hideLegacyMoviesFromGallery(context: Context) {
+        try {
+            val legacyDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+            if (legacyDir != null && legacyDir.exists()) {
+                val noMedia = File(legacyDir, ".nomedia")
+                if (!noMedia.exists()) {
+                    noMedia.createNewFile()
+                }
+            }
+        } catch (e: Throwable) { }
     }
 
-    fun isVideoDownloadedLocally(context: Context, youtubeId: String): Boolean {
-        val file = getLocalVideoFile(context, youtubeId)
+    fun getLocalVideoFile(context: Context, youtubeId: String, knownPath: String? = null): File {
+        if (!knownPath.isNullOrBlank()) {
+            try {
+                val directFile = File(knownPath)
+                if (directFile.exists() && directFile.length() > 1024 * 100) {
+                    return directFile
+                }
+            } catch (e: Throwable) { }
+        }
+
+        val primary = File(getDownloadDir(context), "${youtubeId}.mp4")
+        if (primary.exists() && primary.length() > 1024 * 100) return primary
+
+        try {
+            val legacyDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+            if (legacyDir != null) {
+                val legacy = File(legacyDir, "${youtubeId}.mp4")
+                if (legacy.exists() && legacy.length() > 1024 * 100) return legacy
+            }
+        } catch (e: Throwable) { }
+
+        try {
+            val internalFile = File(context.filesDir, "${youtubeId}.mp4")
+            if (internalFile.exists() && internalFile.length() > 1024 * 100) return internalFile
+        } catch (e: Throwable) { }
+
+        return primary
+    }
+
+    fun isVideoDownloadedLocally(context: Context, youtubeId: String, knownPath: String? = null): Boolean {
+        val file = getLocalVideoFile(context, youtubeId, knownPath)
         return file.exists() && file.length() > 1024 * 100 // At least 100KB
     }
 
@@ -237,6 +277,14 @@ object VideoDownloadManager {
         if (tempFile.exists()) tempFile.delete()
         if (tempVideoFile.exists()) tempVideoFile.delete()
         if (tempAudioFile.exists()) tempAudioFile.delete()
+
+        val legacyFile = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "${youtubeId}.mp4")
+        if (legacyFile.exists()) {
+            legacyFile.delete()
+            try {
+                android.media.MediaScannerConnection.scanFile(context, arrayOf(legacyFile.absolutePath), null, null)
+            } catch (e: Exception) { }
+        }
 
         val deleted = if (file.exists()) file.delete() else true
         val current = _downloadProgressMap.value.toMutableMap()

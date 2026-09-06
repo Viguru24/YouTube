@@ -43,6 +43,7 @@ fun SettingsDialog(
     mutedChannels: List<MutedChannelEntity> = emptyList(),
     onUnmuteChannel: (String) -> Unit = {},
     onOpenManageTopicsAndCreators: () -> Unit = {},
+    onResetAlgorithm: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -53,6 +54,7 @@ fun SettingsDialog(
     var newBlockedKeyword by remember { mutableStateOf("") }
     var newBoostedTopic by remember { mutableStateOf("") }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showResetAlgorithmConfirm by remember { mutableStateOf(false) }
 
     // AI API Keys state
     var selectedAiProvider by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getAiProvider(context)) }
@@ -595,6 +597,21 @@ fun SettingsDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("🏷️ Manage Topics & Creators", fontWeight = FontWeight.Bold)
                             }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // 6. Reset Algorithm Database Action
+                            OutlinedButton(
+                                onClick = { showResetAlgorithmConfirm = true },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE53935)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE53935).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("🤖 Reset Algorithm Database", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
 
@@ -690,5 +707,47 @@ fun SettingsDialog(
                 }
             }
         }
+    }
+
+    if (showResetAlgorithmConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetAlgorithmConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = null,
+                    tint = YouTubeRed,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(text = "Reset Algorithm Database?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    text = "This will reset your watch history, disliked videos, and learned topic affinity back to default factory weights.\n\n" +
+                           "🛡️ Your Subscriptions, Saved Favorites, and Downloads are safe and will NOT be touched.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetAlgorithmConfirm = false
+                        onResetAlgorithm()
+                        android.widget.Toast.makeText(context, "✨ Algorithm reset to defaults!", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                ) {
+                    Text("Yes, Reset Algorithm")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetAlgorithmConfirm = false }) {
+                    Text(strings.cancelBtn)
+                }
+            }
+        )
     }
 }

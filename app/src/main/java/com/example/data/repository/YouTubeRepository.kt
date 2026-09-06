@@ -98,7 +98,7 @@ class YouTubeRepository(
     }
 
     suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
-        if (positionSeconds > 0) {
+        if (positionSeconds >= 0) {
             videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), positionSeconds)
         }
     }
@@ -124,7 +124,9 @@ class YouTubeRepository(
     }
 
     suspend fun updateWatchHistory(youtubeId: String, lastPosSeconds: Int) {
-        videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), lastPosSeconds)
+        val existing = videoDao.getVideoById(youtubeId)
+        val posToSave = if (lastPosSeconds > 0) lastPosSeconds else (existing?.lastPositionSeconds ?: 0)
+        videoDao.updateWatchHistory(youtubeId, System.currentTimeMillis(), posToSave)
     }
 
     suspend fun updateDownloadStatus(youtubeId: String, isDownloaded: Boolean, localFilePath: String, downloadSizeMb: Float) {
@@ -133,6 +135,10 @@ class YouTubeRepository(
 
     suspend fun deleteVideo(video: VideoEntity) {
         videoDao.deleteVideo(video)
+    }
+
+    suspend fun deleteVideoById(youtubeId: String) {
+        videoDao.deleteVideoById(youtubeId)
     }
 
     suspend fun clearHistory() {

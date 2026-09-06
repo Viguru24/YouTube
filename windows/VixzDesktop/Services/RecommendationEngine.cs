@@ -24,7 +24,7 @@ namespace VixzDesktop.Services
             List<VideoItem> watchHistory,
             List<string> subscribedChannels)
         {
-            if (StorageService.IsDisliked(video.Id)) return "⛔ Disliked / Deprioritized";
+            if (StorageService.IsDisliked(video.Id) || StorageService.IsDeleted(video.Id)) return "⛔ Deprioritized / Removed";
             var savedPos = StorageService.GetPlaybackPosition(video.Id);
             if (savedPos > 3) return "🕒 Continue Watching";
             if (video.IsFavorite) return "👍 Liked Favorite";
@@ -53,6 +53,7 @@ namespace VixzDesktop.Services
             var currentSettings = settings ?? DefaultSettings;
             var subChannels = subscribedChannels ?? WillRyanProfileData.SubscribedChannels;
             var dislikedIds = new HashSet<string>(StorageService.Settings.DislikedVideoIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+            var deletedIds = new HashSet<string>(StorageService.Settings.DeletedVideoIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
             var dislikedChannels = new HashSet<string>(StorageService.Settings.DislikedChannels ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
             var blockedLower = currentSettings.BlockedKeywords
@@ -65,10 +66,10 @@ namespace VixzDesktop.Services
                 .Where(b => !string.IsNullOrEmpty(b))
                 .ToList();
 
-            // 0. Filter out permanently disliked and blocked videos
+            // 0. Filter out permanently disliked, deleted, and blocked videos
             var filteredVideos = videos.Where(v =>
             {
-                if (dislikedIds.Contains(v.Id)) return false;
+                if (dislikedIds.Contains(v.Id) || deletedIds.Contains(v.Id)) return false;
                 var titleLower = v.Title.ToLowerInvariant();
                 var chanLower = v.ChannelTitle.ToLowerInvariant();
                 return !blockedLower.Any(blk => titleLower.Contains(blk) || chanLower.Contains(blk));

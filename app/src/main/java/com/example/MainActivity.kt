@@ -116,6 +116,22 @@ class MainActivity : ComponentActivity() {
             android.util.Log.e("MainActivity", "NewPipe Extractor init failed: ${e.message}")
         }
 
+        // Ensure offline videos are hidden from Android Gallery & Google Photos (.nomedia protection)
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            com.example.data.remote.VideoDownloadManager.hideLegacyMoviesFromGallery(this@MainActivity)
+        }
+
+        // Request POST_NOTIFICATIONS runtime permission on Android 13+ (API 33+) for foreground media notification
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                    1001
+                )
+            }
+        }
+
         // Automatically update PiP buttons when playing state changes
         lifecycleScope.launch {
             viewModel.isPlayerPlaying.collect { isPlaying ->
@@ -188,7 +204,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val prefs = getSharedPreferences("vixz_player_prefs", MODE_PRIVATE)
-        val autoPipEnabled = prefs.getBoolean("auto_pip_enabled", false)
+        val autoPipEnabled = prefs.getBoolean("auto_pip_enabled", true)
         if (autoPipEnabled && viewModel.activeVideo.value != null) {
             enterPipMode()
         }
@@ -234,7 +250,8 @@ class MainActivity : ComponentActivity() {
             .setActions(actions)
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(false)
+            val shouldAutoEnter = viewModel.activeVideo.value != null
+            builder.setAutoEnterEnabled(shouldAutoEnter)
         }
 
         return builder.build()
@@ -264,6 +281,7 @@ fun MainAppContent(
     val subscribedCreators by viewModel.subscribedCreators.collectAsStateWithLifecycle()
     val dislikedVideoIds by viewModel.dislikedVideoIds.collectAsStateWithLifecycle()
     val googleAccount by viewModel.googleAccount.collectAsStateWithLifecycle()
+    val savedAccounts by viewModel.savedAccounts.collectAsStateWithLifecycle()
     val areAdvertsEnabled by viewModel.areAdvertsEnabled.collectAsStateWithLifecycle()
 
     var showManageTopicsAndCreatorsDialog by remember { mutableStateOf(false) }
@@ -284,8 +302,9 @@ fun MainAppContent(
     val activeNotes by viewModel.activeNotes.collectAsStateWithLifecycle()
 
     // Start Foreground Media Playback Service with WakeLock when a video is played
-    LaunchedEffect(activeVideo) {
-        activeVideo?.let { v ->
+    LaunchedEffect(activeVideo?.youtubeId) {
+        val v = activeVideo
+        if (v != null) {
             try {
                 val intent = android.content.Intent(context, com.example.service.MediaPlaybackService::class.java).apply {
                     putExtra(com.example.service.MediaPlaybackService.EXTRA_TITLE, v.title)
@@ -293,6 +312,8 @@ fun MainAppContent(
                 }
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
             } catch (e: Exception) { }
+        } else {
+            com.example.service.MediaPlaybackService.stop(context)
         }
     }
 
@@ -334,11 +355,13 @@ fun MainAppContent(
                     onThumbsDown = {
                         val v = activeVideo!!
                         viewModel.thumbsDownShort(v)
-                        android.widget.Toast.makeText(context, "Disliked & removed from feed 👎", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, "Downvoted 👎 • Lowered in algorithm", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onFavoriteToggle = { viewModel.toggleFavorite(activeVideo!!.youtubeId, activeVideo!!.isFavorite) },
                     onWatchLaterToggle = { viewModel.toggleWatchLater(activeVideo!!.youtubeId, activeVideo!!.isWatchLater) },
-                    onPositionUpdate = { _ -> }
+                    onPositionUpdate = { posSec ->
+                        activeVideo?.let { v -> viewModel.updatePlaybackPosition(v.youtubeId, posSec) }
+                    }
                 )
             } else {
                 val isDownloadedVideo = activeVideo!!.isDownloaded || downloadedVideos.any { it.youtubeId == activeVideo!!.youtubeId }
@@ -347,6 +370,9 @@ fun MainAppContent(
                 // Standard Landscape/Portrait Video Player Screen
                 PlayerScreen(
                     video = activeVideo!!,
+                    onPositionUpdate = { posSec ->
+                        activeVideo?.let { v -> viewModel.updatePlaybackPosition(v.youtubeId, posSec) }
+                    },
                     isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,
                     onDislikeToggle = { v ->
                         viewModel.toggleDislikeVideo(v)
@@ -398,7 +424,7 @@ fun MainAppContent(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-                    val isTablet = configuration.screenWidthDp >= 600 || configuration.smallestScreenWidthDp >= 600
+                    val isTablet = configuration.smallestScreenWidthDp >= 600
                     val navBarHeight = if (isTablet) 72.dp else 60.dp
                     val navIconSize = if (isTablet) 24.dp else 20.dp
                     val navTextSize = if (isTablet) 13.sp else 11.sp
@@ -587,10 +613,18 @@ fun MainAppContent(
         if (showGoogleAuthDialog) {
             GoogleSignInDialog(
                 account = googleAccount,
+                savedAccounts = savedAccounts,
                 onDismiss = { showGoogleAuthDialog = false },
-                onSignIn = { name, email ->
-                    viewModel.signInGoogle(name, email)
+                onSignIn = { name, email, avatarUrl ->
+                    viewModel.signInGoogle(name, email, avatarUrl)
                     showGoogleAuthDialog = false
+                },
+                onSwitchAccount = { acc ->
+                    viewModel.switchAccount(acc)
+                    showGoogleAuthDialog = false
+                },
+                onRemoveAccount = { email ->
+                    viewModel.removeAccount(email)
                 },
                 onSignOut = {
                     viewModel.signOutGoogle()
@@ -614,6 +648,7 @@ fun MainAppContent(
                     manageInitialTab = 0
                     showManageTopicsAndCreatorsDialog = true
                 },
+                onResetAlgorithm = { viewModel.resetAlgorithm() },
                 onDismiss = { showSettingsDialog = false }
             )
         }

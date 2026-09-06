@@ -83,6 +83,8 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <!-- ▾ History Dropdown Arrow -->
                                 <ColumnDefinition Width="Auto"/>
+                                <!-- Voice Search Button -->
+                                <ColumnDefinition Width="Auto"/>
                                 <!-- Integrated Search Action Button -->
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
@@ -177,8 +179,30 @@
                                 </Button.Style>
                             </Button>
 
+                            <!-- 🎙️ Voice Search Button -->
+                            <Button x:Name="SearchMicBtn"
+                                    Grid.Column="4"
+                                    Content="🎙️"
+                                    Foreground="#B0B0C0"
+                                    Background="#20FFFFFF"
+                                    BorderBrush="#30FFFFFF"
+                                    BorderThickness="1"
+                                    Width="26"
+                                    Height="26"
+                                    FontSize="11"
+                                    Cursor="Hand"
+                                    ToolTip="Voice Search (Click to speak)"
+                                    Margin="0,0,6,0"
+                                    Click="SearchMicBtn_Click">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource IconActionButton}">
+                                        <Setter Property="Padding" Value="0"/>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
                             <!-- Right: Modern Integrated Search Pill Button -->
-                            <Button Grid.Column="4"
+                            <Button Grid.Column="5"
                                     Style="{StaticResource GlassButton}"
                                     Background="#28283C"
                                     BorderBrush="#3E3E58"
@@ -282,6 +306,7 @@
                             <Button x:Name="NavFavBtn" Content="⭐   Favorites" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavFavorites_Click"/>
                             <Button x:Name="NavWatchLaterBtn" Content="🕒   Watch Later" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavWatchLater_Click"/>
                             <Button x:Name="NavHistoryBtn" Content="📜   History" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavHistory_Click"/>
+                            <Button x:Name="NavDownloadsBtn" Content="💾   Downloads" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavDownloads_Click"/>
                         </StackPanel>
 
                         <!-- Subscribed Creators List Section in Sidebar -->
@@ -360,8 +385,11 @@
                             </Grid.RowDefinitions>
 
                             <Grid Grid.Row="0">
-                                <TextBlock x:Name="FeedTitleText" Text="Recommended Feed" Foreground="White" FontSize="20" FontWeight="Bold"/>
-                                <ProgressBar x:Name="LoadingSpinner" IsIndeterminate="True" Width="120" Height="4" HorizontalAlignment="Right" Visibility="Collapsed"/>
+                                <TextBlock x:Name="FeedTitleText" Text="Recommended Feed" Foreground="White" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                    <ProgressBar x:Name="LoadingSpinner" IsIndeterminate="True" Width="120" Height="4" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    <Button x:Name="ResetAlgorithmBtn" Content="🤖 Reset Algorithm" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="11" Padding="10,4" ToolTip="Reset recommendation algorithm, watch history affinity, and dislikes back to factory defaults" Click="ResetAlgorithmBtn_Click"/>
+                                </StackPanel>
                             </Grid>
 
                             <!-- Search & Filter Deck: Time, Date, Sort By -->
@@ -419,13 +447,14 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Width="280" Height="240" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
+                                            <Border Width="280" Height="274" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
                                                         <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
                                                         <MenuItem Header="👤 View Channel Videos" Click="ContextMenuChannel_Click"/>
                                                         <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
                                                         <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
+                                                        <MenuItem Header="🗑️ Delete / Remove Video" Click="ContextMenuDelete_Click"/>
                                                         <Separator Background="{StaticResource BorderSubtle}"/>
                                                         <MenuItem Header="⭐ Toggle Favorite" Click="ContextMenuFavorite_Click"/>
                                                         <MenuItem Header="🕒 Toggle Watch Later" Click="ContextMenuWatchLater_Click"/>
@@ -461,14 +490,69 @@
                                                         </Grid>
                                                     </Border>
 
-                                                    <!-- Video Info -->
-                                                    <StackPanel Grid.Row="1" Margin="10,8,10,6">
-                                                        <TextBlock Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
-                                                        <WrapPanel Margin="0,3,0,0">
+                                                    <!-- Video Info & Actions -->
+                                                    <Grid Grid.Row="1" Margin="10,8,10,8">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="*"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+
+                                                        <!-- Video Title -->
+                                                        <TextBlock Grid.Row="0" Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
+
+                                                        <!-- Channel & Meta Subtitle -->
+                                                        <WrapPanel Grid.Row="1" Margin="0,3,0,0">
                                                             <TextBlock Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" ToolTip="Click to view creator videos" MouseDown="ChannelName_MouseDown"/>
                                                             <TextBlock Text="{Binding MetaSubtitleText, StringFormat='{} • {0}'}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis"/>
                                                         </WrapPanel>
-                                                    </StackPanel>
+
+                                                        <!-- Quick Action Bar: Thumbs Up, Thumbs Down, Delete -->
+                                                        <Grid Grid.Row="3" Margin="0,6,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <!-- Thumbs Up & Thumbs Down Pill Bar -->
+                                                            <Border Grid.Column="0"
+                                                                    Background="#18FFFFFF"
+                                                                    BorderBrush="#25FFFFFF"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="13"
+                                                                    Padding="2,1"
+                                                                    VerticalAlignment="Center">
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <!-- Thumbs Up / Like -->
+                                                                    <Button Style="{StaticResource CardThumbUpButton}"
+                                                                            Content="👍"
+                                                                            ToolTip="👍 Like video (+Algorithm boost)"
+                                                                            Tag="{Binding}"
+                                                                            Click="CardThumbsUp_Click"/>
+
+                                                                    <!-- Divider -->
+                                                                    <Border Width="1" Height="14" Background="#25FFFFFF" Margin="2,0"/>
+
+                                                                    <!-- Thumbs Down / Dislike -->
+                                                                    <Button Style="{StaticResource CardThumbDownButton}"
+                                                                            Content="👎"
+                                                                            ToolTip="👎 Dislike video (-Deprioritize &amp; remove)"
+                                                                            Tag="{Binding}"
+                                                                            Click="CardThumbsDown_Click"/>
+                                                                </StackPanel>
+                                                            </Border>
+
+                                                            <!-- Delete Button -->
+                                                            <Button Grid.Column="2"
+                                                                    Style="{StaticResource CardDeleteButton}"
+                                                                    Content="🗑️"
+                                                                    ToolTip="🗑️ Remove / Delete video"
+                                                                    Tag="{Binding}"
+                                                                    Click="CardDelete_Click"/>
+                                                        </Grid>
+                                                    </Grid>
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
@@ -1137,6 +1221,7 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="AiPromptBox"
                                          Background="Transparent"
@@ -1147,7 +1232,8 @@
                                          Margin="8,0"
                                          CaretBrush="{StaticResource AccentGold}"
                                          KeyDown="AiPromptBox_KeyDown"/>
-                                <TextBlock Text="Ask AI or type a command..."
+                                <TextBlock x:Name="AiPromptWatermark"
+                                           Text="Ask AI or type a command..."
                                            Foreground="{StaticResource TextMuted}"
                                            FontSize="12"
                                            VerticalAlignment="Center"
@@ -1164,7 +1250,16 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
-                                <Button Grid.Column="1"
+                                <Button x:Name="AiMicBtn"
+                                        Grid.Column="1"
+                                        Content="🎙️"
+                                        Style="{StaticResource GlassButton}"
+                                        Width="32" Height="30"
+                                        Padding="0"
+                                        Margin="0,0,5,0"
+                                        ToolTip="Voice Command (Click to speak)"
+                                        Click="AiMicBtn_Click"/>
+                                <Button Grid.Column="2"
                                         Content="➤"
                                         Style="{StaticResource RedAccentButton}"
                                         Width="32" Height="30"

@@ -108,7 +108,7 @@ if ($LASTEXITCODE -ne 0) { throw "MakeAppx failed!" }
 # 6. Use Machine-Trusted Certificate & Sign MSIX
 Write-Host "[4/5] Signing MSIX with Machine-Trusted Certificate..." -ForegroundColor Yellow
 $PfxPath = "$PackageDir\Vixz_Dev_Cert.pfx"
-$SourcePfx = "E:\Onedrive\Documents\GitHub\CosmoWhisper-Native\CosmoWhisper-Package\CosmoWhisper_Key.pfx"
+$SourcePfx = "E:\Documents\GitHub\CosmoWhisper-Native\CosmoWhisper-Package\CosmoWhisper_Key.pfx"
 
 if (Test-Path $SourcePfx) {
     Copy-Item $SourcePfx $PfxPath -Force

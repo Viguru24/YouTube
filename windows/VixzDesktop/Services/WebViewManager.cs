@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -102,15 +102,18 @@ namespace VixzDesktop.Services
             var stealthScript = @"
                 (function() {
                     try {
-                        // Mask window.chrome.webview which Google/YouTube scripts check
-                        if (window.chrome && window.chrome.webview) {
-                            try {
-                                Object.defineProperty(window.chrome, 'webview', {
-                                    value: undefined,
-                                    configurable: false,
-                                    writable: false
-                                });
-                            } catch(e) {}
+                        // Only mask window.chrome.webview on Google / YouTube auth pages, NEVER on vixz.app
+                        var host = window.location.hostname || '';
+                        if (host.includes('google.') || host.includes('youtube.') || host.includes('accounts.')) {
+                            if (window.chrome && window.chrome.webview) {
+                                try {
+                                    Object.defineProperty(window.chrome, 'webview', {
+                                        value: undefined,
+                                        configurable: false,
+                                        writable: false
+                                    });
+                                } catch(e) {}
+                            }
                         }
 
                         // Ensure navigator.webdriver is false

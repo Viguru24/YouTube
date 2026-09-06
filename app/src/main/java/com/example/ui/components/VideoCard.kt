@@ -268,10 +268,19 @@ fun VideoCard(
                         .aspectRatio(if (isShort) 9f / 16f else 16f / 9f)
                         .background(Color.Black)
                 ) {
+                    val sanitizedThumb = remember(video.youtubeId, video.thumbnailUrl) {
+                        val raw = video.thumbnailUrl.orEmpty()
+                        when {
+                            raw.isBlank() -> com.example.util.YouTubeUtils.getThumbnailUrl(video.youtubeId)
+                            raw.contains("hq720.jpg") -> raw.replace("hq720.jpg", "hqdefault.jpg")
+                            else -> raw
+                        }
+                    }
+
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(video.thumbnailUrl)
-                            .crossfade(150)
+                            .data(sanitizedThumb)
+                            .crossfade(100)
                             .diskCachePolicy(CachePolicy.ENABLED)
                             .memoryCachePolicy(CachePolicy.ENABLED)
                             .build(),

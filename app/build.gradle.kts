@@ -26,7 +26,7 @@ android {
   androidComponents {
     onVariants { variant ->
       variant.outputs.forEach { output ->
-        output.outputFileName.set("Vixz-YouTube-Player-v1.9.6.apk")
+        output.outputFileName.set("Vixz-YouTube-Player-v1.9.7.apk")
       }
     }
   }

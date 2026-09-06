@@ -20,6 +20,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.data.model.GoogleAccount
 import com.example.data.model.PlaylistCategoryEntity
 import com.example.data.model.VideoEntity
@@ -92,15 +94,35 @@ fun LibraryScreen(
                             modifier = Modifier
                                 .size(30.dp)
                                 .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(if (googleAccount.isSignedIn) Color(0xFF4285F4) else Color.Gray),
+                                .background(if (googleAccount.isSignedIn) YouTubeRed else Color.Gray),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = googleAccount.avatarInitials,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
+                            if (googleAccount.isSignedIn) {
+                                if (googleAccount.avatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = googleAccount.avatarUrl,
+                                        contentDescription = "Profile",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        text = googleAccount.avatarInitials.ifBlank { "U" },
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.Person,
+                                    contentDescription = "Guest",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                 },

@@ -181,10 +181,17 @@ object YouTubeUtils {
     }
 
     /**
-     * Returns high quality YouTube thumbnail URL for a video ID.
+     * Returns high quality YouTube thumbnail URL for a video ID (480x360, 100% reliable, zero 404s).
      */
     fun getThumbnailUrl(videoId: String): String {
-        return "https://i.ytimg.com/vi/$videoId/hq720.jpg"
+        return "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+    }
+
+    /**
+     * Returns medium quality fallback YouTube thumbnail URL for a video ID (320x180, ~10KB).
+     */
+    fun getFallbackThumbnailUrl(videoId: String): String {
+        return "https://i.ytimg.com/vi/$videoId/mqdefault.jpg"
     }
 
     /**

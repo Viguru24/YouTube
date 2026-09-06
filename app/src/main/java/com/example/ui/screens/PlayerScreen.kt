@@ -32,6 +32,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -85,12 +87,21 @@ fun PlayerScreen(
     var showDebugConsole by remember { mutableStateOf(false) }
     var showSaveToSubjectDialog by remember { mutableStateOf(false) }
     var showAiSummaryModal by remember { mutableStateOf(false) }
+    var localIsFavorite by remember(video.youtubeId, video.isFavorite) { mutableStateOf(video.isFavorite) }
+    var localIsDisliked by remember(video.youtubeId, isDisliked) { mutableStateOf(isDisliked) }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val isTablet = remember {
+        val dm = context.resources.displayMetrics
+        val wDp = dm.widthPixels / dm.density
+        val hDp = dm.heightPixels / dm.density
+        minOf(wDp, hDp) >= 600f
+    }
     val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     var isMaximized by remember { mutableStateOf(false) }
-    val isFullscreen = isLandscape || isMaximized || isInPipMode
+    // On tablets, landscape is the default normal orientation -> only enter fullscreen when explicitly maximized
+    val isFullscreen = if (isTablet) (isMaximized || isInPipMode) else (isLandscape || isMaximized || isInPipMode)
 
     val otherVideos = remember(video.youtubeId, playlistVideos) {
         playlistVideos
@@ -106,7 +117,7 @@ fun PlayerScreen(
         if (act != null) {
             val window = act.window
             val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-            if (isLandscape || isMaximized) {
+            if (isFullscreen) {
                 insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
                 insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             } else if (!isInPipMode) {
@@ -115,42 +126,90 @@ fun PlayerScreen(
         }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            val act = context.findActivity()
-            act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+    var manualOrientationLock by remember { mutableStateOf<Int?>(null) }
+
+    // Hardware accelerometer orientation tracking with zero Binder IPC overhead
+    DisposableEffect(isTablet) {
+        val act = context.findActivity()
+        if (!isTablet && act != null) {
+            var currentAppliedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            val orientationListener = object : android.view.OrientationEventListener(act, android.hardware.SensorManager.SENSOR_DELAY_NORMAL) {
+                override fun onOrientationChanged(orientation: Int) {
+                    if (orientation == ORIENTATION_UNKNOWN) return
+
+                    // Wide deadbands (hysteresis) to prevent flickering near transitions
+                    val isPhysicalLandscape = (orientation in 70..110) || (orientation in 250..290)
+                    val isPhysicalPortrait = (orientation in 345..360) || (orientation in 0..15)
+
+                    if (isPhysicalLandscape) {
+                        if (manualOrientationLock != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) {
+                            if (currentAppliedOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                                currentAppliedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        }
+                    } else if (isPhysicalPortrait) {
+                        manualOrientationLock = null
+                        if (currentAppliedOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER) {
+                            currentAppliedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+                            act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_USER
+                        }
+                    }
+                }
+            }
+            if (orientationListener.canDetectOrientation()) {
+                orientationListener.enable()
+            }
+            onDispose {
+                orientationListener.disable()
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        } else {
+            onDispose { }
         }
     }
 
-            val toggleFullscreen: () -> Unit = {
+    // When in fullscreen landscape, intercept Back gesture/button to return directly to portrait
+    androidx.activity.compose.BackHandler(enabled = isFullscreen && !isInPipMode) {
+        val act = context.findActivity()
+        isMaximized = false
+        manualOrientationLock = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        act?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+
+    val toggleFullscreen: () -> Unit = {
+        val act = context.findActivity()
+        if (act != null) {
+            if (isFullscreen) {
+                // Return directly to portrait mode instantly (0ms delay)
+                isMaximized = false
+                manualOrientationLock = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                android.widget.Toast.makeText(context, "📱 Portrait Mode", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                // Enter fullscreen landscape instantly
+                isMaximized = true
+                manualOrientationLock = null
+                act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                android.widget.Toast.makeText(context, "📺 Fullscreen Landscape", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            isMaximized = !isMaximized
+        }
+    }
+
+    val rotate180: () -> Unit = {
         val act = context.findActivity()
         if (act != null) {
             val currentOrientation = act.requestedOrientation
-            val isCurrentLand = act.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-
-            val nextOrientation = when {
-                currentOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE -> {
-                    android.widget.Toast.makeText(context, "🔄 Reverse Horizontal (180°)", android.widget.Toast.LENGTH_SHORT).show()
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                }
-                currentOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE -> {
-                    android.widget.Toast.makeText(context, "📱 Portrait Mode", android.widget.Toast.LENGTH_SHORT).show()
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                }
-                isCurrentLand -> {
-                    android.widget.Toast.makeText(context, "🔄 Reverse Horizontal (180°)", android.widget.Toast.LENGTH_SHORT).show()
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-                }
-                else -> {
-                    android.widget.Toast.makeText(context, "📺 Landscape (Horizontal)", android.widget.Toast.LENGTH_SHORT).show()
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                }
+            val target = if (currentOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            } else {
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
             }
-
-            isMaximized = (nextOrientation != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-            act.requestedOrientation = nextOrientation
-        } else {
-            isMaximized = !isMaximized
+            isMaximized = true
+            act.requestedOrientation = target
+            android.widget.Toast.makeText(context, "🔄 Flipped 180°", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -175,6 +234,13 @@ fun PlayerScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = onEnterPip) {
+                            Icon(
+                                imageVector = Icons.Filled.PictureInPictureAlt,
+                                contentDescription = "Pop-Out Floating Player (PiP)",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                         IconButton(onClick = { showDebugConsole = !showDebugConsole }) {
                             Icon(
                                 imageVector = Icons.Filled.BugReport,
@@ -200,13 +266,15 @@ fun PlayerScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 // Video Player Area - Single persistent ExoPlayer instance across rotation & fullscreen
                 Box(
-                    modifier = (if (isFullscreen) {
+                    modifier = (if (isFullscreen || isInPipMode) {
                         Modifier.fillMaxSize()
                     } else {
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
-                    }).background(Color.Black)
+                    })
+                    .clipToBounds()
+                    .background(Color.Black)
                 ) {
                     YouTubePlayerView(
                         videoId = video.youtubeId,
@@ -214,6 +282,10 @@ fun PlayerScreen(
                         areAdvertsEnabled = areAdvertsEnabled,
                         showDebugConsole = showDebugConsole && !isInPipMode,
                         onToggleDebugConsole = { showDebugConsole = !showDebugConsole },
+                        onEnterPip = onEnterPip,
+                        isInPipMode = isInPipMode,
+                        onRotate180 = rotate180,
+                        onPositionUpdate = onPositionUpdate,
                         playerCommandFlow = playerCommandFlow,
                         onPlayingStateChanged = onPlayingStateChanged,
                         onNextVideo = {
@@ -242,29 +314,28 @@ fun PlayerScreen(
                                 android.widget.Toast.makeText(context, "No previous video", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         },
-                        isFavorite = video.isFavorite,
+                        isFavorite = localIsFavorite,
                         isWatchLater = video.isWatchLater,
-                        isDisliked = isDisliked,
+                        isDisliked = localIsDisliked,
                         onDislikeToggle = {
+                            localIsDisliked = !localIsDisliked
+                            if (localIsDisliked) localIsFavorite = false
                             onDislikeToggle(video)
-                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-                            val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
-                                playlistVideos[currentIndex + 1]
-                            } else {
-                                otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
-                            }
-                            if (next != null) {
-                                onSelectOtherVideo(next)
-                                android.widget.Toast.makeText(context, "Disliked 👎 ➔ Playing Next Video ⏭️", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                android.widget.Toast.makeText(context, "Disliked 👎", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            val msg = if (localIsDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed"
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                         },
-                        onFavoriteToggle = { onFavoriteToggle(video) },
+                        onFavoriteToggle = {
+                            localIsFavorite = !localIsFavorite
+                            if (localIsFavorite) localIsDisliked = false
+                            onFavoriteToggle(video)
+                            val msg = if (localIsFavorite) "Liked 👍" else "Unliked"
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        },
                         onWatchLaterToggle = { onWatchLaterToggle(video) },
                         onSaveToSubject = { showSaveToSubjectDialog = true },
                         isDownloaded = isDownloaded,
                         downloadProgress = downloadProgress,
+                        localFilePath = video.localFilePath,
                         onDownloadClick = onDownloadClick,
                         onDeleteDownloadClick = onDeleteDownloadClick,
                         onAiSummaryClick = { showAiSummaryModal = true },
@@ -379,6 +450,217 @@ fun PlayerScreen(
                                                 text = if (isSubbed) "Subscribed" else "Subscribe",
                                                 color = if (isSubbed) MaterialTheme.colorScheme.onSurface else Color.White,
                                                 fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Mobile Portrait Action Pills Bar
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 1. ✨ AI Chat & Summary (Prominent gradient pill)
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable { showAiSummaryModal = true },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = Color.Transparent
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(
+                                                    brush = Brush.horizontalGradient(
+                                                        listOf(Color(0xFF8E24AA), Color(0xFF5E35B1), Color(0xFF1E88E5))
+                                                    )
+                                                )
+                                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.AutoAwesome,
+                                                    contentDescription = "AI Chat & Summary",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Text(
+                                                    text = "✨ AI Chat & Summary",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 2. Like / Favorite Toggle Pill
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable {
+                                                localIsFavorite = !localIsFavorite
+                                                if (localIsFavorite) localIsDisliked = false
+                                                onFavoriteToggle(video)
+                                                val msg = if (localIsFavorite) "Liked 👍" else "Unliked"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (localIsFavorite) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        border = if (localIsFavorite) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                                contentDescription = "Like",
+                                                tint = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (localIsFavorite) "Liked" else "Like",
+                                                color = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = if (localIsFavorite) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+
+                                    // 3. Dislike / Lower in Algorithm Pill (Vibrant Orange Accent)
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable {
+                                                localIsDisliked = !localIsDisliked
+                                                if (localIsDisliked) localIsFavorite = false
+                                                onDislikeToggle(video)
+                                                val msg = if (localIsDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (localIsDisliked) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        border = if (localIsDisliked) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
+                                                contentDescription = "Dislike",
+                                                tint = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (localIsDisliked) "Disliked" else "Dislike",
+                                                color = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = if (localIsDisliked) FontWeight.Bold else FontWeight.Medium,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+
+                                    // 3. Watch Later Pill
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable { onWatchLaterToggle(video) },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (video.isWatchLater) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (video.isWatchLater) Icons.Filled.Bookmark else Icons.Outlined.WatchLater,
+                                                contentDescription = "Watch Later",
+                                                tint = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (video.isWatchLater) "Saved" else "Save",
+                                                color = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+
+                                    // 4. Organize / Subject Pill
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable { showSaveToSubjectDialog = true },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.PlaylistAdd,
+                                                contentDescription = "Organize",
+                                                tint = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Organize",
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+
+                                    // 5. Share Pill
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .clickable {
+                                                val sendIntent = android.content.Intent().apply {
+                                                    action = android.content.Intent.ACTION_SEND
+                                                    putExtra(android.content.Intent.EXTRA_TEXT, "https://youtu.be/${video.youtubeId}")
+                                                    type = "text/plain"
+                                                }
+                                                val shareIntent = android.content.Intent.createChooser(sendIntent, null)
+                                                context.startActivity(shareIntent)
+                                            },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Share,
+                                                contentDescription = "Share",
+                                                tint = MaterialTheme.colorScheme.onSurface,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Share",
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                fontWeight = FontWeight.Medium,
                                                 fontSize = 12.sp
                                             )
                                         }
@@ -523,7 +805,8 @@ fun PlayerScreen(
                                 onClick = { onSelectOtherVideo(other) },
                                 onDeleteClick = { onNotInterested(other) },
                                 onNotInterested = { onNotInterested(other) },
-                                onSelectChannel = { onSelectChannel(other.channelName) }
+                                onSelectChannel = { onSelectChannel(other.channelName) },
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
@@ -538,9 +821,10 @@ fun PlayerScreen(
             video = video,
             onDismiss = { showAiSummaryModal = false },
             onSeekTo = { seekSec ->
-                // Seek player to timestamp
+                // Seek player to timestamp (supports both native ExoPlayer and WebView fallback)
                 try {
-                    (webViewInstance as? androidx.media3.exoplayer.ExoPlayer)?.seekTo((seekSec * 1000).toLong())
+                    (webViewInstance as? androidx.media3.exoplayer.ExoPlayer)?.seekTo((seekSec * 1000L))
+                    (webViewInstance as? android.webkit.WebView)?.evaluateJavascript("if (window.player && player.seekTo) player.seekTo($seekSec, true);", null)
                 } catch (e: Exception) {}
             },
             onSaveToNotes = { summaryText ->
@@ -567,17 +851,21 @@ private fun PlaylistQueueItem(
     onClick: () -> Unit,
     onDeleteClick: (VideoEntity) -> Unit = {},
     onNotInterested: (VideoEntity) -> Unit = {},
-    onSelectChannel: (String) -> Unit = {}
+    onSelectChannel: (String) -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     val density = androidx.compose.ui.platform.LocalDensity.current.density
-    val offsetX = remember { Animatable(0f) }
+    val offsetX = remember(video.youtubeId) { Animatable(0f) }
+    var isDismissed by remember(video.youtubeId) { mutableStateOf(false) }
+    if (isDismissed) return
+
     val thresholdPx = 90f * density
-    val edgeThresholdPx = 40f * density
+    val edgeThresholdPx = 65f * density
     val context = androidx.compose.ui.platform.LocalContext.current
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(8.dp))
@@ -653,12 +941,6 @@ private fun PlaylistQueueItem(
                 .pointerInput(video.youtubeId) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
-                        val startX = down.position.x
-                        val cardWidth = size.width.toFloat()
-                        val isLeftEdge = startX <= edgeThresholdPx
-                        val isRightEdge = startX >= (cardWidth - edgeThresholdPx)
-                        if (!isLeftEdge && !isRightEdge) return@awaitEachGesture
-
                         var totalDx = 0f
                         var isHorizontalLocked = false
 
@@ -670,12 +952,16 @@ private fun PlaylistQueueItem(
                                     if (offsetX.value >= thresholdPx) {
                                         coroutineScope.launch {
                                             offsetX.animateTo(600f * density, tween(200))
+                                            isDismissed = true
                                             onNotInterested(video)
+                                            android.widget.Toast.makeText(context, "Marked Not Interested 🚫", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     } else if (offsetX.value <= -thresholdPx) {
                                         coroutineScope.launch {
                                             offsetX.animateTo(-600f * density, tween(200))
+                                            isDismissed = true
                                             onDeleteClick(video)
+                                            android.widget.Toast.makeText(context, "Video Deleted 🗑️", android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     } else {
                                         coroutineScope.launch {
@@ -700,11 +986,7 @@ private fun PlaylistQueueItem(
 
                             if (isHorizontalLocked) {
                                 change.consume()
-                                val newOffset = if (isLeftEdge) {
-                                    dragX.coerceIn(0f, 160f * density)
-                                } else {
-                                    dragX.coerceIn(-160f * density, 0f)
-                                }
+                                val newOffset = dragX.coerceIn(-200f * density, 200f * density)
                                 coroutineScope.launch { offsetX.snapTo(newOffset) }
                             }
                         }

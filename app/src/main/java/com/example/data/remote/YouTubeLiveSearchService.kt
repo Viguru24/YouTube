@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -101,16 +103,19 @@ object YouTubeLiveSearchService {
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
+        val channelSemaphore = Semaphore(2)
 
         val jobs = channels.map { channel ->
             async {
-                try {
-                    val fetched = kotlinx.coroutines.withTimeoutOrNull(8000L) {
-                        fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
-                    } ?: emptyList()
-                    results.addAll(fetched.take(30))
-                } catch (e: Exception) {
-                    logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${e.message}")
+                channelSemaphore.withPermit {
+                    try {
+                        val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
+                            fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
+                        } ?: emptyList()
+                        results.addAll(fetched.take(20))
+                    } catch (t: Throwable) {
+                        logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${t.message}")
+                    }
                 }
             }
         }
@@ -315,21 +320,16 @@ object YouTubeLiveSearchService {
 
         val accumulated = mutableListOf<VideoEntity>()
 
-        // 1. Direct YouTube Channel /videos HTML fetch
+        // 1. Direct YouTube Channel /videos HTML fetch (Limit to 1-2 verified handles)
         val knownHandles = VERIFIED_HANDLES[trimmed.lowercase()] ?: emptyList()
         val baseTrimmed = trimmed.replace("(?i)\\b(show|tv|channel|podcast|official|media|news|network)\\b".toRegex(), "").trim()
-        val baseHandle = trimmed.replace(" ", "").lowercase()
-        val handleVariations = (knownHandles + listOf(
-            baseHandle,
-            "the$baseHandle",
-            "${baseHandle}show",
-            "the${baseHandle}show",
-            "${baseHandle}official",
-            trimmed.replace(" ", "-").lowercase(),
-            baseTrimmed.replace(" ", "").lowercase()
-        )).filter { it.isNotBlank() }.distinct()
+        val targetHandles = if (knownHandles.isNotEmpty()) {
+            knownHandles.take(2)
+        } else {
+            listOf(trimmed.replace(" ", "").lowercase())
+        }
 
-        for (handle in handleVariations) {
+        for (handle in targetHandles) {
             try {
                 val channelUrl = "https://www.youtube.com/@$handle/videos?hl=en&gl=US"
                 val request = Request.Builder()
@@ -343,7 +343,7 @@ object YouTubeLiveSearchService {
                     if (response.isSuccessful) {
                         val html = response.body?.string() ?: ""
 
-                        // 1. Parse direct channel videos (contains latest hours-ago uploads from today!)
+                        // Parse direct channel videos
                         val parsed = parseVideoRenderers(html, trimmed)
                             .map { it.copy(channelName = if (it.channelName.isBlank() || it.channelName == "YouTube") trimmed else it.channelName) }
                             .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
@@ -351,35 +351,22 @@ object YouTubeLiveSearchService {
                             accumulated.addAll(parsed)
                             logD("YouTubeLiveSearchService", "[Direct Channel] Found ${parsed.size} real uploads for '@$handle'")
                         }
-
-                        // 2. If direct channel parse returned empty, fallback to channel RSS
-                        if (accumulated.isEmpty()) {
-                            val channelIdMatcher = Pattern.compile(""""(?:browse_id|channelId|externalId)"\s*:\s*"(UC[a-zA-Z0-9_-]{22})"""").matcher(html)
-                            if (channelIdMatcher.find()) {
-                                val channelId = channelIdMatcher.group(1)
-                                if (channelId != null) {
-                                    val rssVideos = fetchChannelRssVideos(channelId, trimmed)
-                                    if (rssVideos.isNotEmpty()) {
-                                        accumulated.addAll(rssVideos)
-                                        logD("YouTubeLiveSearchService", "[Channel RSS] Fetched ${rssVideos.size} uploads for $trimmed ($channelId)")
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             } catch (e: Exception) {
                 logD("YouTubeLiveSearchService", "Direct channel fetch error for '$handle': ${e.message}")
             }
-            if (accumulated.size >= 12) break
+            if (accumulated.size >= 8) break
         }
 
-        // 2. Direct upload-date sorted search query
-        try {
-            val sortedWeb = searchWebHtml(trimmed, sortByUploadDate = true)
-                .filter { isMatchingChannel(it, trimmed) || it.title.lowercase().contains(baseTrimmed.lowercase()) }
-            accumulated.addAll(sortedWeb)
-        } catch (e: Exception) { }
+        // 2. Fast fallback: Direct upload-date sorted search query (400ms)
+        if (accumulated.size < 5) {
+            try {
+                val sortedWeb = searchWebHtml(trimmed, sortByUploadDate = true)
+                    .filter { isMatchingChannel(it, trimmed) || it.title.lowercase().contains(baseTrimmed.lowercase()) }
+                accumulated.addAll(sortedWeb)
+            } catch (e: Exception) { }
+        }
 
         val finalResults = accumulated
             .distinctBy { it.youtubeId }
@@ -638,19 +625,51 @@ object YouTubeLiveSearchService {
         return null
     }
 
-    private fun walkJsonTree(obj: Any?, seenIds: MutableSet<String>, defaultCategory: String, results: MutableList<VideoEntity>) {
+    private val PRUNE_JSON_KEYS = hashSetOf(
+        "trackingParams", "serviceTrackingParams", "responseContext", "frameworkUpdates",
+        "topbar", "header", "actions", "annotations", "endpoint", "command",
+        "accessibility", "accessibilityData", "icon", "thumbnail", "thumbnails",
+        "navigationEndpoint", "serviceEndpoint", "clientData", "adSlotRenderer",
+        "compactPromotedVideoRenderer", "playerOverlays", "searchEndpoint", "continuationCommand"
+    )
+
+    private fun walkJsonTree(
+        obj: Any?,
+        seenIds: MutableSet<String>,
+        defaultCategory: String,
+        results: MutableList<VideoEntity>,
+        depth: Int = 0
+    ) {
+        if (depth > 12 || results.size >= 35 || obj == null) return
+
         if (obj is org.json.JSONObject) {
             // Skip secondary shelves / recommendations that inject unrelated older videos
             val shelfTitle = extractJsonText(obj.optJSONObject("shelfRenderer")?.opt("title"))?.lowercase() ?: ""
             if (shelfTitle.contains("people also watched") || shelfTitle.contains("previously watched") || shelfTitle.contains("for you") || shelfTitle.contains("related to")) {
                 return
             }
+
             // 1. Standard Video Renderers
             val rendererKeys = listOf("videoRenderer", "compactVideoRenderer", "gridVideoRenderer", "reelItemRenderer")
             for (key in rendererKeys) {
                 val r = obj.optJSONObject(key) ?: continue
                 val id = r.optString("videoId", "")
                 if (id.length == 11 && !seenIds.contains(id)) {
+                    // Check for invalid/members-only badges WITHOUT allocating full JSON string
+                    var isInvalid = r.has("upcomingEventData")
+                    val badges = r.optJSONArray("badges")
+                    if (!isInvalid && badges != null) {
+                        for (b in 0 until badges.length()) {
+                            val badge = badges.optJSONObject(b)
+                            val label = badge?.optJSONObject("metadataBadgeRenderer")?.optString("label", "") ?: ""
+                            if (label.contains("Members only", ignoreCase = true) || label.contains("sponsor", ignoreCase = true)) {
+                                isInvalid = true
+                                break
+                            }
+                        }
+                    }
+                    if (isInvalid) continue
+
                     seenIds.add(id)
                     val title = extractJsonText(r.opt("title")) ?: extractJsonText(r.opt("headline")) ?: "YouTube Video"
                     val channel = extractJsonText(r.opt("ownerText"))
@@ -703,74 +722,78 @@ object YouTubeLiveSearchService {
             if (lvm != null) {
                 val id = lvm.optString("contentId", "")
                 if (id.length == 11 && !seenIds.contains(id)) {
-                    seenIds.add(id)
-                    val meta = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
-                    val title = extractJsonText(meta?.opt("title")) ?: "YouTube Video"
-                    val channel = defaultCategory
+                    val contentId = id
+                    var isInvalid = lvm.has("upcomingEventData")
+                    if (!isInvalid) {
+                        seenIds.add(contentId)
+                        val meta = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                        val title = extractJsonText(meta?.opt("title")) ?: "YouTube Video"
+                        val channel = defaultCategory
 
-                    var dur = ""
-                    val img = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")
-                    val overlays = img?.optJSONArray("overlays")
-                    if (overlays != null) {
-                        for (j in 0 until overlays.length()) {
-                            val ov = overlays.optJSONObject(j) ?: continue
-                            val timeOv = ov.optJSONObject("thumbnailOverlayTimeStatusViewModel")
-                            if (timeOv != null) {
-                                val t = extractJsonText(timeOv.opt("text"))
-                                if (!t.isNullOrBlank()) {
-                                    dur = t
-                                    break
-                                }
-                            }
-                            val bottomOv = ov.optJSONObject("thumbnailBottomOverlayViewModel")
-                            val badges = bottomOv?.optJSONArray("badges")
-                            if (badges != null) {
-                                for (b in 0 until badges.length()) {
-                                    val badge = badges.optJSONObject(b)?.optJSONObject("thumbnailBadgeViewModel")
-                                    val t = badge?.optString("text", "") ?: ""
-                                    if (t.isNotBlank() && t.contains(":")) {
+                        var dur = ""
+                        val img = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")
+                        val overlays = img?.optJSONArray("overlays")
+                        if (overlays != null) {
+                            for (j in 0 until overlays.length()) {
+                                val ov = overlays.optJSONObject(j) ?: continue
+                                val timeOv = ov.optJSONObject("thumbnailOverlayTimeStatusViewModel")
+                                if (timeOv != null) {
+                                    val t = extractJsonText(timeOv.opt("text"))
+                                    if (!t.isNullOrBlank()) {
                                         dur = t
                                         break
                                     }
                                 }
+                                val bottomOv = ov.optJSONObject("thumbnailBottomOverlayViewModel")
+                                val badges = bottomOv?.optJSONArray("badges")
+                                if (badges != null) {
+                                    for (b in 0 until badges.length()) {
+                                        val badge = badges.optJSONObject(b)?.optJSONObject("thumbnailBadgeViewModel")
+                                        val t = badge?.optString("text", "") ?: ""
+                                        if (t.isNotBlank() && t.contains(":")) {
+                                            dur = t
+                                            break
+                                        }
+                                    }
+                                }
+                                if (dur.isNotBlank()) break
                             }
-                            if (dur.isNotBlank()) break
                         }
-                    }
 
-                    var publishedText = ""
-                    var viewText = ""
-                    val contentMeta = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
-                    val rows = contentMeta?.optJSONArray("metadataRows")
-                    if (rows != null) {
-                        for (j in 0 until rows.length()) {
-                            val row = rows.optJSONObject(j) ?: continue
-                            val parts = row.optJSONArray("metadataParts") ?: continue
-                            for (p in 0 until parts.length()) {
-                                val part = parts.optJSONObject(p) ?: continue
-                                val txt = extractJsonText(part.opt("text")) ?: ""
-                                if (txt.contains("view", ignoreCase = true)) {
-                                    viewText = txt
-                                } else if (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true)) {
-                                    publishedText = txt
+                        var publishedText = ""
+                        var viewText = ""
+                        val contentMeta = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
+                        val rows = contentMeta?.optJSONArray("metadataRows")
+                        if (rows != null) {
+                            for (j in 0 until rows.length()) {
+                                val row = rows.optJSONObject(j) ?: continue
+                                val parts = row.optJSONArray("metadataParts") ?: continue
+                                for (p in 0 until parts.length()) {
+                                    val part = parts.optJSONObject(p) ?: continue
+                                    val txt = extractJsonText(part.opt("text")) ?: ""
+                                    if (txt.contains("view", ignoreCase = true)) {
+                                        viewText = txt
+                                    } else if (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true)) {
+                                        publishedText = txt
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
-                        results.add(
-                            VideoEntity(
-                                youtubeId = id,
-                                title = title,
-                                channelName = channel,
-                                thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
-                                durationText = dur,
-                                category = defaultCategory,
-                                publishedTimeText = publishedText,
-                                viewCountText = viewText
+                        if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                            results.add(
+                                VideoEntity(
+                                    youtubeId = contentId,
+                                    title = title,
+                                    channelName = channel,
+                                    thumbnailUrl = YouTubeUtils.getThumbnailUrl(contentId),
+                                    durationText = dur,
+                                    category = defaultCategory,
+                                    publishedTimeText = publishedText,
+                                    viewCountText = viewText
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -778,11 +801,14 @@ object YouTubeLiveSearchService {
             val keys = obj.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
-                walkJsonTree(obj.opt(key), seenIds, defaultCategory, results)
+                if (key !in PRUNE_JSON_KEYS) {
+                    walkJsonTree(obj.opt(key), seenIds, defaultCategory, results, depth + 1)
+                }
             }
         } else if (obj is org.json.JSONArray) {
-            for (i in 0 until obj.length()) {
-                walkJsonTree(obj.opt(i), seenIds, defaultCategory, results)
+            val len = obj.length().coerceAtMost(25)
+            for (i in 0 until len) {
+                walkJsonTree(obj.opt(i), seenIds, defaultCategory, results, depth + 1)
             }
         }
     }
@@ -791,62 +817,77 @@ object YouTubeLiveSearchService {
         val results = mutableListOf<VideoEntity>()
         val seenIds = mutableSetOf<String>()
 
-        // 1. Try parsing ytInitialData JSON
-        val initialDataPattern = Pattern.compile("""(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)""")
-        val matcher = initialDataPattern.matcher(html)
-        if (matcher.find()) {
-            val jsonStr = matcher.group(1)
-            if (!jsonStr.isNullOrBlank()) {
-                try {
+        // 1. Try parsing ytInitialData JSON if size is safe (< 1.8 MB)
+        try {
+            val initialDataPattern = Pattern.compile("""(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)""")
+            val matcher = initialDataPattern.matcher(html)
+            if (matcher.find()) {
+                val jsonStr = matcher.group(1)
+                if (!jsonStr.isNullOrBlank() && jsonStr.length < 1_800_000) {
                     val jsonObj = org.json.JSONObject(jsonStr)
-                    walkJsonTree(jsonObj, seenIds, defaultCategory, results)
+                    walkJsonTree(jsonObj, seenIds, defaultCategory, results, depth = 0)
                     if (results.isNotEmpty()) {
                         return results
                     }
-                } catch (e: Exception) {
-                    logD("YouTubeLiveSearchService", "ytInitialData JSON parse error: ${e.message}")
                 }
+            }
+        } catch (t: Throwable) {
+            logD("YouTubeLiveSearchService", "ytInitialData JSON parse error or memory limit: ${t.message}")
+            results.clear()
+            seenIds.clear()
+            if (t is OutOfMemoryError) {
+                System.gc()
             }
         }
 
-        // 2. Fallback: If ytInitialData extraction failed, scan for standalone JSON blocks
-        val blockRegex = Pattern.compile(""""(?:videoRenderer|gridVideoRenderer|compactVideoRenderer)"\s*:\s*\{([^}]+(?:\{[^{}]*\}[^}]+)*)\}""")
-        val blockMatcher = blockRegex.matcher(html)
-        while (blockMatcher.find()) {
-            val block = blockMatcher.group(1) ?: continue
-            val idMatcher = Pattern.compile(""""videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"""").matcher(block)
-            if (idMatcher.find()) {
-                val id = idMatcher.group(1) ?: continue
-                if (!seenIds.contains(id)) {
-                    seenIds.add(id)
-                    val titleMatcher = Pattern.compile(""""title"\s*:\s*\{\s*(?:"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)"|"simpleText"\s*:\s*"([^"]+)")""").matcher(block)
-                    val ownerMatcher = Pattern.compile(""""(?:longBylineText|shortBylineText|ownerText)"\s*:\s*\{\s*(?:"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)"|"simpleText"\s*:\s*"([^"]+)")""").matcher(block)
-                    val pubMatcher = Pattern.compile(""""publishedTimeText"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
-                    val viewMatcher = Pattern.compile(""""viewCountText"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
-                    val lengthMatcher = Pattern.compile(""""(?:lengthText|thumbnailOverlays)"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
+        // 2. High-speed, zero-allocation Regex Parser (used as fallback or for large HTML)
+        try {
+            val blockRegex = Pattern.compile(""""(?:videoRenderer|gridVideoRenderer|compactVideoRenderer)"\s*:\s*\{([^}]+(?:\{[^{}]*\}[^}]+)*)\}""")
+            val blockMatcher = blockRegex.matcher(html)
+            while (blockMatcher.find() && results.size < 30) {
+                val block = blockMatcher.group(1) ?: continue
+                if (block.contains("MEMBERS_ONLY", ignoreCase = true) ||
+                    block.contains("Members only", ignoreCase = true) ||
+                    block.contains("sponsor_button", ignoreCase = true) ||
+                    block.contains("upcomingEventData", ignoreCase = true)) {
+                    continue
+                }
+                val idMatcher = Pattern.compile(""""videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"""").matcher(block)
+                if (idMatcher.find()) {
+                    val id = idMatcher.group(1) ?: continue
+                    if (!seenIds.contains(id)) {
+                        seenIds.add(id)
+                        val titleMatcher = Pattern.compile(""""title"\s*:\s*\{\s*(?:"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)"|"simpleText"\s*:\s*"([^"]+)")""").matcher(block)
+                        val ownerMatcher = Pattern.compile(""""(?:longBylineText|shortBylineText|ownerText)"\s*:\s*\{\s*(?:"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)"|"simpleText"\s*:\s*"([^"]+)")""").matcher(block)
+                        val pubMatcher = Pattern.compile(""""publishedTimeText"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
+                        val viewMatcher = Pattern.compile(""""viewCountText"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
+                        val lengthMatcher = Pattern.compile(""""(?:lengthText|thumbnailOverlays)"\s*:\s*\{\s*(?:"simpleText"\s*:\s*"([^"]+)"|"runs"\s*:\s*\[\s*\{\s*"text"\s*:\s*"([^"]+)")""").matcher(block)
 
-                    val title = if (titleMatcher.find()) cleanText(titleMatcher.group(1) ?: titleMatcher.group(2) ?: "") else "YouTube Video"
-                    val channel = if (ownerMatcher.find()) cleanText(ownerMatcher.group(1) ?: ownerMatcher.group(2) ?: "") else defaultCategory
-                    val publishedText = if (pubMatcher.find()) cleanText(pubMatcher.group(1) ?: pubMatcher.group(2) ?: "") else ""
-                    val viewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: viewMatcher.group(2) ?: "") else ""
-                    val duration = if (lengthMatcher.find()) cleanText(lengthMatcher.group(1) ?: lengthMatcher.group(2) ?: "") else ""
+                        val title = if (titleMatcher.find()) cleanText(titleMatcher.group(1) ?: titleMatcher.group(2) ?: "") else "YouTube Video"
+                        val channel = if (ownerMatcher.find()) cleanText(ownerMatcher.group(1) ?: ownerMatcher.group(2) ?: "") else defaultCategory
+                        val publishedText = if (pubMatcher.find()) cleanText(pubMatcher.group(1) ?: pubMatcher.group(2) ?: "") else ""
+                        val viewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: viewMatcher.group(2) ?: "") else ""
+                        val duration = if (lengthMatcher.find()) cleanText(lengthMatcher.group(1) ?: lengthMatcher.group(2) ?: "") else ""
 
-                    if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
-                        results.add(
-                            VideoEntity(
-                                youtubeId = id,
-                                title = title,
-                                channelName = channel,
-                                thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
-                                durationText = duration,
-                                category = defaultCategory,
-                                publishedTimeText = publishedText,
-                                viewCountText = viewText
+                        if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                            results.add(
+                                VideoEntity(
+                                    youtubeId = id,
+                                    title = title,
+                                    channelName = channel,
+                                    thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
+                                    durationText = duration,
+                                    category = defaultCategory,
+                                    publishedTimeText = publishedText,
+                                    viewCountText = viewText
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
+        } catch (t: Throwable) {
+            logD("YouTubeLiveSearchService", "Regex block parse error: ${t.message}")
         }
 
         return results

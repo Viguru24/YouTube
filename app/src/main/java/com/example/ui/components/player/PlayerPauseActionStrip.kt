@@ -103,10 +103,18 @@ fun PlayerPauseActionStrip(
 
                 Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
 
-                // 2. 👎 Dislike & Auto-Skip
+                // 2. 👎 Dislike & Lower in Algorithm (Vibrant Orange Accent)
                 IconButton(
-                    onClick = { onDislikeToggle() },
-                    modifier = Modifier.size(actionBtnSize)
+                    onClick = {
+                        onDislikeToggle()
+                        Toast.makeText(context, if (!isDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier
+                        .size(actionBtnSize)
+                        .background(
+                            if (isDisliked) YouTubeRed.copy(alpha = 0.28f) else Color.Transparent,
+                            CircleShape
+                        )
                 ) {
                     Icon(
                         imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,

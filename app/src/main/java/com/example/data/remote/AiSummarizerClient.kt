@@ -111,7 +111,7 @@ object AiSummarizerClient {
         transcript: String,
         spokenSegments: List<TranscriptSegment>
     ): VideoAiTranscript? {
-        val models = listOf("gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-lite")
+        val models = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro-latest")
         val prompt = """
             You are an elite, highly intelligent executive video analyst and summarizer.
             Analyze the following YouTube video and provide a comprehensive, deep, and beautifully written executive summary.
@@ -355,4 +355,242 @@ object AiSummarizerClient {
             return null
         }
     }
+
+    suspend fun askChatbot(
+        context: Context,
+        videoId: String,
+        title: String,
+        channelName: String,
+        rawTranscriptText: String,
+        history: List<ChatMessage>,
+        userQuestion: String
+    ): String = withContext(Dispatchers.IO) {
+        val geminiKey = getGeminiApiKey(context)
+        val groqKey = getGroqApiKey(context)
+        val provider = getAiProvider(context)
+
+        val effectiveTranscript = if (rawTranscriptText.isNotBlank()) {
+            if (rawTranscriptText.length > 30000) rawTranscriptText.take(30000) + "..." else rawTranscriptText
+        } else {
+            "Video: '$title' by $channelName."
+        }
+
+        if (provider == "groq" && groqKey.isNotBlank()) {
+            val ans = chatWithGroq(groqKey, title, channelName, effectiveTranscript, history, userQuestion)
+            if (!ans.isNullOrBlank()) return@withContext ans
+        }
+        if (geminiKey.isNotBlank()) {
+            val ans = chatWithGemini(geminiKey, title, channelName, effectiveTranscript, history, userQuestion)
+            if (!ans.isNullOrBlank()) return@withContext ans
+        }
+        if (groqKey.isNotBlank()) {
+            val ans = chatWithGroq(groqKey, title, channelName, effectiveTranscript, history, userQuestion)
+            if (!ans.isNullOrBlank()) return@withContext ans
+        }
+
+        return@withContext answerQuestionOffline(title, channelName, effectiveTranscript, userQuestion)
+    }
+
+    private fun chatWithGemini(
+        apiKey: String,
+        title: String,
+        channelName: String,
+        transcript: String,
+        history: List<ChatMessage>,
+        userQuestion: String
+    ): String? {
+        val models = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-pro-latest")
+        val systemPrompt = "You are an intelligent, friendly AI chatbot for this YouTube video titled '$title' by '$channelName'. Video content/transcript: $transcript. Answer the user's questions clearly and conversationally. When mentioning moments, include timestamps like [MM:SS] so the user can seek to them."
+
+        val contentsArray = JSONArray()
+        contentsArray.put(JSONObject().apply {
+            put("role", "user")
+            put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
+        })
+        contentsArray.put(JSONObject().apply {
+            put("role", "model")
+            put("parts", JSONArray().put(JSONObject().put("text", "Understood! I am ready to answer any questions about the video '$title'.")))
+        })
+
+        for (msg in history.takeLast(8)) {
+            contentsArray.put(JSONObject().apply {
+                put("role", if (msg.isUser) "user" else "model")
+                put("parts", JSONArray().put(JSONObject().put("text", msg.text)))
+            })
+        }
+        contentsArray.put(JSONObject().apply {
+            put("role", "user")
+            put("parts", JSONArray().put(JSONObject().put("text", userQuestion)))
+        })
+
+        val jsonBody = JSONObject().apply {
+            put("contents", contentsArray)
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.4)
+                put("maxOutputTokens", 1024)
+            })
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toString().toRequestBody(mediaType)
+
+        for (model in models) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val respStr = response.body?.string().orEmpty()
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(respStr)
+                        val candidates = respJson.optJSONArray("candidates")
+                        if (candidates != null && candidates.length() > 0) {
+                            val candidate = candidates.getJSONObject(0)
+                            val content = candidate.optJSONObject("content")
+                            val parts = content?.optJSONArray("parts")
+                            if (parts != null && parts.length() > 0) {
+                                val text = parts.getJSONObject(0).optString("text").trim()
+                                if (text.isNotBlank()) return text
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Gemini chat error with $model", e)
+            }
+        }
+        return null
+    }
+
+    private fun chatWithGroq(
+        apiKey: String,
+        title: String,
+        channelName: String,
+        transcript: String,
+        history: List<ChatMessage>,
+        userQuestion: String
+    ): String? {
+        val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768")
+        val systemPrompt = "You are an intelligent, friendly AI chatbot for this YouTube video titled '$title' by '$channelName'. Video content: $transcript. Answer the user's questions clearly and conversationally. Format timestamps like [MM:SS]."
+
+        val messagesArray = JSONArray()
+        messagesArray.put(JSONObject().apply {
+            put("role", "system")
+            put("content", systemPrompt)
+        })
+
+        for (msg in history.takeLast(8)) {
+            messagesArray.put(JSONObject().apply {
+                put("role", if (msg.isUser) "user" else "assistant")
+                put("content", msg.text)
+            })
+        }
+        messagesArray.put(JSONObject().apply {
+            put("role", "user")
+            put("content", userQuestion)
+        })
+
+        val jsonBody = JSONObject().apply {
+            put("messages", messagesArray)
+            put("temperature", 0.4)
+            put("max_tokens", 1024)
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+
+        for (model in models) {
+            try {
+                jsonBody.put("model", model)
+                val requestBody = jsonBody.toString().toRequestBody(mediaType)
+                val request = Request.Builder()
+                    .url("https://api.groq.com/openai/v1/chat/completions")
+                    .post(requestBody)
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val respStr = response.body?.string().orEmpty()
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(respStr)
+                        val choices = respJson.optJSONArray("choices")
+                        if (choices != null && choices.length() > 0) {
+                            val choice = choices.getJSONObject(0)
+                            val message = choice.optJSONObject("message")
+                            val text = message?.optString("content").orEmpty().trim()
+                            if (text.isNotBlank()) return text
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Groq chat error with $model", e)
+            }
+        }
+        return null
+    }
+
+    private fun answerQuestionOffline(
+        title: String,
+        channelName: String,
+        transcript: String,
+        question: String
+    ): String {
+        val qLower = question.lowercase()
+
+        // Clean and filter meaningful sentences from the transcript
+        val sentences = transcript
+            .split(Regex("[.!?\n]+"))
+            .map { it.trim() }
+            .filter { s ->
+                s.length > 25 &&
+                !s.lowercase().startsWith("hi and welcome") &&
+                !s.lowercase().startsWith("welcome back") &&
+                !s.lowercase().contains("like and subscribe") &&
+                !s.lowercase().contains("sponsor") &&
+                !s.lowercase().contains("leave a comment")
+            }
+
+        if (qLower.contains("summar") || qLower.contains("overview") || qLower.contains("what is this") || qLower.contains("about") || qLower.contains("takeaway") || qLower.contains("key point")) {
+            val count = sentences.size
+            val point1 = if (count > 0) sentences[count / 5.coerceAtLeast(1)] else "Covers fundamental developments."
+            val point2 = if (count > 1) sentences[count / 2] else "Discusses industry and market shifts."
+            val point3 = if (count > 2) sentences[(count * 4) / 5] else "Analyzes upcoming plans and production data."
+
+            return buildString {
+                append("✨ **3-Point Executive Summary: '$title'**\n")
+                append("Creator: $channelName\n\n")
+                append("1. **Core Development**: $point1.\n\n")
+                append("2. **Market Impact**: $point2.\n\n")
+                append("3. **Outlook & Evidence**: $point3.\n\n")
+                append("🏁 **Bottom Line**: $channelName breaks down how these compounding factors are driving significant changes in this space.")
+            }
+        }
+
+        val words = qLower.split(Regex("[^a-zA-Z0-9]+")).filter { it.length > 3 && it !in setOf("what", "when", "where", "which", "about", "this", "that", "with", "from", "video", "tell", "does") }
+        val matches = mutableListOf<String>()
+        if (words.isNotEmpty()) {
+            for (sentence in sentences) {
+                if (words.any { sentence.lowercase().contains(it) }) {
+                    matches.add("• \"$sentence\"")
+                    if (matches.size >= 3) break
+                }
+            }
+        }
+        if (matches.isNotEmpty()) {
+            return "Here is what $channelName discussed regarding \"$question\":\n\n${matches.joinToString("\n\n")}"
+        }
+
+        val fallbackSnippet = sentences.take(2).joinToString(". ")
+        return "Regarding '$question' in '$title':\n\n$fallbackSnippet."
+    }
 }
+
+data class ChatMessage(
+    val isUser: Boolean,
+    val text: String,
+    val timestamp: Long = System.currentTimeMillis()
+)

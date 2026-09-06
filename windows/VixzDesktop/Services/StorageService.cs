@@ -24,7 +24,9 @@ namespace VixzDesktop.Services
         public List<VideoItem> Favorites { get; set; } = new List<VideoItem>();
         public List<VideoItem> WatchLater { get; set; } = new List<VideoItem>();
         public List<VideoItem> WatchHistory { get; set; } = new List<VideoItem>();
+        public List<VideoItem> Downloads { get; set; } = new List<VideoItem>();
         public List<string> DislikedVideoIds { get; set; } = new List<string>();
+        public List<string> DeletedVideoIds { get; set; } = new List<string>();
         public List<string> DislikedChannels { get; set; } = new List<string>();
         public List<string> SubscribedChannels { get; set; } = new List<string>();
         public bool HasInitializedSubscriptions { get; set; } = false;
@@ -144,10 +146,7 @@ namespace VixzDesktop.Services
                 Settings.DislikedVideoIds.Add(video.Id);
             }
 
-            if (!string.IsNullOrWhiteSpace(video.ChannelTitle) && !Settings.DislikedChannels.Contains(video.ChannelTitle))
-            {
-                Settings.DislikedChannels.Add(video.ChannelTitle);
-            }
+            // NOTE: Disliking a video ONLY dislikes that specific video, NEVER the whole channel.
 
             video.IsDisliked = true;
             video.IsFavorite = false;
@@ -168,10 +167,71 @@ namespace VixzDesktop.Services
             Save();
         }
 
+        public static void AddDislikedChannel(string channelName)
+        {
+            if (string.IsNullOrWhiteSpace(channelName)) return;
+            if (!Settings.DislikedChannels.Contains(channelName, StringComparer.OrdinalIgnoreCase))
+            {
+                Settings.DislikedChannels.Add(channelName);
+                Save();
+            }
+        }
+
+        public static void RemoveDislikedChannel(string channelName)
+        {
+            if (string.IsNullOrWhiteSpace(channelName)) return;
+            Settings.DislikedChannels.RemoveAll(c => c.Equals(channelName, StringComparison.OrdinalIgnoreCase));
+            Save();
+        }
+
         public static bool IsDisliked(string videoId)
         {
             if (string.IsNullOrWhiteSpace(videoId)) return false;
             return Settings.DislikedVideoIds.Any(id => id.Equals(videoId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static void DeleteVideo(VideoItem video)
+        {
+            if (video == null || string.IsNullOrWhiteSpace(video.Id)) return;
+
+            if (!Settings.DeletedVideoIds.Contains(video.Id, StringComparer.OrdinalIgnoreCase))
+            {
+                Settings.DeletedVideoIds.Add(video.Id);
+            }
+
+            // Remove from saved collections
+            Settings.Favorites.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+            Settings.WatchLater.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+            Settings.WatchHistory.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+            Settings.Downloads.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+
+            // If downloaded file exists, delete it if possible
+            if (video.IsDownloaded && !string.IsNullOrWhiteSpace(video.LocalFilePath))
+            {
+                try
+                {
+                    if (File.Exists(video.LocalFilePath))
+                    {
+                        File.Delete(video.LocalFilePath);
+                    }
+                }
+                catch { }
+            }
+
+            Save();
+        }
+
+        public static bool IsDeleted(string videoId)
+        {
+            if (string.IsNullOrWhiteSpace(videoId)) return false;
+            return Settings.DeletedVideoIds.Any(id => id.Equals(videoId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public static void RestoreDeletedVideo(string videoId)
+        {
+            if (string.IsNullOrWhiteSpace(videoId)) return;
+            Settings.DeletedVideoIds.RemoveAll(id => id.Equals(videoId, StringComparison.OrdinalIgnoreCase));
+            Save();
         }
 
         public static void ToggleWatchLater(VideoItem video)
@@ -187,6 +247,14 @@ namespace VixzDesktop.Services
                 video.IsWatchLater = true;
                 Settings.WatchLater.Insert(0, video);
             }
+            Save();
+        }
+
+        public static void AddDownload(VideoItem video)
+        {
+            if (video == null || string.IsNullOrWhiteSpace(video.Id)) return;
+            Settings.Downloads.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+            Settings.Downloads.Insert(0, video);
             Save();
         }
 
@@ -250,6 +318,15 @@ namespace VixzDesktop.Services
         public static void ClearSearchHistory()
         {
             Settings.SearchHistory.Clear();
+            Save();
+        }
+
+        public static void ResetAlgorithm()
+        {
+            Settings.WatchHistory.Clear();
+            Settings.DislikedVideoIds.Clear();
+            Settings.DislikedChannels.Clear();
+            Settings.WatchPositions.Clear();
             Save();
         }
     }

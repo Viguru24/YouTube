@@ -12,7 +12,8 @@ data class AlgorithmSettings(
     val autoDeleteDownloads: String = "Never", // "Never", "24h", "48h", "7d", "30d", "Watched"
     val downloadResolution: String = "720p",   // "1080p", "720p", "480p", "360p"
     val blockedKeywords: List<String> = emptyList(), // Custom keywords/channels permanently excluded
-    val boostedTopics: List<String> = emptyList()     // Custom topics/creators prioritized at the top
+    val boostedTopics: List<String> = emptyList(),     // Custom topics/creators prioritized at the top
+    val demotedCreators: List<String> = emptyList()    // Downvoted creators placed lower in algorithm
 )
 
 object RecommendationEngine {
@@ -72,6 +73,7 @@ object RecommendationEngine {
         val mutedNames = mutedChannels.map { it.channelName.lowercase() }.toSet()
         val blockedLower = settings.blockedKeywords.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
         val boostedLower = settings.boostedTopics.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
+        val demotedLower = settings.demotedCreators.map { it.trim().lowercase() }.filter { it.isNotEmpty() }
 
         val unmutedVideos = videos.filter { video ->
             if (video.youtubeId in dislikedVideoIds) return@filter false
@@ -166,6 +168,11 @@ object RecommendationEngine {
             // H. Watched Progress / Deprioritize Already Watched Videos on Feed
             if (video.lastPositionSeconds > 0) {
                 score -= 60.0f // Deprioritize already watched videos to keep discovery feed fresh
+            }
+
+            // I. User Downvoted / Demoted Creators (Lowered in algorithm without unsubscribing)
+            if (demotedLower.any { dem -> chanLower.contains(dem) || titleLower.contains(dem) }) {
+                score -= 350.0f // Drastically push down in algorithm ranking while preserving subscription
             }
 
             Pair(video, score)

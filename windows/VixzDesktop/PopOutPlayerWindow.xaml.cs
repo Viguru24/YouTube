@@ -252,6 +252,12 @@ namespace VixzDesktop
             var msg = e.TryGetWebMessageAsString();
             if (string.IsNullOrEmpty(msg)) return;
 
+            if (msg == "OPEN_DEVTOOLS")
+            {
+                MiniWebView.CoreWebView2?.OpenDevToolsWindow();
+                return;
+            }
+
             if (msg.StartsWith("POS:"))
             {
                 var parts = msg.Split(':');

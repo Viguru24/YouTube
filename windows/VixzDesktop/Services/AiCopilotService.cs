@@ -63,9 +63,13 @@ namespace VixzDesktop.Services
     public class AiCopilotService
     {
         private static readonly YoutubeClient _client = new YoutubeClient();
-        private static readonly HttpClient _httpClient = CreateHttpClient();
+        private static readonly HttpClient _httpClient = CreateHttpClient(timeoutSeconds: 10);
+        private static readonly HttpClient _llmHttpClient = CreateHttpClient(timeoutSeconds: 30);
 
-        private static HttpClient CreateHttpClient()
+        // Cache: videoId → summary, so switching videos doesn't re-fetch
+        private static readonly Dictionary<string, VideoSummaryResult> _summaryCache = new();
+
+        private static HttpClient CreateHttpClient(int timeoutSeconds = 10)
         {
             var handler = new HttpClientHandler
             {
@@ -74,7 +78,7 @@ namespace VixzDesktop.Services
             var client = new HttpClient(handler);
             client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
             client.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-            client.Timeout = TimeSpan.FromSeconds(8);
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
             return client;
         }
 
@@ -538,6 +542,10 @@ namespace VixzDesktop.Services
             VideoItem video, 
             Func<string, Task<string>>? webViewTranscriptFetcher = null)
         {
+            // Return cached result if available for this video
+            if (_summaryCache.TryGetValue(video.Id, out var cached))
+                return cached;
+
             var summary = new VideoSummaryResult
             {
                 VideoId = video.Id,
@@ -635,6 +643,10 @@ namespace VixzDesktop.Services
 
             // Synthesize Executive Summary and Key Takeaways
             await GenerateStructuredPointsAsync(rawTranscript, rawDescription, video, summary);
+
+            // Cache for this session (up to 50 videos)
+            if (_summaryCache.Count >= 50) _summaryCache.Clear();
+            _summaryCache[video.Id] = summary;
 
             return summary;
         }
@@ -738,7 +750,7 @@ namespace VixzDesktop.Services
                         req.Headers.Add("Authorization", "Bearer " + apiKey);
                         var payload = new { model = "openai/gpt-oss-120b", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
                         req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                        var resp = await _httpClient.SendAsync(req);
+                        var resp = await _llmHttpClient.SendAsync(req);
                         if (resp.IsSuccessStatusCode)
                         {
                             var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
@@ -751,7 +763,7 @@ namespace VixzDesktop.Services
                         req.Headers.Add("Authorization", "Bearer " + apiKey);
                         var payload = new { model = "gpt-4o-mini", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
                         req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                        var resp = await _httpClient.SendAsync(req);
+                        var resp = await _llmHttpClient.SendAsync(req);
                         if (resp.IsSuccessStatusCode)
                         {
                             var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
@@ -764,7 +776,7 @@ namespace VixzDesktop.Services
                         {
                             var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
                             var payload = new { contents = new[] { new { parts = new[] { new { text = llmPrompt } } } } };
-                            var resp = await _httpClient.PostAsync(endpoint, new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json"));
+                            var resp = await _llmHttpClient.PostAsync(endpoint, new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json"));
                             if (resp.IsSuccessStatusCode)
                             {
                                 var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
@@ -857,7 +869,21 @@ namespace VixzDesktop.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return new List<string>();
 
-            // Blacklist Regex: Exclude Cashapp, Venmo, PayPal, Copyright disclaimers, Fair use boilerplate, promo codes, subscribe plugs
+            // Strip [annotations] like [music], [laughter], [applause], [inaudible]
+            text = Regex.Replace(text, @"\[[^\]]{1,30}\]", " ", RegexOptions.IgnoreCase);
+
+            // Strip >> speaker markers used in auto-captions
+            text = Regex.Replace(text, @">>+\s*", " ", RegexOptions.IgnoreCase);
+
+            // Strip URLs and web handles
+            text = Regex.Replace(text, @"https?://\S+", " ", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\b[\w\-]+\.(?:com|org|net|io|gov|edu|co|tv|app|me|be|yt|link)/\S*", " ", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"@[\w\-]+", " ", RegexOptions.IgnoreCase);
+
+            // Strip filler sounds and transcript artifacts
+            text = Regex.Replace(text, @"\b(uh|um|uh-huh|hmm|ugh|ahh?|ohh?|laughter|applause|inaudible|crosstalk)\b", " ", RegexOptions.IgnoreCase);
+
+            // Blacklist: ads, promos, copyright boilerplate, social plugs
             var blacklistRegex = new Regex(
                 @"(?i)\b(cashapp|\$|venmo|paypal|donate|donations|patreon|gofundme|crypto|bitcoin|btc|eth|wallet|zelle|" +
                 @"copyright disclaimer|section 107|copyright act|fair use|criticism|commentary|news reporting|scholarship|research|" +
@@ -867,10 +893,14 @@ namespace VixzDesktop.Services
                 @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp)\b"
             );
 
-            // Strip URLs and web handles
-            text = Regex.Replace(text, @"https?://\S+", " ", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, @"\b[\w\-]+\.(?:com|org|net|io|gov|edu|co|tv|app|me|be|yt|link)/\S*", " ", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, @"@[\w\-]+", " ", RegexOptions.IgnoreCase);
+            // Filler openers that make for useless takeaways
+            var fillerOpeners = new Regex(
+                @"^(all right|alright|okay so|so yeah|yeah so|you know|i mean|right so|well so|now back|back to|" +
+                @"and so|but so|so basically|basically|i think|i feel|kind of|sort of|like i said|as i said|" +
+                @"and then|and now|and we|so we|so i|so it|so this|so that|so there|so here|" +
+                @"now i|now we|now this|now that)\b",
+                RegexOptions.IgnoreCase
+            );
 
             var rawSentences = text.Split(new[] { '.', '!', '?', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
                                    .Select(s => s.Trim())
@@ -882,22 +912,29 @@ namespace VixzDesktop.Services
                 if (blacklistRegex.IsMatch(s)) continue;
 
                 var cleaned = Regex.Replace(s, @"\s+", " ").Trim();
-                if (cleaned.Length < 25) continue;
+
+                // Must be at least 7 words (avoids bare caption fragments)
+                var wordCount = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+                if (wordCount < 7) continue;
+
+                // Skip if > 60% of words are single characters (caption noise)
+                var singleCharWords = cleaned.Split(' ').Count(w => w.Length == 1);
+                if (singleCharWords > wordCount * 0.4) continue;
+
                 if (cleaned.Equals(video.Title, StringComparison.OrdinalIgnoreCase)) continue;
 
-                // Check for ALL CAPS spam line
+                // Skip ALL CAPS single-word spam
                 if (cleaned.Length > 15 && cleaned.ToUpperInvariant() == cleaned && !cleaned.Contains(" ")) continue;
+
+                // Skip filler openers
+                if (fillerOpeners.IsMatch(cleaned)) continue;
 
                 // Capitalize first letter
                 if (char.IsLower(cleaned[0]))
-                {
                     cleaned = char.ToUpper(cleaned[0]) + cleaned.Substring(1);
-                }
 
                 if (!cleanSentences.Contains(cleaned, StringComparer.OrdinalIgnoreCase))
-                {
                     cleanSentences.Add(cleaned);
-                }
             }
 
             return cleanSentences;
