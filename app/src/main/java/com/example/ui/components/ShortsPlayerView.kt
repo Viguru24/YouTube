@@ -384,7 +384,7 @@ fun ShortsPlayerView(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // Automatic Fallback: High-Reliability YouTube Embed for Shorts
+            // Automatic Fallback: High-Reliability YouTube Embed for Shorts (Fix Error 153)
             AndroidView(
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
@@ -395,9 +395,42 @@ fun ShortsPlayerView(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+
+                        // Disguise WebView as Chrome mobile browser to bypass bot checks
+                        val defaultUa = settings.userAgentString
+                        val cleanUa = defaultUa.replace("; wv", "").replace("Version/4.0 ", "")
+                        settings.userAgentString = cleanUa
+
+                        val cookieManager = android.webkit.CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
+
                         webChromeClient = android.webkit.WebChromeClient()
                         webViewClient = android.webkit.WebViewClient()
-                        loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=0&loop=1&playlist=$videoId")
+
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                              <style>
+                                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
+                                iframe { border: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+                              </style>
+                            </head>
+                            <body>
+                              <iframe
+                                id="player"
+                                src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=0&loop=1&playlist=$videoId&origin=https://www.youtube.com"
+                                referrerpolicy="strict-origin-when-cross-origin"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowfullscreen>
+                              </iframe>
+                            </body>
+                            </html>
+                        """.trimIndent()
+
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
                     }
                 },
                 update = { view ->

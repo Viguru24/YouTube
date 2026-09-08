@@ -705,8 +705,60 @@ fun YouTubePlayerView(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+
+                        // Fix Error 153: Disguise WebView as modern Chrome mobile browser (remove "Version/4.0" and "; wv")
+                        val defaultUa = settings.userAgentString
+                        val cleanUa = defaultUa.replace("; wv", "").replace("Version/4.0 ", "")
+                        settings.userAgentString = cleanUa
+
+                        // Enable cookies & third-party cookies so signed-in YouTube account cookies pass through
+                        val cookieManager = android.webkit.CookieManager.getInstance()
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                        webChromeClient = android.webkit.WebChromeClient()
                         webViewClient = android.webkit.WebViewClient()
-                        loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1")
+
+                        // Use strict-origin-when-cross-origin and load with youtube.com base URL to eliminate Error 153
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                              <style>
+                                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
+                                iframe { border: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+                              </style>
+                            </head>
+                            <body>
+                              <iframe
+                                id="player"
+                                src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&enablejsapi=1&origin=https://www.youtube.com"
+                                referrerpolicy="strict-origin-when-cross-origin"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowfullscreen>
+                              </iframe>
+                              <script>
+                                function post(action, val) {
+                                  var iframe = document.getElementById('player');
+                                  if (iframe && iframe.contentWindow) {
+                                    iframe.contentWindow.postMessage(JSON.stringify({
+                                      'event': 'command',
+                                      'func': action,
+                                      'args': val ? [val] : []
+                                    }), '*');
+                                  }
+                                }
+                                function pauseVideo() { post('pauseVideo'); }
+                                function playVideo() { post('playVideo'); }
+                                function seekToSeconds(sec) { post('seekTo', [sec, true]); }
+                                function setPlaybackRate(rate) { post('setPlaybackRate', [rate]); }
+                              </script>
+                            </body>
+                            </html>
+                        """.trimIndent()
+
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
                         webViewRef = this
                     }
                 },
