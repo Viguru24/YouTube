@@ -710,7 +710,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             kotlinx.coroutines.flow.combine(
-                searchQuery.debounce(350L),
+                searchQuery.debounce(100L),
                 searchSortOption
             ) { query, sort -> Pair(query, sort) }
                 .collectLatest { (query, sort) ->

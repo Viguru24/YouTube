@@ -129,21 +129,36 @@ fun HomeScreen(
         )
     }
 
-    // Sync external searchQuery changes to local searchTextFieldValue and expanded state
+    // Sync external searchQuery changes to local searchTextFieldValue ONLY on external resets or initial load.
+    // NEVER overwrite searchTextFieldValue while the user is actively typing locally!
     LaunchedEffect(searchQuery) {
-        if (searchQuery != searchTextFieldValue.text) {
-            val targetSelection = if (searchTextFieldValue.selection.max <= searchQuery.length) {
-                searchTextFieldValue.selection
-            } else {
-                TextRange(searchQuery.length)
-            }
+        if (searchQuery.isEmpty() && searchTextFieldValue.text.isNotEmpty()) {
+            searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+        } else if (searchQuery.isNotEmpty() && searchTextFieldValue.text.isEmpty()) {
             searchTextFieldValue = TextFieldValue(
                 text = searchQuery,
-                selection = targetSelection
+                selection = TextRange(searchQuery.length)
             )
         }
         if (searchQuery.isNotEmpty() && !isSearchExpanded) {
             isSearchExpanded = true
+        }
+    }
+
+    // Debounce search dispatch while user is typing so the app doesn't freeze on every letter.
+    // This keeps typing 100% butter-smooth and eliminates cursor snaps/jumps.
+    LaunchedEffect(searchTextFieldValue.text) {
+        val currentText = searchTextFieldValue.text
+        if (currentText.isEmpty()) {
+            if (searchQuery.isNotEmpty()) {
+                onSearchQueryChanged("")
+            }
+        } else if (currentText != searchQuery) {
+            kotlinx.coroutines.delay(500L)
+            onSearchQueryChanged(currentText)
+            if (selectedSubscribedChannel.isNotBlank()) {
+                onSubscribedChannelSelected("")
+            }
         }
     }
 
@@ -252,11 +267,8 @@ fun HomeScreen(
                             value = searchTextFieldValue,
                             onValueChange = { newValue ->
                                 searchTextFieldValue = newValue
-                                if (newValue.text != searchQuery) {
-                                    onSearchQueryChanged(newValue.text)
-                                    if (newValue.text.isNotBlank() && selectedSubscribedChannel.isNotBlank()) {
-                                        onSubscribedChannelSelected("")
-                                    }
+                                if (newValue.text.isEmpty() && searchQuery.isNotEmpty()) {
+                                    onSearchQueryChanged("")
                                 }
                             },
                             singleLine = true,
