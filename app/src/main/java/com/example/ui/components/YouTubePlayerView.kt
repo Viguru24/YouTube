@@ -926,23 +926,6 @@ fun YouTubePlayerView(
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
-        // 10. Zoom Reset Button (Bottom-Right)
-        PlayerZoomResetButton(
-            zoomScale = zoomScale,
-            shouldShowControls = shouldShowControls,
-            onResetZoom = {
-                zoomScale = 1f
-                panOffsetX = 0f
-                panOffsetY = 0f
-            },
-            modifier = Modifier.align(Alignment.BottomEnd)
-        )
-
-        // 11. Zoom Level Badge HUD (Top-Center)
-        PlayerZoomFeedbackHUD(
-            zoomScale = zoomScale,
-            modifier = Modifier.align(Alignment.TopCenter)
-        )
 
         // 12. Left Side Brightness HUD
         PlayerBrightnessHUD(

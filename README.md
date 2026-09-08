@@ -29,7 +29,7 @@
 ## 🆕 What's New in v1.9.8
 
 - 🔍 **Overhauled Pinch-to-Zoom Engine (1.0x – 5.0x):** Zero jitter, fluid multi-touch scaling, intelligent pointer tracking, and 1-finger 2D panning with edge bounds.
-- ⚡ **Floating Real-Time Zoom HUD:** Dynamic glassmorphic badge showing instant magnification levels.
+- 📱 **Pure Unobstructed Viewing:** No annoying badges, HUDs, or buttons blocking video content; pinching in or squeezing automatically snaps back to original 1.0x form.
 - 🤖 **On-Demand AI Summarization & Tight Chat:** Video summaries now only run when requested, paired with a compact, non-blocking AI chat modal.
 - 📱 **Multi-Device ADB Auto-Updater:** Simultaneous multi-phone/tablet APK installer script (`YouTube_Install_On_Phone.bat`).
 - 📦 **Latest Companion Binaries:** Updated Android APK and Windows Desktop EXE. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.

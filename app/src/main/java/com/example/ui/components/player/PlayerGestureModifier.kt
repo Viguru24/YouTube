@@ -137,6 +137,13 @@ fun Modifier.playerGestureEngine(
                     prevPinchDist = 0f
                     prevCentroid = null
 
+                    if (hasPinchOccurred && activeZoom <= 1.08f) {
+                        activeZoom = 1f
+                        activePanX = 0f
+                        activePanY = 0f
+                        currentOnZoomChange(1f, 0f, 0f)
+                    }
+
                     val wasConsumedByChild = event.changes.any { it.isConsumed } || down.isConsumed
 
                     if (!isDragging && !hasPinchOccurred && movedDist < touchSlop && duration < 450 && !wasConsumedByChild) {
@@ -293,18 +300,21 @@ fun Modifier.playerGestureEngine(
 
                     if (prevPinchDist > 0f && prevCentroid != null) {
                         val scaleRatio = dist / prevPinchDist
-                        val newZoom = (activeZoom * scaleRatio).coerceIn(1f, 5f)
-                        activeZoom = newZoom
-
-                        val panDelta = centroid - prevCentroid!!
-                        val maxPanX = (w * (newZoom - 1f)) / 2f
-                        val maxPanY = (h * (newZoom - 1f)) / 2f
-                        val newPanX = (activePanX + panDelta.x).coerceIn(-maxPanX, maxPanX)
-                        val newPanY = (activePanY + panDelta.y).coerceIn(-maxPanY, maxPanY)
-                        activePanX = if (newZoom <= 1.01f) 0f else newPanX
-                        activePanY = if (newZoom <= 1.01f) 0f else newPanY
-
-                        currentOnZoomChange(if (newZoom <= 1.01f) 1f else newZoom, activePanX, activePanY)
+                        val rawZoom = (activeZoom * scaleRatio).coerceIn(1f, 5f)
+                        if (rawZoom <= 1.05f) {
+                            activeZoom = 1f
+                            activePanX = 0f
+                            activePanY = 0f
+                            currentOnZoomChange(1f, 0f, 0f)
+                        } else {
+                            activeZoom = rawZoom
+                            val panDelta = centroid - prevCentroid!!
+                            val maxPanX = (w * (rawZoom - 1f)) / 2f
+                            val maxPanY = (h * (rawZoom - 1f)) / 2f
+                            activePanX = (activePanX + panDelta.x).coerceIn(-maxPanX, maxPanX)
+                            activePanY = (activePanY + panDelta.y).coerceIn(-maxPanY, maxPanY)
+                            currentOnZoomChange(rawZoom, activePanX, activePanY)
+                        }
                     }
                     prevPinchDist = dist
                     prevCentroid = centroid

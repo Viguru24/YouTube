@@ -10,8 +10,9 @@ All notable changes, fixes, and improvements across the Android client and Windo
 - **Smooth 1.0x – 5.0x Multi-Touch Scaling:** Completely re-engineered the gesture engine in `PlayerGestureModifier.kt` using Compose `@Composable` state wrappers (`rememberUpdatedState`) to eliminate stale closures.
 - **Zero Jitter & Elimination of Wild Jumps:** Fixed multi-pointer tracking so the previous pinch distance resets immediately when finger count drops below 2, preventing catastrophic multiplication spikes and erratic leaps.
 - **Dedicated 1-Finger 2D Panning:** When zoomed in (`> 1.05x`), single-finger drags now smoothly pan around the video frame with hardware boundary clamping (`maxPan = (dimension * (zoom - 1)) / 2`). Prevents accidental volume, brightness, or timeline scrubbing while zoomed.
-- **Snap-to-Reset & Auto-Centering:** Double-tapping anywhere on the video frame instantly restores original `1.0x` zoom and centers the view. Minor pinches below `1.01x` smoothly snap back to `1.0x`.
-- **Real-Time Zoom Feedback HUD:** Added a dynamic glassmorphic HUD pill at the top-center of the screen showing current magnification in real time (e.g., `2.3x Zoom`).
+- **Unobstructed Pure Viewing (Zero Clutter):** Completely removed all intrusive on-screen zoom overlays and buttons—no floating re-center button and no top-center zoom badge blocking video content.
+- **Automatic Squeeze-In Snap-to-Original:** When pinching in or squeezing back down, the video automatically snaps cleanly back to its original 1.0x centered layout without needing any button.
+- **Double-Tap Quick Reset:** Double-tapping anywhere on the video frame also instantly restores original 1.0x zoom and centers the view.
 - **WebView Fallback Parity:** Added matching `graphicsLayer` hardware transformations to the WebView fallback player.
 
 ### 🤖 2. On-Demand AI Summaries & Tight Chat Interface
