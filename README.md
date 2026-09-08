@@ -8,13 +8,15 @@
 
 [![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.7-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk)
 [![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
+[![Cosmo Whisper](https://img.shields.io/badge/🎙️%20AI%20Voice%20Dictation-Cosmo%20Whisper-FF6F00?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/Viguru24/CosmoWhisper-Native)
+[![Cosmo Symphony](https://img.shields.io/badge/🌌%20Video%20%26%204K%20Studio-Cosmo%20Symphony-673AB7?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/Viguru24/Video)
 [![Windows PC App](https://img.shields.io/badge/🖥️%20Windows%20PC%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
 [![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=for-the-badge)](LICENSE)
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
   <a href="#-whats-new-in-v198">🆕 <b>What's New (v1.9.8)</b></a> •
+  <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="UPDATE_LOG.md">📋 <b>Update Log</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows PC Version</b></a> •
   <a href="#-key-features">✨ <b>Features</b></a> •
@@ -30,9 +32,24 @@
 
 - 🔍 **Overhauled Pinch-to-Zoom Engine (1.0x – 5.0x):** Zero jitter, fluid multi-touch scaling, intelligent pointer tracking, and 1-finger 2D panning with edge bounds.
 - 📱 **Pure Unobstructed Viewing:** No annoying badges, HUDs, or buttons blocking video content; pinching in or squeezing automatically snaps back to original 1.0x form.
+- 🌌 **Cosmo Software Suite Integration:** In-app showcase and instant 1-tap launcher for **Cosmo Whisper** and **Cosmo Symphony**.
 - 🤖 **On-Demand AI Summarization & Tight Chat:** Video summaries now only run when requested, paired with a compact, non-blocking AI chat modal.
 - 📱 **Multi-Device ADB Auto-Updater:** Simultaneous multi-phone/tablet APK installer script (`YouTube_Install_On_Phone.bat`).
 - 📦 **Latest Companion Binaries:** Updated Android APK and Windows Desktop EXE. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
+
+---
+
+## 🌌 Sovereign Cosmo Software Suite
+
+Vixz is part of the **Sovereign Cosmo Software Suite** — a family of privacy-first, high-performance desktop and mobile tools built for creators, power users, and freedom lovers:
+
+| Project | Superpower & Technology | Platforms | Access |
+| :--- | :--- | :--- | :--- |
+| 🎙️ **[Cosmo Whisper](https://github.com/Viguru24/CosmoWhisper-Native)** | Ultra-fast native AI voice dictation & local transcription powered by OpenAI Whisper & .NET 8. Zero cloud lock-in. | Windows / macOS | [**Explore Repository →**](https://github.com/Viguru24/CosmoWhisper-Native) |
+| 🌌 **[Cosmo Symphony](https://github.com/Viguru24/Video)** | GPU-accelerated video & photo orchestrator, hardwood framing studio, AI 4K/8K upscaler & local phone-to-PC sharing (Rust Tauri v2). | Windows / PC | [**Explore Repository →**](https://github.com/Viguru24/Video) |
+| 🎬 **[Vixz Desktop](https://github.com/Viguru24/VixzDesktop)** | Fluent acrylic YouTube companion with SponsorBlock, AI video copilot, voice commands & offline downloader. | Windows 10/11 | [**Explore Repository →**](https://github.com/Viguru24/VixzDesktop) |
+| 🛰️ **[Kin-Tracker](https://github.com/Viguru24/Kin-Tracker)** | Next-gen private, 24/7 real-time family safety radar & GPS transit network (open Life360 alternative). | Android | [**Explore Repository →**](https://github.com/Viguru24/Kin-Tracker) |
+| 🌐 **[Sovereign Suite Portal](https://viguru24.github.io)** | Central showcase portal and documentation hub for all Cosmo and Sovereign tools. | Web | [**Visit viguru24.github.io →**](https://viguru24.github.io) |
 
 ---
 

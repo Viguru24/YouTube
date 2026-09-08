@@ -21,10 +21,17 @@ All notable changes, fixes, and improvements across the Android client and Windo
 - **Instant Non-Blocking Interaction:** Users can start typing and sending questions immediately while transcript captions stream in the background.
 - **Search Header Polish:** Removed visual impediments and banner overlays from search results so queries display cleanly without clipping.
 
-### 📱 3. Multi-Device Simultaneous Installer (`YouTube_Install_On_Phone.bat`)
+### 🌌 3. Sovereign Cosmo Software Suite Integration
+- **In-App Showcase Card:** Added a dedicated, glassmorphic **Cosmo Software Suite** card in the main Settings dialog featuring 1-tap direct launchers to:
+  - 🎙️ **Cosmo Whisper:** Native AI voice dictation & local transcription for Windows & macOS.
+  - 🌌 **Cosmo Symphony:** GPU-accelerated video & photo orchestrator, AI 4K/8K upscaler & Wi-Fi sharing.
+  - 🌐 **Sovereign Suite Portal:** Central web hub at `viguru24.github.io`.
+- **Repository Badges & Showcase Table:** Added top-level badges and a comprehensive ecosystem table in `README.md`.
+
+### 📱 4. Multi-Device Simultaneous Installer (`YouTube_Install_On_Phone.bat`)
 - **Parallel Multi-Device Push:** Batch installer detects all connected Android devices (phones, tablets, car units) via ADB and installs/updates the latest APK across all of them in parallel.
 
-### 📦 4. Updated Release Binaries
+### 📦 5. Updated Release Binaries
 - **Android APK:** [`release/Vixz-YouTube-Player-latest.apk`](release/Vixz-YouTube-Player-latest.apk) (and `v1.9.7.apk`) compiled and verified.
 - **Windows Desktop Executable:** [`release/VixzDesktop-latest.exe`](release/VixzDesktop-latest.exe) built via .NET 9 single-file publish with WPF & WebView2 runtime.
 

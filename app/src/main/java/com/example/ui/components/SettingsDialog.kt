@@ -873,6 +873,242 @@ fun SettingsDialog(
                             }
                         }
                     }
+
+                    // 8. 🌌 Sovereign Cosmo Software Suite Showcase Card
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF1A1333).copy(alpha = 0.55f)
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            Color(0xFF9C27B0).copy(alpha = 0.45f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .background(Color(0xFF9C27B0).copy(alpha = 0.25f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("🌌", fontSize = 18.sp)
+                                }
+                                Column {
+                                    Text(
+                                        text = "Cosmo Software Suite",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = "High-performance sovereign desktop & mobile apps",
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // App 1: Cosmo Whisper
+                            Surface(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://github.com/Viguru24/CosmoWhisper-Native")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        android.widget.Toast.makeText(context, "Opening Cosmo Whisper...", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.06f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text("🎙️", fontSize = 22.sp)
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Cosmo Whisper",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color.White
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFFFF9800).copy(alpha = 0.25f)
+                                                ) {
+                                                    Text(
+                                                        text = "Windows / macOS",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = Color(0xFFFFB74D),
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "Native AI voice dictation & transcription with Whisper AI",
+                                                fontSize = 11.sp,
+                                                color = Color.White.copy(alpha = 0.65f)
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Filled.OpenInNew,
+                                        contentDescription = "Open",
+                                        tint = Color(0xFFFFB74D),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // App 2: Cosmo Symphony
+                            Surface(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://github.com/Viguru24/Video")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        android.widget.Toast.makeText(context, "Opening Cosmo Symphony...", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.06f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF673AB7).copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Text("🌌", fontSize = 22.sp)
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Cosmo Symphony",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color.White
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFF673AB7).copy(alpha = 0.25f)
+                                                ) {
+                                                    Text(
+                                                        text = "Desktop / PC",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = Color(0xFFB388FF),
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "GPU video orchestrator, AI 4K/8K upscaler & Wi-Fi sharing",
+                                                fontSize = 11.sp,
+                                                color = Color.White.copy(alpha = 0.65f)
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Filled.OpenInNew,
+                                        contentDescription = "Open",
+                                        tint = Color(0xFFB388FF),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // App 3: Sovereign Portal
+                            Surface(
+                                onClick = {
+                                    try {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://viguru24.github.io")
+                                        )
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        android.widget.Toast.makeText(context, "Opening Sovereign Portal...", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White.copy(alpha = 0.04f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text("🌐", fontSize = 18.sp)
+                                        Text(
+                                            text = "Explore Sovereign Suite Portal",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                    Text(
+                                        text = "viguru24.github.io →",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF64B5F6),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
