@@ -17,4 +17,10 @@ interface MutedChannelDao {
 
     @Query("DELETE FROM muted_channels WHERE channelName = :channelName")
     suspend fun deleteByName(channelName: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM muted_channels WHERE LOWER(TRIM(channelName)) = LOWER(TRIM(:channelName)))")
+    suspend fun isChannelMuted(channelName: String): Boolean
+
+    @Query("SELECT channelName FROM muted_channels")
+    suspend fun getAllMutedChannelNamesDirect(): List<String>
 }

@@ -79,6 +79,7 @@ fun PlayerScreen(
     onDeleteDownloadClick: () -> Unit = {},
     subscribedCreators: List<String> = emptyList(),
     onToggleSubscribe: (String) -> Unit = {},
+    onPermanentlyDeleteChannel: (String) -> Unit = {},
     onSelectChannel: (String) -> Unit = {},
     onPositionUpdate: (Int) -> Unit = {},
     modifier: Modifier = Modifier
@@ -87,6 +88,7 @@ fun PlayerScreen(
     var showDebugConsole by remember { mutableStateOf(false) }
     var showSaveToSubjectDialog by remember { mutableStateOf(false) }
     var showAiSummaryModal by remember { mutableStateOf(false) }
+    var showDeleteChannelDialog by remember { mutableStateOf(false) }
     var localIsFavorite by remember(video.youtubeId, video.isFavorite) { mutableStateOf(video.isFavorite) }
     var localIsDisliked by remember(video.youtubeId, isDisliked) { mutableStateOf(isDisliked) }
 
@@ -457,6 +459,65 @@ fun PlayerScreen(
                                             )
                                         }
                                     }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    IconButton(
+                                        onClick = { showDeleteChannelDialog = true },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Block,
+                                            contentDescription = "Delete Channel Permanently",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                if (showDeleteChannelDialog) {
+                                    AlertDialog(
+                                        onDismissRequest = { showDeleteChannelDialog = false },
+                                        icon = {
+                                            Icon(
+                                                imageVector = Icons.Filled.DeleteForever,
+                                                contentDescription = null,
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        },
+                                        title = {
+                                            Text(
+                                                text = "Permanently Delete Channel?",
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        text = {
+                                            Text(
+                                                text = "All videos from '${video.channelName}' will be removed and you will never see recommendations or videos from this channel again.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        },
+                                        confirmButton = {
+                                            Button(
+                                                onClick = {
+                                                    showDeleteChannelDialog = false
+                                                    onPermanentlyDeleteChannel(video.channelName)
+                                                    android.widget.Toast.makeText(context, "'${video.channelName}' permanently deleted and blocked 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                                                    onBackClick()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                                            ) {
+                                                Text("Delete Permanently", color = Color.White, fontWeight = FontWeight.Bold)
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showDeleteChannelDialog = false }) {
+                                                Text("Cancel")
+                                            }
+                                        }
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(6.dp))

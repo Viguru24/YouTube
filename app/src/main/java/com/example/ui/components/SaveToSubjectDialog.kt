@@ -34,9 +34,7 @@ fun SaveToSubjectDialog(
     var isCreatingNew by remember { mutableStateOf(false) }
     var newSubjectName by remember { mutableStateOf("") }
     var selectedSubject by remember { mutableStateOf(video.category.ifBlank { "General" }) }
-
-    val defaultCategories = listOf("Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient", "General")
-    val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
+    val allCategoryNames = (categories.map { it.name } + listOf("General")).filter { it.isNotBlank() }.distinct()
 
     AlertDialog(
         onDismissRequest = onDismiss,

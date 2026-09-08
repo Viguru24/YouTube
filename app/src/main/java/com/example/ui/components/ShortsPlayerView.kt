@@ -268,12 +268,11 @@ fun ShortsPlayerView(
 
         try {
             // Check offline storage first
-            val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(context, videoId)
-            if (localFile.exists() && localFile.length() > 1024 * 100) {
-                val localUri = android.net.Uri.fromFile(localFile).toString()
+            val localUri = com.example.data.remote.VideoDownloadManager.getLocalVideoUriString(context, videoId)
+            if (!localUri.isNullOrBlank()) {
                 streamUrl = localUri
-                val fileDataSourceFactory = androidx.media3.datasource.FileDataSource.Factory()
-                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(fileDataSourceFactory)
+                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
+                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(localUri))
                 exoPlayer.setMediaSource(mediaSource)
                 exoPlayer.prepare()

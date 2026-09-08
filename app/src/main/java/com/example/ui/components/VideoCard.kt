@@ -60,6 +60,7 @@ fun VideoCard(
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
+    var showDeleteChannelConfirm by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current.density
     val viewConfig = LocalViewConfiguration.current
@@ -500,11 +501,16 @@ fun VideoCard(
                             )
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("🚫 Mute '${video.channelName}'") },
+                                text = {
+                                    Text(
+                                        "🚫 Delete Channel Permanently",
+                                        color = YouTubeRed,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                },
                                 onClick = {
                                     showMenu = false
-                                    onMuteChannel(video.channelName)
-                                    android.widget.Toast.makeText(context, "Muted ${video.channelName} 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                                    showDeleteChannelConfirm = true
                                 }
                             )
                         }
@@ -512,5 +518,49 @@ fun VideoCard(
                 }
             }
         }
+    }
+
+    if (showDeleteChannelConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteChannelConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.DeleteForever,
+                    contentDescription = null,
+                    tint = YouTubeRed,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Permanently Delete Channel?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "All videos from '${video.channelName}' will be removed and this channel will be permanently blocked from your feed, search, and recommendations.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteChannelConfirm = false
+                        onMuteChannel(video.channelName)
+                        android.widget.Toast.makeText(context, "'${video.channelName}' permanently deleted and blocked 🚫", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                ) {
+                    Text("Delete Permanently", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteChannelConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

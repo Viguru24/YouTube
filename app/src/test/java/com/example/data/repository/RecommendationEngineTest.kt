@@ -67,4 +67,44 @@ class RecommendationEngineTest {
         assertTrue(rankedIds.contains("vid_fresh_2"))
         assertEquals(2, ranked.size)
     }
+
+    @Test
+    fun scoreAndRankVideos_strictlyExcludesMutedAndBlockedChannels() {
+        val vidGood = VideoEntity(
+            youtubeId = "good_1",
+            title = "Great Coding Tutorial",
+            channelName = "CodingWithWill",
+            thumbnailUrl = "thumb_good"
+        )
+        val vidBlockedChannel = VideoEntity(
+            youtubeId = "bad_1",
+            title = "Annoying Clickbait Video",
+            channelName = "ClickbaitChannel",
+            thumbnailUrl = "thumb_bad"
+        )
+        val vidKeywordBlocked = VideoEntity(
+            youtubeId = "bad_2",
+            title = "Celebrity Gossip Secrets",
+            channelName = "HollywoodNews",
+            thumbnailUrl = "thumb_gossip"
+        )
+
+        val candidates = listOf(vidGood, vidBlockedChannel, vidKeywordBlocked)
+        val mutedList = listOf(com.example.data.model.MutedChannelEntity("ClickbaitChannel"))
+        val settings = AlgorithmSettings(blockedKeywords = listOf("Gossip"))
+
+        val ranked = RecommendationEngine.scoreAndRankVideos(
+            videos = candidates,
+            favorites = emptyList(),
+            watchHistory = emptyList(),
+            mutedChannels = mutedList,
+            settings = settings
+        )
+
+        val rankedIds = ranked.map { it.youtubeId }.toSet()
+        assertEquals(1, ranked.size)
+        assertTrue(rankedIds.contains("good_1"))
+        assertFalse(rankedIds.contains("bad_1"))
+        assertFalse(rankedIds.contains("bad_2"))
+    }
 }

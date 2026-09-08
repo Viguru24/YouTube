@@ -50,7 +50,7 @@ fun PlayerPauseActionStrip(
         visible = visible,
         enter = fadeIn() + scaleIn(initialScale = 0.92f),
         exit = fadeOut() + scaleOut(targetScale = 0.92f),
-        modifier = modifier.padding(bottom = if (isFullscreen) 56.dp else 48.dp)
+        modifier = modifier
     ) {
         Surface(
             shape = RoundedCornerShape(50.dp),

@@ -468,19 +468,18 @@ fun YouTubePlayerView(
         panOffsetY = 0f
 
         // 1. Check if video is downloaded locally
-        val localFile = VideoDownloadManager.getLocalVideoFile(
+        val localUri = VideoDownloadManager.getLocalVideoUriString(
             context = context,
             youtubeId = videoId,
             knownPath = localFilePath.ifBlank { null }
         )
-        if (localFile.exists() && localFile.length() > 1024 * 100) {
-            val localUri = Uri.fromFile(localFile).toString()
+        if (!localUri.isNullOrBlank()) {
             isPlayingLocalOffline = true
             streamUrl = localUri
             availableQualities = listOf("Offline Ready")
             selectedQuality = "Offline Ready"
             isLoading = false
-            addLog("⚡ Playing from Local Offline Storage (${localFile.length() / (1024 * 1024)}MB) - Offline Ready!")
+            addLog("⚡ Playing from Local Offline Storage - Offline Ready!")
             return@LaunchedEffect
         }
 
@@ -516,12 +515,16 @@ fun YouTubePlayerView(
     // Seamless in-place switch to local offline file if download completes while watching
     LaunchedEffect(localFilePath) {
         if (localFilePath.isNotBlank() && !isPlayingLocalOffline) {
-            val f = java.io.File(localFilePath)
-            if (f.exists() && f.length() > 1024 * 100) {
+            val localUri = VideoDownloadManager.getLocalVideoUriString(
+                context = context,
+                youtubeId = videoId,
+                knownPath = localFilePath
+            )
+            if (!localUri.isNullOrBlank()) {
                 val currentPos = exoPlayer.currentPosition
                 savedPositionMs = currentPos
                 isPlayingLocalOffline = true
-                streamUrl = Uri.fromFile(f).toString()
+                streamUrl = localUri
                 availableQualities = listOf("Offline Ready")
                 selectedQuality = "Offline Ready"
                 addLog("⚡ Seamless switch to downloaded offline file at ${currentPos / 1000}s")
@@ -532,11 +535,11 @@ fun YouTubePlayerView(
     // ExoPlayer MediaSource Preparation
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
-            val isLocalFile = url.startsWith("file://") || url.startsWith("/")
+            val isLocalFile = url.startsWith("file://") || url.startsWith("/") || url.startsWith("content://")
 
             if (isLocalFile) {
-                val fileDataSourceFactory = androidx.media3.datasource.FileDataSource.Factory()
-                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(fileDataSourceFactory)
+                val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
+                val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(url))
                 exoPlayer.setMediaSource(mediaSource)
             } else {
@@ -821,7 +824,9 @@ fun YouTubePlayerView(
             onAiSummaryClick = onAiSummaryClick,
             onDownloadClick = onDownloadClick,
             onDeleteDownloadClick = onDeleteDownloadClick,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = if (isFullscreen) 0.dp else (-34).dp)
         )
 
         // 9. Bottom Utility Bar: Scrubber + Time + Action Buttons + Settings Anchor

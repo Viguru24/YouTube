@@ -362,7 +362,7 @@ object YouTubeLiveSearchService {
                 "Ambient study music deep focus 4K",
                 "Focus ambient soundscape"
             )
-            else -> listOf("$category latest uploads", "$category news today")
+            else -> listOf(category, "$category tutorial", "$category", "$category latest")
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
@@ -809,6 +809,7 @@ object YouTubeLiveSearchService {
                         ?: ""
 
                     if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                        val assignedCategory = if (key == "reelItemRenderer") "Shorts" else defaultCategory
                         results.add(
                             VideoEntity(
                                 youtubeId = id,
@@ -816,7 +817,7 @@ object YouTubeLiveSearchService {
                                 channelName = channel,
                                 thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
                                 durationText = dur,
-                                category = defaultCategory,
+                                category = assignedCategory,
                                 publishedTimeText = publishedText,
                                 viewCountText = viewText
                             )
@@ -1002,37 +1003,77 @@ object YouTubeLiveSearchService {
     }
 
     /**
-     * Fetches real, high-quality English YouTube Shorts from reputable channels and verified topics.
-     * Enforces strict 3..90s duration and zero foreign language content.
+     * Fetches real, high-quality YouTube Shorts primarily from the user's subscribed channels
+     * and curated verified English creators.
+     * Strictly avoids generic trending/viral queries that return foreign/Indian shorts.
      */
-    suspend fun fetchShortsFeed(): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val topics = listOf(
-            "trending #shorts",
-            "viral #shorts",
-            "MKBHD #shorts",
-            "Daily Dose of Internet #shorts",
-            "Veritasium #shorts",
-            "Gordon Ramsay #shorts",
-            "BBC News #shorts",
-            "Science #shorts",
-            "Formula 1 #shorts"
-        )
-        val selectedTopics = topics.shuffled().take(2)
-        val accumulated = mutableListOf<VideoEntity>()
-        for (topic in selectedTopics) {
-            try {
-                val fetched = kotlinx.coroutines.withTimeoutOrNull(2500L) {
-                    searchRealYouTubeVideos(topic)
-                } ?: emptyList()
-                val filtered = fetched.filter { v ->
-                    val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
-                    (durationSec in 1..60 || v.durationText == "0:00" || v.title.contains("#shorts", ignoreCase = true)) &&
-                    !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)
-                }.map { it.copy(category = "Shorts", durationText = if (it.durationText.isBlank() || it.durationText == "10:00") "0:45" else it.durationText) }
-                accumulated.addAll(filtered)
-            } catch (e: Exception) { }
+    suspend fun fetchShortsFeed(subscribedChannels: List<String> = emptyList()): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val candidateChannels = mutableListOf<String>()
+
+        // 1. PRIMARY SOURCE: The user's actual subscribed creators!
+        if (subscribedChannels.isNotEmpty()) {
+            val shuffledSubs = subscribedChannels.shuffled().take(6)
+            candidateChannels.addAll(shuffledSubs)
         }
-        return@withContext accumulated.distinctBy { it.youtubeId }
+
+        // 2. Curated premium Western/English creators as supplemental fallback (NEVER generic trending/viral)
+        val curatedCreators = listOf(
+            "Veritasium",
+            "MKBHD",
+            "Daily Dose of Internet",
+            "Cleo Abram",
+            "Fireship",
+            "Matt Wolfe",
+            "Two Minute Papers",
+            "Mark Rober",
+            "Colin and Samir",
+            "Gordon Ramsay",
+            "BBC News",
+            "The Joe Rogan Experience",
+            "Tucker Carlson",
+            "Benny Johnson",
+            "Lex Fridman"
+        )
+        val needed = (6 - candidateChannels.size).coerceAtLeast(2)
+        val supplemental = curatedCreators.filter { cur ->
+            candidateChannels.none { it.equals(cur, ignoreCase = true) }
+        }.shuffled().take(needed)
+        candidateChannels.addAll(supplemental)
+
+        val accumulated = mutableListOf<VideoEntity>()
+        val jobs = candidateChannels.map { creator ->
+            async {
+                try {
+                    val query = "$creator #shorts"
+                    val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
+                        searchRealYouTubeVideos(query, sortByUploadDate = true)
+                    } ?: emptyList()
+
+                    val filtered = fetched.filter { v ->
+                        val hasShortsTag = v.title.contains("#shorts", ignoreCase = true) ||
+                                           v.title.contains("#short", ignoreCase = true)
+                        val isExplicitShort = v.category.equals("Shorts", ignoreCase = true) || hasShortsTag
+                        val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
+                        isExplicitShort &&
+                        (durationSec in 1..185 || durationSec == 0 || v.durationText.isBlank()) &&
+                        !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)
+                    }.map {
+                        it.copy(
+                            category = "Shorts",
+                            durationText = if (it.durationText.isBlank() || it.durationText == "10:00") "0:45" else it.durationText
+                        )
+                    }
+                    filtered
+                } catch (e: Exception) {
+                    emptyList<VideoEntity>()
+                }
+            }
+        }
+
+        val allResults = jobs.awaitAll().flatten()
+        accumulated.addAll(allResults)
+
+        return@withContext accumulated.distinctBy { it.youtubeId }.shuffled()
     }
 
     private fun formatSeconds(sec: Long): String {

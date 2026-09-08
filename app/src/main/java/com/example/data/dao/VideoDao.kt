@@ -83,4 +83,7 @@ interface VideoDao {
 
     @Query("UPDATE videos SET lastWatchedTimestamp = 0")
     suspend fun clearWatchHistory()
+
+    @Query("DELETE FROM videos WHERE LOWER(TRIM(channelName)) = LOWER(TRIM(:channelName))")
+    suspend fun deleteVideosByChannel(channelName: String)
 }

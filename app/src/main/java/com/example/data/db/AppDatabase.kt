@@ -41,11 +41,15 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(object : RoomDatabase.Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
-                        // Populate initial default data in background
-                        INSTANCE?.let { database ->
-                            CoroutineScope(Dispatchers.IO).launch {
-                                populateInitialData(database)
-                            }
+                        // Populate initial default categories directly via SQL
+                        try {
+                            db.execSQL("INSERT OR IGNORE INTO playlist_categories (name, iconName, colorHex) VALUES ('Tech & Code', 'Code', '#2196F3')")
+                            db.execSQL("INSERT OR IGNORE INTO playlist_categories (name, iconName, colorHex) VALUES ('Music', 'MusicNote', '#E91E63')")
+                            db.execSQL("INSERT OR IGNORE INTO playlist_categories (name, iconName, colorHex) VALUES ('Tutorials', 'School', '#4CAF50')")
+                            db.execSQL("INSERT OR IGNORE INTO playlist_categories (name, iconName, colorHex) VALUES ('Gaming', 'Gamepad', '#FF9800')")
+                            db.execSQL("INSERT OR IGNORE INTO playlist_categories (name, iconName, colorHex) VALUES ('Focus & Ambient', 'Headphones', '#9C27B0')")
+                        } catch (e: Exception) {
+                            android.util.Log.e("AppDatabase", "Error seeding default categories: ${e.message}")
                         }
                     }
                 })

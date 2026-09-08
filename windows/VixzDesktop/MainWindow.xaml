@@ -467,6 +467,7 @@
                                                         <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
                                                         <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
                                                         <MenuItem Header="🗑️ Delete / Remove Video" Click="ContextMenuDelete_Click"/>
+                                                        <MenuItem Header="🚫 Permanently Delete Channel" Click="ContextMenuDeleteChannel_Click"/>
                                                         <Separator Background="{StaticResource BorderSubtle}"/>
                                                         <MenuItem Header="⭐ Toggle Favorite" Click="ContextMenuFavorite_Click"/>
                                                         <MenuItem Header="🕒 Toggle Watch Later" Click="ContextMenuWatchLater_Click"/>
@@ -865,6 +866,25 @@
                                     <StackPanel>
                                         <TextBlock Text="ACTIVE SAVE DIRECTORY (FOR DOWNLOADS &amp; MEDIA)" Foreground="{StaticResource TextSecondary}" FontSize="9.5" FontWeight="Bold"/>
                                         <TextBlock x:Name="PopupCurrentFolderText" Text="Pictures\Vixz" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Download Retention / Time in Download Folder -->
+                                <Border Background="#14141A" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,12">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,4">
+                                            <TextBlock Text="DOWNLOAD RETENTION (STAY IN FOLDER)" Foreground="{StaticResource TextSecondary}" FontSize="9.5" FontWeight="Bold"/>
+                                            <TextBlock x:Name="PopupRetentionBadge" Text="⏱️ Permanently" Foreground="#81C784" FontSize="9.5" FontWeight="Bold" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <TextBlock Text="Default: stays permanently. Choose auto-cleanup if desired:" Foreground="{StaticResource TextMuted}" FontSize="9.5" Margin="0,0,0,6"/>
+                                        <WrapPanel x:Name="RetentionButtonsPanel">
+                                            <Button x:Name="RetentionNeverBtn" Content="♾️ Permanently (Default)" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="Never" Click="RetentionOption_Click"/>
+                                            <Button x:Name="Retention24hBtn" Content="⏳ 24h" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="24h" Click="RetentionOption_Click"/>
+                                            <Button x:Name="Retention48hBtn" Content="⏳ 48h" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="48h" Click="RetentionOption_Click"/>
+                                            <Button x:Name="Retention7dBtn" Content="📅 7d" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="7d" Click="RetentionOption_Click"/>
+                                            <Button x:Name="Retention30dBtn" Content="🗓️ 30d" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="30d" Click="RetentionOption_Click"/>
+                                            <Button x:Name="RetentionWatchedBtn" Content="👁️ Watched" Style="{StaticResource GlassButton}" FontSize="9.5" Padding="7,3" Margin="0,0,4,4" Tag="Watched" Click="RetentionOption_Click"/>
+                                        </WrapPanel>
                                     </StackPanel>
                                 </Border>
 

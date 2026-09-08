@@ -23,11 +23,26 @@ class YouTubeRepository(
     val mutedChannels: Flow<List<com.example.data.model.MutedChannelEntity>> = mutedChannelDao.getAllMutedChannels()
 
     suspend fun muteChannel(channelName: String) {
-        mutedChannelDao.muteChannel(com.example.data.model.MutedChannelEntity(channelName))
+        val trimmed = channelName.trim()
+        if (trimmed.isBlank()) return
+        mutedChannelDao.muteChannel(com.example.data.model.MutedChannelEntity(trimmed))
+        videoDao.deleteVideosByChannel(trimmed)
+    }
+
+    suspend fun permanentlyDeleteChannel(channelName: String) {
+        muteChannel(channelName)
     }
 
     suspend fun unmuteChannel(channelName: String) {
-        mutedChannelDao.deleteByName(channelName)
+        val trimmed = channelName.trim()
+        if (trimmed.isBlank()) return
+        mutedChannelDao.deleteByName(trimmed)
+    }
+
+    suspend fun isChannelBlocked(channelName: String): Boolean {
+        val trimmed = channelName.trim()
+        if (trimmed.isBlank()) return false
+        return mutedChannelDao.isChannelMuted(trimmed)
     }
 
     suspend fun cleanupStaleRecommendations() {
@@ -76,6 +91,7 @@ class YouTubeRepository(
     }
 
     suspend fun saveVideo(video: VideoEntity) {
+        if (isChannelBlocked(video.channelName)) return
         val existing = videoDao.getVideoById(video.youtubeId)
         if (existing != null) {
             val updated = video.copy(

@@ -83,6 +83,43 @@ fun SettingsDialog(
     var isVpsTesting by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
+    var activeDownloadLocation by remember {
+        mutableStateOf(com.example.data.remote.VideoDownloadManager.getActiveLocation(context))
+    }
+
+    val folderPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            try {
+                val takeFlags: Int = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(uri, takeFlags)
+            } catch (e: Exception) { }
+
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+            var resolvedPath: String? = null
+            if (docId != null) {
+                val split = docId.split(":")
+                if (split.size >= 2) {
+                    val type = split[0]
+                    val relativePath = split[1]
+                    resolvedPath = if (type.equals("primary", ignoreCase = true)) {
+                        android.os.Environment.getExternalStorageDirectory().absolutePath + "/" + relativePath
+                    } else {
+                        "/storage/$type/$relativePath"
+                    }
+                }
+            }
+            if (resolvedPath == null) {
+                resolvedPath = uri.path ?: uri.toString()
+            }
+
+            com.example.data.remote.VideoDownloadManager.setDownloadLocation(context, "CUSTOM", resolvedPath, uri.toString())
+            activeDownloadLocation = com.example.data.remote.VideoDownloadManager.getActiveLocation(context)
+            android.widget.Toast.makeText(context, "📁 Download directory set to:\n$resolvedPath", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
     if (showLanguageDialog) {
         LanguageSelectionDialog(onDismiss = { showLanguageDialog = false })
     }
@@ -858,37 +895,6 @@ fun SettingsDialog(
                                 }
                             }
 
-                            Divider(color = Color.White.copy(alpha = 0.08f))
-
-                            // 4. Preferred Download Quality
-                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(
-                                    text = "Preferred Offline Download Quality:",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                                ) {
-                                    FilterChip(
-                                        selected = algorithmSettings.downloadResolution == "1080p",
-                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "1080p")) },
-                                        label = { Text("1080p FHD", fontSize = 10.sp) }
-                                    )
-                                    FilterChip(
-                                        selected = algorithmSettings.downloadResolution == "720p",
-                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "720p")) },
-                                        label = { Text("720p HD", fontSize = 10.sp) }
-                                    )
-                                    FilterChip(
-                                        selected = algorithmSettings.downloadResolution == "480p" || algorithmSettings.downloadResolution == "360p",
-                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "480p")) },
-                                        label = { Text("480p Saver", fontSize = 10.sp) }
-                                    )
-                                }
-                            }
 
                             Divider(color = Color.White.copy(alpha = 0.08f))
 
@@ -924,7 +930,323 @@ fun SettingsDialog(
                         }
                     }
 
-                    // 6. 🚫 Blocked Keywords & Channels (Streamlined 3D Dark)
+                    // 6. 📥 Downloads & Offline Storage (Streamlined 3D Dark)
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF14131E).copy(alpha = 0.85f)
+                        ),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                ) {
+                                    Text("📥", fontSize = 16.sp)
+                                    Column {
+                                        Text(
+                                            text = "Downloads & Offline Storage",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF81C784),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Folder location, duration & quality",
+                                            fontSize = 10.sp,
+                                            color = Color.White.copy(alpha = 0.55f),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                val currentRetention = algorithmSettings.autoDeleteDownloads
+                                val retentionLabel = when (currentRetention.lowercase()) {
+                                    "24h", "1d" -> "24 Hours"
+                                    "48h", "2d" -> "48 Hours"
+                                    "7d", "1w" -> "7 Days"
+                                    "30d", "1m" -> "30 Days"
+                                    "watched" -> "Watched"
+                                    else -> "Permanently"
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (retentionLabel == "Permanently") Color(0xFF4CAF50).copy(alpha = 0.15f) else Color(0xFFFF9800).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "⏱️ $retentionLabel",
+                                        color = if (retentionLabel == "Permanently") Color(0xFF81C784) else Color(0xFFFFB74D),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+
+                            // 0. Download Directory Controller (Pull-Down Menu)
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = "Download Directory:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+
+                                var showLocationDropdown by remember { mutableStateOf(false) }
+
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = Color(0xFF1E1C2E),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { showLocationDropdown = true }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.weight(1f).padding(end = 6.dp)
+                                            ) {
+                                                Text(
+                                                    text = when (activeDownloadLocation.type) {
+                                                        "DEFAULT" -> "📱 App Storage (.offline_videos)"
+                                                        "MOVIES" -> "🎬 Movies Folder"
+                                                        "DOWNLOADS" -> "📥 Downloads Folder"
+                                                        "SD_CARD" -> "💾 MicroSD Card"
+                                                        "CUSTOM" -> "📂 ${activeDownloadLocation.displayName}"
+                                                        else -> "📁 ${activeDownloadLocation.displayName}"
+                                                    },
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Filled.ArrowDropDown,
+                                                contentDescription = "Pull Down Menu",
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                    }
+
+                                    DropdownMenu(
+                                        expanded = showLocationDropdown,
+                                        onDismissRequest = { showLocationDropdown = false },
+                                        modifier = Modifier.widthIn(min = 280.dp)
+                                    ) {
+                                        val locations = com.example.data.remote.VideoDownloadManager.getAvailableLocations(context)
+                                        locations.forEach { loc ->
+                                            val isSelected = activeDownloadLocation.type == loc.type &&
+                                                (loc.type != "CUSTOM" || activeDownloadLocation.path == loc.path)
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(
+                                                            text = when (loc.type) {
+                                                                "DEFAULT" -> "📱 App Storage (.offline_videos)"
+                                                                "MOVIES" -> "🎬 Movies Folder"
+                                                                "DOWNLOADS" -> "📥 Downloads Folder"
+                                                                "SD_CARD" -> "💾 MicroSD Card"
+                                                                "CUSTOM" -> "📂 ${loc.displayName}"
+                                                                else -> loc.displayName
+                                                            },
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                            color = if (isSelected) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                            fontSize = 12.sp
+                                                        )
+                                                        Text(
+                                                            text = loc.path,
+                                                            fontSize = 9.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                },
+                                                leadingIcon = {
+                                                    if (isSelected) {
+                                                        Icon(Icons.Filled.Check, contentDescription = null, tint = YouTubeRed, modifier = Modifier.size(16.dp))
+                                                    } else {
+                                                        Spacer(modifier = Modifier.size(16.dp))
+                                                    }
+                                                },
+                                                onClick = {
+                                                    showLocationDropdown = false
+                                                    com.example.data.remote.VideoDownloadManager.setDownloadLocation(context, loc.type, loc.path)
+                                                    activeDownloadLocation = com.example.data.remote.VideoDownloadManager.getActiveLocation(context)
+                                                    android.widget.Toast.makeText(context, "📁 Saved to: ${loc.displayName}", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            )
+                                        }
+
+                                        HorizontalDivider()
+
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = "➕ Browse / Choose Custom Folder...",
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF81C784),
+                                                    fontSize = 12.sp
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color(0xFF81C784), modifier = Modifier.size(16.dp))
+                                            },
+                                            onClick = {
+                                                showLocationDropdown = false
+                                                try {
+                                                    folderPickerLauncher.launch(null)
+                                                } catch (e: Exception) {
+                                                    android.widget.Toast.makeText(context, "Folder picker error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "Active path: ${activeDownloadLocation.path}",
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF81C784),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                            // 1. Download Folder Retention Duration
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = "Folder Retention Time (Stay in Download Folder):",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Default is permanently remain in download folder. Choose auto-cleanup if preferred.",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.55f)
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                                ) {
+                                    val cur = algorithmSettings.autoDeleteDownloads
+                                    FilterChip(
+                                        selected = cur.equals("Never", ignoreCase = true) || cur.equals("Permanently", ignoreCase = true) || cur.isBlank(),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "Never"))
+                                            android.widget.Toast.makeText(context, "♾️ Downloads will permanently remain in folder", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("♾️ Permanently (Default)", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = cur.equals("24h", ignoreCase = true),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "24h"))
+                                            android.widget.Toast.makeText(context, "⏱️ Downloads will stay for 24 Hours", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("⏳ 24h", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = cur.equals("48h", ignoreCase = true),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "48h"))
+                                            android.widget.Toast.makeText(context, "⏱️ Downloads will stay for 48 Hours", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("⏳ 48h", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = cur.equals("7d", ignoreCase = true),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "7d"))
+                                            android.widget.Toast.makeText(context, "📅 Downloads will stay for 7 Days", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("📅 7d", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = cur.equals("30d", ignoreCase = true),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "30d"))
+                                            android.widget.Toast.makeText(context, "🗓️ Downloads will stay for 30 Days", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("🗓️ 30d", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = cur.equals("Watched", ignoreCase = true),
+                                        onClick = {
+                                            onAlgorithmSettingsChanged(algorithmSettings.copy(autoDeleteDownloads = "Watched"))
+                                            android.widget.Toast.makeText(context, "👁️ Downloads will delete after watched", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        label = { Text("👁️ Watched", fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+
+                            Divider(color = Color.White.copy(alpha = 0.08f))
+
+                            // 2. Preferred Download Quality
+                            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = "Preferred Offline Download Quality:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                                ) {
+                                    FilterChip(
+                                        selected = algorithmSettings.downloadResolution == "1080p",
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "1080p")) },
+                                        label = { Text("1080p FHD", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = algorithmSettings.downloadResolution == "720p",
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "720p")) },
+                                        label = { Text("720p HD", fontSize = 10.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = algorithmSettings.downloadResolution == "480p" || algorithmSettings.downloadResolution == "360p",
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(downloadResolution = "480p")) },
+                                        label = { Text("480p Saver", fontSize = 10.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 7. 🚫 Blocked Keywords & Channels (Streamlined 3D Dark)
                     Card(
                         colors = CardDefaults.cardColors(
                             containerColor = Color(0xFF14131E).copy(alpha = 0.85f)

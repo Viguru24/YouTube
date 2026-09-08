@@ -52,11 +52,14 @@ object YouTubeUtils {
         val hasShortsTag = titleLower.contains("#shorts") ||
                            titleLower.contains("#short") ||
                            titleLower.contains("/shorts/")
-        if (hasShortsTag) return true
+        if (hasShortsTag) {
+            val durationSec = parseFormattedTimeToSeconds(video.durationText)
+            return durationSec in 1..185 || durationSec == 0
+        }
 
-        val durationSec = parseFormattedTimeToSeconds(video.durationText)
-        if (durationSec in 1..65) return true
-
+        // Duration alone NEVER qualifies a video as a Short!
+        // YouTube Shorts are strictly vertical/square. A landscape (16:9) video
+        // under 60 seconds is a regular main video and must stay in the main video player.
         return false
     }
 
@@ -129,7 +132,7 @@ object YouTubeUtils {
             "alur cerita", "film sub indo", "sub indo", "live streaming indonesia", "sinopsis film", "rekap film",
             "berita terkini", "lagu terbaru",
 
-            // South Asian / Hindi / Urdu / Pakistani (Romanized)
+            // South Asian / Hindi / Urdu / Pakistani / Indian Media Networks & Keywords
             "kaise kare", "kaise banaye", "taaza khabar", "aaj ki taaza", "pakistani drama", "indian drama",
             "full episode", "full drama", "naat sharif", "bayan video", "tarjuma quran", "qawwali live",
             "new song lyrical", "desi comedy", "dekhie kya hua", "kya hua jab", "dekho kya hua", "sune aur dekhe",
@@ -137,6 +140,24 @@ object YouTubeUtils {
             "abp news", "zee news", "geo news", "bol news", "samaa tv", "dunya news", "express news",
             "shemaroo filmi", "goldmines telefilms", "t-series", "speed records", "desh ki baat", "aaj ki badi khabar",
             "breaking news pakistan", "breaking news india", "live news hindi", "khabrein aaj ki",
+            "india today", "republic bharat", "republic world", "republic tv", "times now", "tv9 bharatvarsh",
+            "india tv", "news18", "news 18", "wion news", "dainik bhaskar", "amar ujala", "hindustan times",
+            "zee cinema", "zee music", "sony music india", "colors tv", "dangal tv", "yrf music", "tips official",
+            "south movie hindi", "hindi dubbed", "full movie hindi", "hindi song", "hindi songs", "punjabi song",
+            "bhojpuri song", "latest hindi", "new hindi", "village cooking", "village food", "drishti ias",
+            "physics wallah", "khan sir", "virat kohli", "rohit sharma", "team india", "ipl 2024", "ipl 2025", "ipl 2026",
+            "rahul gandhi", "narendra modi", "yogi adityanath", "arvind kejriwal", "amit shah",
+            "mr indian hacker", "crazy xyz", "fact mine", "anand facts", "a2 motivation", "pawan sahu",
+            "sourav joshi", "total gaming", "triggered insaan", "fukra insaan", "round2hell", "round 2 hell",
+            "ashish chanchlani", "carryminati", "bb ki vines", "technical guruji", "manoj dey", "tech burner",
+            "trakin tech", "dushyant kukreja", "priyanka chauhan", "sandeep maheshwari", "vivek bindra",
+            "dhruv rathee", "khan gs", "study iq", "techno gamerz", "payal gaming", "desi gamers",
+            "free fire india", "bgmi", "battlegrounds mobile india", "pubg mobile india", "bollywood spy",
+            "viral bhayani", "manav manglani", "instant bollywood", "punjab kesari", "navbharat times",
+            "amar ujala", "dainik bhaskar", "hindustan times", "times now navbharat",
+            "aaj ki", "bhai ki", "bhai ka", "kya hoga", "kya hota", "dekh kar", "dekh ke", "dekh lo",
+            "wait for twist", "wait for the twist", "asli sach", "asli chehra", "viral video india",
+            "indian viral", "indian meme", "desi meme", "desi jugad", "desi jugaad", "cricket shorts", "ipl shorts",
 
             // Filipino / Tagalog
             "buong episode", "balita ngayon", "ulat balita", "pilipinas balita"
@@ -183,6 +204,19 @@ object YouTubeUtils {
             "khabar", "khabrain", "rishta", "tamasha", "nuskha", "ilaaj", "totkay", "wazifa", "wazaif",
             "rohani", "kundli", "rashifal", "rashi", "dharma", "mandir", "masjid", "dargah", "satsang",
             "pravachan", "katha", "sindh", "sindhi", "baloch", "balochi", "pashto", "kashmir", "kashmiri",
+            "wion", "wionews", "timesnow", "indiatoday", "indiatv", "republicworld", "tv9", "ddnews", "lallantop",
+            "sansad", "doordarshan", "crore", "crores", "lakh", "lakhs", "rupee", "rupees", "inr",
+            "delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "punjab", "haryana",
+            "bihar", "kerala", "gujarat", "maharashtra", "rajasthan", "modi", "bjp", "ipl", "bcci", "kohli",
+            "bhai", "bhaiya", "didi", "chachi", "chacha", "mama", "mami", "dada", "dadi", "nana", "nani",
+            "sahab", "saheb", "pandit", "panditji", "sharmaji", "guptaji", "yadav", "tiwari", "mishra",
+            "pandey", "chauhan", "rathore", "rajput", "jaat", "gujjar", "maratha", "brahmin", "kisan",
+            "jawan", "deshbhakt", "deshbhakti", "hindustani", "sanatan", "sanatani", "hindu", "hindutva",
+            "mahadev", "bholenath", "bajrangbali", "ganpati", "iskcon", "swaminarayan", "sadhu", "maharaj",
+            "guruji", "babaji", "dangal", "kabaddi", "dhoni", "hardik", "thala", "ict", "namo",
+            "pappu", "kejriwal", "yogi", "dhruv", "rathee", "carryminati", "chanchlani", "sourav", "joshi",
+            "insaan", "mythpat", "ujjwal", "raistar", "jugaad", "jugad", "bhindi", "paneer", "roti", "paratha",
+            "biryani", "samosa", "chai", "dhabha", "dhaba", "chutney", "rasgulla", "gulabjamun", "golgappa",
 
             // Filipino / Tagalog
             "teleserye", "balita", "pinoy", "pilipinas"

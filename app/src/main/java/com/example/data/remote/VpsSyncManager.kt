@@ -176,6 +176,16 @@ object VpsSyncManager {
             val watchedEntities = allVideos.filter { it.lastWatchedTimestamp > 0L || it.lastPositionSeconds > 0 }
             val favorites = allVideos.filter { it.isFavorite }.map { it.youtubeId }
 
+            val creatorPrefs = context.getSharedPreferences("creator_prefs", Context.MODE_PRIVATE)
+            val localCreators = if (subscribedChannels.isNotEmpty()) {
+                subscribedChannels
+            } else {
+                creatorPrefs.getStringSet("subscribed_creators", emptySet())?.toList() ?: emptyList()
+            }
+
+            val algoPrefs = context.getSharedPreferences("algo_prefs", Context.MODE_PRIVATE)
+            val localDislikes = algoPrefs.getStringSet("disliked_video_ids", emptySet()) ?: emptySet()
+
             val watchedJsonArray = JSONArray()
             watchedEntities.forEach { v ->
                 val obj = JSONObject().apply {
@@ -194,13 +204,16 @@ object VpsSyncManager {
             favorites.forEach { favJsonArray.put(it) }
 
             val subJsonArray = JSONArray()
-            subscribedChannels.forEach { subJsonArray.put(it) }
+            localCreators.forEach { subJsonArray.put(it) }
+
+            val disJsonArray = JSONArray()
+            localDislikes.forEach { disJsonArray.put(it) }
 
             val payload = JSONObject().apply {
                 put("client_id", "vixz-android")
                 put("watched", watchedJsonArray)
                 put("favorites", favJsonArray)
-                put("disliked_videos", JSONArray())
+                put("disliked_videos", disJsonArray)
                 put("disliked_channels", JSONArray())
                 put("subscribed_channels", subJsonArray)
             }
@@ -218,13 +231,30 @@ object VpsSyncManager {
                 var mergedCount = 0
                 val serverWatched = respJson.optJSONArray("watched")
                 if (serverWatched != null) {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).apply {
+                        timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    }
                     for (i in 0 until serverWatched.length()) {
                         val item = serverWatched.optJSONObject(i) ?: continue
                         val vid = item.optString("video_id")
                         if (vid.isBlank()) continue
 
                         val pos = item.optInt("position", 0)
-                        val watchedAt = item.optLong("watched_at", System.currentTimeMillis())
+                        val rawWatchedAt = item.optString("watched_at", "")
+                        val watchedAt = if (rawWatchedAt.isNotBlank()) {
+                            try {
+                                rawWatchedAt.toLong()
+                            } catch (e: Exception) {
+                                try {
+                                    sdf.parse(rawWatchedAt)?.time ?: System.currentTimeMillis()
+                                } catch (e2: Exception) {
+                                    System.currentTimeMillis()
+                                }
+                            }
+                        } else {
+                            System.currentTimeMillis()
+                        }
+
                         val title = item.optString("title", "Video $vid")
                         val channel = item.optString("channel", "YouTube")
                         val thumb = item.optString("thumbnail", "https://img.youtube.com/vi/$vid/hqdefault.jpg")
@@ -251,6 +281,35 @@ object VpsSyncManager {
                         }
                     }
                 }
+
+                // 2. Merge Favorites from Server
+                val serverFavs = respJson.optJSONArray("favorites")
+                if (serverFavs != null) {
+                    for (i in 0 until serverFavs.length()) {
+                        val item = serverFavs.optJSONObject(i)
+                        val fVid = item?.optString("video_id") ?: serverFavs.optString(i, "").trim()
+                        if (fVid.isNotBlank()) {
+                            val existing = videoDao.getVideoById(fVid)
+                            if (existing != null) {
+                                if (!existing.isFavorite) {
+                                    videoDao.updateFavorite(fVid, true)
+                                }
+                            } else {
+                                videoDao.insertVideo(
+                                    VideoEntity(
+                                        youtubeId = fVid,
+                                        title = item?.optString("title", "Favorite") ?: "Favorite",
+                                        channelName = item?.optString("channel", "YouTube") ?: "YouTube",
+                                        thumbnailUrl = "https://i.ytimg.com/vi/$fVid/hqdefault.jpg",
+                                        isFavorite = true
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 3. Merge Subscribed Channels
                 val serverSubs = respJson.optJSONArray("subscribed_channels") ?: respJson.optJSONArray("subscribedChannels")
                 if (serverSubs != null && serverSubs.length() > 0) {
                     val incoming = mutableListOf<String>()
@@ -259,7 +318,26 @@ object VpsSyncManager {
                         if (s.isNotBlank()) incoming.add(s)
                     }
                     if (incoming.isNotEmpty()) {
-                        onSubscriptionsUpdated?.invoke(incoming)
+                        val existingSubs = creatorPrefs.getStringSet("subscribed_creators", emptySet())?.toMutableSet() ?: mutableSetOf()
+                        val prevCount = existingSubs.size
+                        existingSubs.addAll(incoming)
+                        if (existingSubs.size > prevCount) {
+                            creatorPrefs.edit().putStringSet("subscribed_creators", existingSubs).apply()
+                        }
+                        onSubscriptionsUpdated?.invoke(existingSubs.toList())
+                    }
+                }
+
+                // 4. Merge Disliked Videos
+                val serverDislikes = respJson.optJSONArray("disliked_videos")
+                if (serverDislikes != null && serverDislikes.length() > 0) {
+                    val mergedDislikes = localDislikes.toMutableSet()
+                    for (i in 0 until serverDislikes.length()) {
+                        val d = serverDislikes.optString(i, "").trim()
+                        if (d.isNotBlank()) mergedDislikes.add(d)
+                    }
+                    if (mergedDislikes.size > localDislikes.size) {
+                        algoPrefs.edit().putStringSet("disliked_video_ids", mergedDislikes).apply()
                     }
                 }
 

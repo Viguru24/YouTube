@@ -25,6 +25,7 @@ namespace VixzDesktop.Services
         public List<VideoItem> WatchLater { get; set; } = new List<VideoItem>();
         public List<VideoItem> WatchHistory { get; set; } = new List<VideoItem>();
         public List<VideoItem> Downloads { get; set; } = new List<VideoItem>();
+        public string DownloadRetention { get; set; } = "Never"; // "Never" (Permanently), "24h", "48h", "7d", "30d", "Watched"
         public List<string> DislikedVideoIds { get; set; } = new List<string>();
         public List<string> DeletedVideoIds { get; set; } = new List<string>();
         public List<string> DislikedChannels { get; set; } = new List<string>();
@@ -225,6 +226,19 @@ namespace VixzDesktop.Services
                 Settings.DislikedChannels.Add(channelName);
                 Save();
             }
+        }
+
+        public static void PermanentlyDeleteChannel(string channelName)
+        {
+            if (string.IsNullOrWhiteSpace(channelName)) return;
+            var ch = channelName.Trim();
+            AddDislikedChannel(ch);
+            Settings.SubscribedChannels.RemoveAll(c => c.Equals(ch, StringComparison.OrdinalIgnoreCase));
+            Settings.Favorites.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+            Settings.WatchLater.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+            Settings.WatchHistory.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+            Settings.Downloads.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+            Save();
         }
 
         public static void RemoveDislikedChannel(string channelName)

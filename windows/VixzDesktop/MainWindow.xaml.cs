@@ -1617,6 +1617,7 @@ namespace VixzDesktop
             var result = new List<VideoItem>();
             try
             {
+                CleanExpiredDownloads();
                 var folder = DownloadService.GetDownloadsFolder();
                 if (System.IO.Directory.Exists(folder))
                 {
@@ -2502,6 +2503,29 @@ namespace VixzDesktop
             }
         }
 
+        private void ContextMenuDeleteChannel_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && menuItem.DataContext is VideoItem video && !string.IsNullOrWhiteSpace(video.ChannelTitle))
+            {
+                var ch = video.ChannelTitle.Trim();
+                var result = MessageBox.Show(
+                    $"Are you sure you want to permanently delete and block the channel '{ch}'?\n\nAll videos from this channel will be removed and you will never see recommendations or videos from this channel again.",
+                    "Permanently Delete Channel",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    StorageService.PermanentlyDeleteChannel(ch);
+                    _currentFeed.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+                    _rawUnfilteredFeed.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                    ShowToast($"🚫 Channel '{ch}' permanently deleted & blocked!");
+                }
+            }
+        }
+
         #region Video Tile Quick Action Buttons (Thumbs Up, Thumbs Down, Delete)
 
         private void CardThumbsUp_Click(object sender, RoutedEventArgs e)
@@ -3118,6 +3142,117 @@ namespace VixzDesktop
             var targetDir = ScreenshotService.GetTargetDirectory();
             if (CurrentFolderText != null) CurrentFolderText.Text = targetDir;
             if (PopupCurrentFolderText != null) PopupCurrentFolderText.Text = targetDir;
+            UpdateRetentionUi();
+        }
+
+        private void RetentionOption_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string tag)
+            {
+                StorageService.Settings.DownloadRetention = tag;
+                StorageService.Save();
+                UpdateRetentionUi();
+                CleanExpiredDownloads();
+                var label = tag == "Never" ? "Permanently" : tag;
+                ShowToast($"⏱️ Download retention set to {label}");
+            }
+        }
+
+        private void UpdateRetentionUi()
+        {
+            var retention = StorageService.Settings.DownloadRetention ?? "Never";
+            var label = retention switch
+            {
+                "24h" => "24 Hours",
+                "48h" => "48 Hours",
+                "7d" => "7 Days",
+                "30d" => "30 Days",
+                "Watched" => "Watched",
+                _ => "Permanently"
+            };
+
+            if (PopupRetentionBadge != null)
+            {
+                PopupRetentionBadge.Text = $"⏱️ {label}";
+                PopupRetentionBadge.Foreground = label == "Permanently"
+                    ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#81C784"))
+                    : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFB74D"));
+            }
+
+            var activeBg = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#3E2D54"));
+            var normalBg = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#222032"));
+
+            if (RetentionNeverBtn != null) RetentionNeverBtn.Background = retention.Equals("Never", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+            if (Retention24hBtn != null) Retention24hBtn.Background = retention.Equals("24h", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+            if (Retention48hBtn != null) Retention48hBtn.Background = retention.Equals("48h", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+            if (Retention7dBtn != null) Retention7dBtn.Background = retention.Equals("7d", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+            if (Retention30dBtn != null) Retention30dBtn.Background = retention.Equals("30d", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+            if (RetentionWatchedBtn != null) RetentionWatchedBtn.Background = retention.Equals("Watched", StringComparison.OrdinalIgnoreCase) ? activeBg : normalBg;
+        }
+
+        private void CleanExpiredDownloads()
+        {
+            var retention = StorageService.Settings.DownloadRetention ?? "Never";
+            if (retention.Equals("Never", StringComparison.OrdinalIgnoreCase) || retention.Equals("Permanently", StringComparison.OrdinalIgnoreCase))
+            {
+                return; // Downloads permanently remain in download folder
+            }
+
+            try
+            {
+                var folder = DownloadService.GetDownloadsFolder();
+                if (!System.IO.Directory.Exists(folder)) return;
+
+                var threshold = retention switch
+                {
+                    "24h" => TimeSpan.FromHours(24),
+                    "48h" => TimeSpan.FromHours(48),
+                    "7d"  => TimeSpan.FromDays(7),
+                    "30d" => TimeSpan.FromDays(30),
+                    _     => TimeSpan.MaxValue
+                };
+
+                var files = System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.TopDirectoryOnly)
+                    .Where(f => f.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".m4a", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".webm", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                var now = DateTime.Now;
+                var watchedIds = StorageService.Settings.WatchHistory.Select(h => h.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var file in files)
+                {
+                    bool shouldDelete = false;
+                    var fileTime = System.IO.File.GetLastWriteTime(file);
+
+                    if (retention.Equals("Watched", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var fileNameNoExt = System.IO.Path.GetFileNameWithoutExtension(file);
+                        var match = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"([a-zA-Z0-9_-]{11})$");
+                        var videoId = match.Success ? match.Groups[1].Value : fileNameNoExt;
+                        if (watchedIds.Contains(videoId))
+                        {
+                            shouldDelete = true;
+                        }
+                    }
+                    else if (threshold < TimeSpan.MaxValue && (now - fileTime) >= threshold)
+                    {
+                        shouldDelete = true;
+                    }
+
+                    if (shouldDelete)
+                    {
+                        try { System.IO.File.Delete(file); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[CleanExpiredDownloads] Error: {ex.Message}");
+            }
         }
 
         #endregion

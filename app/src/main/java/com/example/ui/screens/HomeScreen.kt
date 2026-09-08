@@ -26,11 +26,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,6 +106,19 @@ fun HomeScreen(
     val coroutineScope = rememberCoroutineScope()
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
     val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val dismissKeyboard: () -> Unit = {
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+    }
+
+    // Automatically remove keyboard and clear focus as soon as the user scrolls results or feed
+    LaunchedEffect(gridState.isScrollInProgress) {
+        if (gridState.isScrollInProgress) {
+            dismissKeyboard()
+        }
+    }
+
     var isSearchExpanded by remember { mutableStateOf(searchQuery.isNotEmpty()) }
     var searchTextFieldValue by remember {
         mutableStateOf(
@@ -116,9 +132,14 @@ fun HomeScreen(
     // Sync external searchQuery changes to local searchTextFieldValue and expanded state
     LaunchedEffect(searchQuery) {
         if (searchQuery != searchTextFieldValue.text) {
+            val targetSelection = if (searchTextFieldValue.selection.max <= searchQuery.length) {
+                searchTextFieldValue.selection
+            } else {
+                TextRange(searchQuery.length)
+            }
             searchTextFieldValue = TextFieldValue(
                 text = searchQuery,
-                selection = TextRange(searchQuery.length)
+                selection = targetSelection
             )
         }
         if (searchQuery.isNotEmpty() && !isSearchExpanded) {
@@ -133,7 +154,7 @@ fun HomeScreen(
             onSearchQueryChanged("")
         }
         isSearchExpanded = false
-        keyboardController?.hide()
+        dismissKeyboard()
     }
 
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
@@ -157,12 +178,16 @@ fun HomeScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spokenText.isNullOrBlank()) {
+                if (selectedSubscribedChannel.isNotBlank()) {
+                    onSubscribedChannelSelected("")
+                }
                 searchTextFieldValue = TextFieldValue(
                     text = spokenText,
                     selection = TextRange(spokenText.length)
                 )
                 onSearchQueryChanged(spokenText)
                 isSearchExpanded = true
+                dismissKeyboard()
             }
         }
     }
@@ -194,105 +219,79 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                windowInsets = WindowInsets.statusBars,
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                navigationIcon = {
-                    if (isSearchExpanded) {
-                        IconButton(onClick = {
-                            searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
-                            onSearchQueryChanged("")
-                            isSearchExpanded = false
-                            keyboardController?.hide()
-                        }) {
+            if (isSearchExpanded) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 4.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+                                onSearchQueryChanged("")
+                                isSearchExpanded = false
+                                dismissKeyboard()
+                            },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                    }
-                },
-                title = {
-                    if (isSearchExpanded) {
-                        BasicTextField(
+                        Spacer(modifier = Modifier.width(4.dp))
+                        TextField(
                             value = searchTextFieldValue,
                             onValueChange = { newValue ->
                                 searchTextFieldValue = newValue
                                 if (newValue.text != searchQuery) {
                                     onSearchQueryChanged(newValue.text)
+                                    if (newValue.text.isNotBlank() && selectedSubscribedChannel.isNotBlank()) {
+                                        onSubscribedChannelSelected("")
+                                    }
                                 }
                             },
                             singleLine = true,
+                            maxLines = 1,
                             textStyle = TextStyle(
                                 fontSize = 15.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             ),
-                            cursorBrush = SolidColor(YouTubeRed),
-                            keyboardOptions = KeyboardOptions(
-                                imeAction = ImeAction.Search
-                            ),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                onSearchQueryChanged(searchTextFieldValue.text)
-                                keyboardController?.hide()
-                                if (com.example.util.YouTubeUtils.isExplicitYouTubeUrl(searchTextFieldValue.text)) {
-                                    val pastedId = com.example.util.YouTubeUtils.extractVideoId(searchTextFieldValue.text)
-                                    if (pastedId != null) {
-                                        val video = VideoEntity(
-                                            youtubeId = pastedId,
-                                            title = "YouTube Video",
-                                            channelName = "YouTube",
-                                            thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(pastedId),
-                                            durationText = "",
-                                            category = "YouTube"
-                                        )
-                                        onVideoClick(video)
-                                    }
-                                }
-                            }),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 6.dp)
-                                .focusRequester(focusRequester)
-                                .testTag("search_text_field"),
-                            decorationBox = { innerTextField ->
+                            placeholder = {
+                                Text(
+                                    text = "Search videos or channels...",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            trailingIcon = {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(44.dp)
-                                        .clip(RoundedCornerShape(22.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .border(
-                                            width = 1.dp,
-                                            color = YouTubeRed.copy(alpha = 0.4f),
-                                            shape = RoundedCornerShape(22.dp)
-                                        )
-                                        .padding(horizontal = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(end = 4.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.Search,
-                                        contentDescription = "Search",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier.weight(1f),
-                                        contentAlignment = Alignment.CenterStart
-                                    ) {
-                                        if (searchTextFieldValue.text.isEmpty()) {
-                                            Text(
-                                                text = "Search videos or channels...",
-                                                fontSize = 14.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    if (searchTextFieldValue.text.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                onSearchQueryChanged(searchTextFieldValue.text)
+                                                dismissKeyboard()
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Search,
+                                                contentDescription = "Search",
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
-                                        innerTextField()
-                                    }
-                                    if (searchTextFieldValue.text.isNotEmpty()) {
                                         IconButton(
                                             onClick = {
                                                 searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
@@ -320,9 +319,66 @@ fun HomeScreen(
                                         )
                                     }
                                 }
-                            }
+                            },
+                            shape = RoundedCornerShape(20.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                                cursorColor = YouTubeRed,
+                                selectionColors = androidx.compose.foundation.text.selection.TextSelectionColors(
+                                    handleColor = YouTubeRed,
+                                    backgroundColor = YouTubeRed.copy(alpha = 0.35f)
+                                )
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSearch = {
+                                    onSearchQueryChanged(searchTextFieldValue.text)
+                                    dismissKeyboard()
+                                    if (com.example.util.YouTubeUtils.isExplicitYouTubeUrl(searchTextFieldValue.text)) {
+                                        val pastedId = com.example.util.YouTubeUtils.extractVideoId(searchTextFieldValue.text)
+                                        if (pastedId != null) {
+                                            val video = VideoEntity(
+                                                youtubeId = pastedId,
+                                                title = "YouTube Video",
+                                                channelName = "YouTube",
+                                                thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(pastedId),
+                                                durationText = "",
+                                                category = "YouTube"
+                                            )
+                                            onVideoClick(video)
+                                        }
+                                    }
+                                },
+                                onDone = {
+                                    onSearchQueryChanged(searchTextFieldValue.text)
+                                    dismissKeyboard()
+                                }
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = YouTubeRed.copy(alpha = 0.45f),
+                                    shape = RoundedCornerShape(20.dp)
+                                )
+                                .focusRequester(focusRequester)
+                                .testTag("search_text_field")
                         )
-                    } else {
+                    }
+                }
+            } else {
+                TopAppBar(
+                    windowInsets = WindowInsets.statusBars,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             // Big round orange/red play button on the left without any text
                             Box(
@@ -331,6 +387,7 @@ fun HomeScreen(
                                     .clip(CircleShape)
                                     .background(YouTubeRed)
                                     .clickable {
+                                        dismissKeyboard()
                                         coroutineScope.launch {
                                             gridState.scrollToItem(0)
                                         }
@@ -436,16 +493,60 @@ fun HomeScreen(
                                     }
                                 }
                             }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Latest Filter Pill Button
+                            val isLatestActive = selectedCategory.contains("Latest", ignoreCase = true)
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (isLatestActive) YouTubeRed else MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isLatestActive) YouTubeRed else Color(0xFF333333)
+                                ),
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .clickable {
+                                        dismissKeyboard()
+                                        onCategorySelected("⚡ Latest")
+                                        if (selectedSubscribedChannel.isNotBlank()) {
+                                            onSubscribedChannelSelected("")
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.FlashOn,
+                                        contentDescription = "Latest",
+                                        tint = if (isLatestActive) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Latest",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isLatestActive) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
-                    }
-                },
-                actions = {
+                    },
+                    actions = {
                     if (!isSearchExpanded) {
                         val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
 
                         // 1. Search 🔍
                         IconButton(onClick = {
                             isSearchExpanded = true
+                            if (selectedSubscribedChannel.isNotBlank()) {
+                                onSubscribedChannelSelected("")
+                            }
                             searchTextFieldValue = searchTextFieldValue.copy(
                                 selection = TextRange(searchTextFieldValue.text.length)
                             )
@@ -601,6 +702,7 @@ fun HomeScreen(
                 }
             )
         }
+    }
     ) { paddingValues ->
         Column(
             modifier = modifier
@@ -674,8 +776,149 @@ fun HomeScreen(
             }
 
             // Category Filter Chips & Search Time Selector Row
-            val defaultCategories = listOf("All", "⏰ Last 24h", "Tech & Code", "Music", "Tutorials", "Gaming", "Focus & Ambient")
-            val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
+            val systemChips = listOf("All", "⚡ Latest", "⏰ Last 24h")
+            val topicNames = categories.map { it.name }.filter { name ->
+                !name.equals("All", ignoreCase = true) &&
+                !name.contains("Latest", ignoreCase = true) &&
+                !name.contains("24h", ignoreCase = true) &&
+                !name.contains("Last 24", ignoreCase = true)
+            }
+            val allCategoryNames = (systemChips + topicNames).distinct()
+
+            if (isSearchExpanded && searchTextFieldValue.text.isNotEmpty()) {
+                // Sleek Cursor Navigation & Precision Control Strip
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp)
+                ) {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        item {
+                            Text(
+                                text = "Cursor:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        searchTextFieldValue = searchTextFieldValue.copy(
+                                            selection = TextRange.Zero
+                                        )
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text("⇤ Start", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = YouTubeRed)
+                                }
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val cur = searchTextFieldValue.selection.start
+                                        if (cur > 0) {
+                                            searchTextFieldValue = searchTextFieldValue.copy(
+                                                selection = TextRange(cur - 1)
+                                            )
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text("◀ Left", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        val cur = searchTextFieldValue.selection.end
+                                        if (cur < searchTextFieldValue.text.length) {
+                                            searchTextFieldValue = searchTextFieldValue.copy(
+                                                selection = TextRange(cur + 1)
+                                            )
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text("Right ▶", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        searchTextFieldValue = searchTextFieldValue.copy(
+                                            selection = TextRange(searchTextFieldValue.text.length)
+                                        )
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text("End ⇥", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
+                                modifier = Modifier
+                                    .height(26.dp)
+                                    .clickable {
+                                        searchTextFieldValue = searchTextFieldValue.copy(
+                                            selection = TextRange(0, searchTextFieldValue.text.length)
+                                        )
+                                    }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text("Select All", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             if (searchQuery.isNotEmpty()) {
                 // Search Sort Bar & Upload Date Filter Bar
@@ -714,7 +957,10 @@ fun HomeScreen(
                             val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { onSearchSortOptionSelected(rawOpt) },
+                                onClick = { 
+                                    onSearchSortOptionSelected(rawOpt)
+                                    dismissKeyboard()
+                                },
                                 label = {
                                     Text(
                                         text = opt,
@@ -760,7 +1006,10 @@ fun HomeScreen(
                             val isSelected = filter.equals(selectedTimeFilter, ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { onTimeFilterSelected(filter) },
+                                onClick = { 
+                                    onTimeFilterSelected(filter)
+                                    dismissKeyboard()
+                                },
                                 label = { Text(filter, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Color(0xFF2A2A2A),
@@ -794,6 +1043,7 @@ fun HomeScreen(
                         FilterChip(
                             selected = isSelected,
                             onClick = {
+                                dismissKeyboard()
                                 onCategorySelected(category)
                                 if (selectedSubscribedChannel.isNotBlank()) {
                                     onSubscribedChannelSelected("")
@@ -828,6 +1078,26 @@ fun HomeScreen(
                         FilterChip(
                             selected = false,
                             onClick = { onOpenManageTopicsAndCreators(1) },
+                            label = { Text("+ Add Topic", fontWeight = FontWeight.SemiBold, color = YouTubeRed) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color(0xFF1C1C1E),
+                                labelColor = YouTubeRed
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = false,
+                                borderColor = YouTubeRed.copy(alpha = 0.5f),
+                                selectedBorderColor = YouTubeRed,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 1.dp
+                            )
+                        )
+                    }
+
+                    item {
+                        FilterChip(
+                            selected = false,
+                            onClick = { onOpenManageTopicsAndCreators(1) },
                             label = { Text("✏️ Edit Topics", fontWeight = FontWeight.SemiBold, color = Color.White) },
                             colors = FilterChipDefaults.filterChipColors(
                                 containerColor = Color(0xFF141414),
@@ -854,13 +1124,14 @@ fun HomeScreen(
             }
 
             val mutedChannelNames = remember(mutedChannels) {
-                mutedChannels.map { it.channelName.lowercase().trim() }.toSet()
+                mutedChannels.map { it.channelName.lowercase().trim() }.filter { it.isNotEmpty() }.toSet()
             }
 
             fun isVideoHidden(video: VideoEntity): Boolean {
                 val isWatched = video.youtubeId in watchedIds
                 val isDisliked = video.youtubeId in dislikedVideoIds
-                val isMuted = video.channelName.lowercase().trim() in mutedChannelNames
+                val chName = video.channelName.lowercase().trim()
+                val isMuted = chName in mutedChannelNames || mutedChannelNames.any { it == chName || (it.length >= 3 && chName.contains(it)) }
                 return isWatched || isDisliked || isMuted
             }
 
@@ -884,14 +1155,7 @@ fun HomeScreen(
                 historyVideos,
                 algorithmSettings
             ) {
-                val rawDisplayList = if (selectedSubscribedChannel.isNotBlank()) {
-                    val targetCh = selectedSubscribedChannel.lowercase().trim()
-                    candidateList.filter { video ->
-                        val vCh = video.channelName.lowercase().trim()
-                        (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
-                        (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video)
-                    }.distinctBy { it.youtubeId }
-                } else if (searchQuery.isNotBlank() && extractedVideoId == null) {
+                val rawDisplayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
                     val searchList = if (liveSearchResults.isNotEmpty()) {
                         liveSearchResults
                     } else {
@@ -901,6 +1165,13 @@ fun HomeScreen(
                         }
                     }
                     searchList.filter { !isVideoHidden(it) }.distinctBy { it.youtubeId }
+                } else if (selectedSubscribedChannel.isNotBlank()) {
+                    val targetCh = selectedSubscribedChannel.lowercase().trim()
+                    candidateList.filter { video ->
+                        val vCh = video.channelName.lowercase().trim()
+                        (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
+                        (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video)
+                    }.distinctBy { it.youtubeId }
                 } else if (selectedCategory == "🔔 Subscriptions") {
                     val subSet = subscribedChannelsList.map { it.lowercase().trim() }.filter { it.isNotBlank() }
                     candidateList.filter { video ->
@@ -930,10 +1201,28 @@ fun HomeScreen(
                             .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                             .take(25)
                     }
-                } else if (selectedCategory != "All") {
-                    candidateList
-                        .filter { (it.category.equals(selectedCategory, ignoreCase = true) || selectedCategory == "All") && !isVideoHidden(it) }
+                } else if (selectedCategory.contains("Latest", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    allCandidate
+                        .filter { !isVideoHidden(it) }
+                        .sortedWith(
+                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                                .thenByDescending { it.addedTimestamp }
+                        )
                         .distinctBy { it.youtubeId }
+                } else if (selectedCategory != "All") {
+                    val primaryMatches = candidateList
+                        .filter { (it.category.equals(selectedCategory, ignoreCase = true) ||
+                                   it.title.contains(selectedCategory, ignoreCase = true) ||
+                                   it.channelName.contains(selectedCategory, ignoreCase = true)) && !isVideoHidden(it) }
+                        .distinctBy { it.youtubeId }
+                    if (primaryMatches.isNotEmpty()) {
+                        primaryMatches
+                    } else if (categoryVideos.isNotEmpty()) {
+                        categoryVideos.filter { !isVideoHidden(it) }.distinctBy { it.youtubeId }
+                    } else {
+                        emptyList()
+                    }
                 } else {
                     // Main Home Feed: strictly filter out any video that has been watched, disliked, or muted!
                     candidateList
@@ -969,12 +1258,7 @@ fun HomeScreen(
                     settings = algorithmSettings
                 )
 
-                if (selectedSubscribedChannel.isNotBlank()) {
-                    timeFilteredList.sortedWith(
-                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                            .thenByDescending { it.addedTimestamp }
-                    )
-                } else if (searchQuery.isNotBlank()) {
+                if (searchQuery.isNotBlank()) {
                     when (searchSortOption) {
                         "Most Popular" -> timeFilteredList.sortedWith(
                             compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
@@ -986,6 +1270,11 @@ fun HomeScreen(
                                 .thenByDescending { it.addedTimestamp }
                         )
                     }
+                } else if (selectedSubscribedChannel.isNotBlank()) {
+                    timeFilteredList.sortedWith(
+                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            .thenByDescending { it.addedTimestamp }
+                    )
                 } else when (selectedSort) {
                     "Oldest" -> rankedDisplayList.sortedWith(
                         compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
@@ -1001,13 +1290,33 @@ fun HomeScreen(
                 }
             }
 
-            if (displayList.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+            var isRefreshing by remember { mutableStateOf(false) }
+
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    isRefreshing = true
+                    coroutineScope.launch {
+                        onRefreshFeed()
+                        kotlinx.coroutines.delay(1200L)
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+            ) {
+                if (displayList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .pointerInput(Unit) {
+                                detectTapGestures(onTap = { dismissKeyboard() })
+                            }
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
@@ -1020,7 +1329,7 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (selectedSubscribedChannel.isNotBlank()) "Fetching latest videos for '$selectedSubscribedChannel'..." else if (searchQuery.isNotEmpty()) "Searching YouTube for '$searchQuery'..." else "Loading $selectedCategory videos...",
+                            text = if (searchQuery.isNotEmpty()) "Searching YouTube for '$searchQuery'..." else if (selectedSubscribedChannel.isNotBlank()) "Fetching latest videos for '$selectedSubscribedChannel'..." else "Loading $selectedCategory videos...",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -1055,8 +1364,14 @@ fun HomeScreen(
                     if (algorithmSettings.shortsMode == "Hidden") {
                         emptyList()
                     } else {
-                        val fromDisplay = displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
-                        val fromQueue = shortsQueue.filter { !isVideoHidden(it) }
+                        val fromDisplay = displayList.filter {
+                            com.example.util.YouTubeUtils.isShortVideo(it) &&
+                            !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
+                        }
+                        val fromQueue = shortsQueue.filter {
+                            !isVideoHidden(it) &&
+                            !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
+                        }
                         (fromQueue + fromDisplay).distinctBy { it.youtubeId }
                     }
                 }
@@ -1077,7 +1392,7 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                    if (selectedSubscribedChannel.isNotBlank()) {
+                    if (selectedSubscribedChannel.isNotBlank() && searchQuery.isBlank()) {
                         item(span = { GridItemSpan(2) }) {
                             Row(
                                 modifier = Modifier
@@ -1166,6 +1481,7 @@ fun HomeScreen(
                                         ShortsReelCard(
                                             video = shortVideo,
                                             onClick = {
+                                                dismissKeyboard()
                                                 android.util.Log.d("ShortsReel", "ShortsReelCard CLICKED: ${shortVideo.youtubeId} - ${shortVideo.title}")
                                                 onShortClick(shortVideo)
                                             }
@@ -1193,7 +1509,10 @@ fun HomeScreen(
 
                         VideoCard(
                             video = video,
-                            onVideoClick = onVideoClick,
+                            onVideoClick = { v ->
+                                dismissKeyboard()
+                                onVideoClick(v)
+                            },
                             onFavoriteToggle = onFavoriteToggle,
                             onWatchLaterToggle = onWatchLaterToggle,
                             onDeleteClick = onDeleteVideo,
@@ -1201,7 +1520,10 @@ fun HomeScreen(
                             onMuteChannel = onMuteChannel,
                             onSaveToSubject = { v -> videoToSaveToSubject = v },
                             onNotInterested = onDeleteVideo,
-                            onChannelClick = onSubscribedChannelSelected,
+                            onChannelClick = { ch ->
+                                dismissKeyboard()
+                                onSubscribedChannelSelected(ch)
+                            },
                             modifier = Modifier.animateItem()
                         )
                     }
@@ -1260,6 +1582,7 @@ fun HomeScreen(
                     }
                 }
             }
+        }
         }
 
         if (videoToSaveToSubject != null) {

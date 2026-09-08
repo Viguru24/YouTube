@@ -299,6 +299,8 @@ fun MainAppContent(
 
     val downloadedVideos by viewModel.downloadedVideos.collectAsStateWithLifecycle()
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
+    val algorithmSettings by viewModel.algorithmSettings.collectAsStateWithLifecycle()
+    val mutedChannels by viewModel.mutedChannels.collectAsStateWithLifecycle()
 
     val activeVideoId by viewModel.activeVideoId.collectAsStateWithLifecycle()
     val activeVideo by viewModel.activeVideo.collectAsStateWithLifecycle()
@@ -414,6 +416,7 @@ fun MainAppContent(
                     },
                     subscribedCreators = subscribedCreators,
                     onToggleSubscribe = { channelName -> viewModel.toggleSubscribedCreator(channelName) },
+                    onPermanentlyDeleteChannel = { channelName -> viewModel.permanentlyDeleteChannel(channelName) },
                     onSelectChannel = { channelName ->
                         viewModel.selectSubscribedChannel(channelName)
                         viewModel.clearActiveVideo()
@@ -520,7 +523,7 @@ fun MainAppContent(
                             searchQuery = searchQuery,
                             googleAccount = googleAccount,
                             onCategorySelected = { viewModel.selectedCategory.value = it },
-                            onSearchQueryChanged = { viewModel.searchQuery.value = it },
+                            onSearchQueryChanged = { viewModel.setSearchQuery(it) },
                             onVideoClick = { v -> viewModel.playVideo(v, isShort = false) },
                             onShortClick = { v -> viewModel.playShort(v) },
                             onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
@@ -549,7 +552,10 @@ fun MainAppContent(
                                 manageInitialTab = tab
                                 showManageTopicsAndCreatorsDialog = true
                             },
-                            onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) }
+                            onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
+                            algorithmSettings = algorithmSettings,
+                            mutedChannels = mutedChannels,
+                            onMuteChannel = { channelName -> viewModel.permanentlyDeleteChannel(channelName) }
                         )
                         1 -> LibraryScreen(
                             categories = categories,
@@ -567,7 +573,12 @@ fun MainAppContent(
                             historyVideos = watchHistory,
                             downloadedVideos = downloadedVideos,
                             onDeleteDownload = { v -> viewModel.deleteDownloadedVideo(v) },
-                            onOpenHistory = { previousNavIndex = selectedNavIndex; selectedNavIndex = 2 }
+                            downloadRetention = algorithmSettings.autoDeleteDownloads,
+                            onDownloadRetentionChanged = { retention ->
+                                viewModel.updateAlgorithmSettings(algorithmSettings.copy(autoDeleteDownloads = retention))
+                            },
+                            onOpenHistory = { previousNavIndex = selectedNavIndex; selectedNavIndex = 2 },
+                            onMuteChannel = { channelName -> viewModel.permanentlyDeleteChannel(channelName) }
                         )
                         2 -> HistoryScreen(
                             historyVideos = watchHistory,
@@ -642,8 +653,6 @@ fun MainAppContent(
 
         // App Settings Dialog
         if (showSettingsDialog) {
-            val algorithmSettings by viewModel.algorithmSettings.collectAsStateWithLifecycle()
-            val mutedChannels by viewModel.mutedChannels.collectAsStateWithLifecycle()
             com.example.ui.components.SettingsDialog(
                 areAdvertsEnabled = areAdvertsEnabled,
                 onAdvertsToggle = { viewModel.setAdvertsEnabled(it) },
@@ -671,6 +680,9 @@ fun MainAppContent(
                 onAddCategory = { name, icon, colorHex -> viewModel.addCategory(name, icon, colorHex) },
                 onRemoveCategory = { cat -> viewModel.deleteCategory(cat) },
                 onRenameCategory = { cat, newName -> viewModel.renameCategory(cat, newName) },
+                mutedChannels = mutedChannels,
+                onBlockChannel = { name -> viewModel.permanentlyDeleteChannel(name) },
+                onUnblockChannel = { name -> viewModel.unmuteChannel(name) },
                 initialTab = manageInitialTab,
                 onDismiss = { showManageTopicsAndCreatorsDialog = false }
             )
