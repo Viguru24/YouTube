@@ -447,6 +447,17 @@ object VideoDownloadManager {
             var finalDestinationPath = ""
             val rawFileLength = completedTempFile.length()
 
+            // Generate a clean, human-readable name using AI / smart sanitizer
+            val rawCleanName = AiSummarizerClient.generateCleanVideoTitle(context, video.title, video.channelName)
+            val safeBaseName = rawCleanName.replace(Regex("[\\\\/:*?\"<>|]"), "-")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+                .take(90)
+                .ifBlank { video.title.ifBlank { vidId } }
+                .replace(Regex("[\\\\/:*?\"<>|]"), "-")
+                .trim()
+            val finalFileName = "${safeBaseName}.mp4"
+
             if (active.type == "CUSTOM") {
                 val prefs = context.getSharedPreferences(PREFS_DOWNLOAD_NAME, Context.MODE_PRIVATE)
                 val customUriStr = prefs.getString(KEY_CUSTOM_URI, null)
@@ -458,9 +469,9 @@ object VideoDownloadManager {
                         val treeUri = Uri.parse(customUriStr)
                         val treeDoc = DocumentFile.fromTreeUri(context, treeUri)
                         if (treeDoc != null && treeDoc.exists()) {
-                            val existing = treeDoc.findFile("${vidId}.mp4")
+                            val existing = treeDoc.findFile(finalFileName) ?: treeDoc.findFile("${vidId}.mp4")
                             existing?.delete()
-                            val newDoc = treeDoc.createFile("video/mp4", "${vidId}.mp4")
+                            val newDoc = treeDoc.createFile("video/mp4", finalFileName)
                             if (newDoc != null) {
                                 context.contentResolver.openOutputStream(newDoc.uri)?.use { outStream ->
                                     completedTempFile.inputStream().use { inStream ->
@@ -469,7 +480,7 @@ object VideoDownloadManager {
                                 }
                                 finalDestinationPath = newDoc.uri.toString()
                                 safSaveSuccess = true
-                                Log.d(TAG, "Successfully wrote video via SAF to: $finalDestinationPath")
+                                Log.d(TAG, "Successfully wrote video via SAF as '$finalFileName': $finalDestinationPath")
                             }
                         }
                     } catch (e: Exception) {
@@ -478,7 +489,7 @@ object VideoDownloadManager {
                 }
 
                 if (!safSaveSuccess) {
-                    val targetFile = File(active.path, "${vidId}.mp4")
+                    val targetFile = File(active.path, finalFileName)
                     try {
                         if (targetFile.parentFile?.exists() == false) targetFile.parentFile?.mkdirs()
                         if (targetFile.exists()) targetFile.delete()
@@ -491,7 +502,7 @@ object VideoDownloadManager {
                     } catch (e: Exception) {
                         // Fallback to App Storage so the user never loses their download
                         val fallbackDir = getDownloadDir(context)
-                        val fallbackFile = File(fallbackDir, "${vidId}.mp4")
+                        val fallbackFile = File(fallbackDir, finalFileName)
                         if (fallbackFile.exists()) fallbackFile.delete()
                         completedTempFile.inputStream().use { inStream ->
                             FileOutputStream(fallbackFile).use { outStream ->
@@ -504,7 +515,7 @@ object VideoDownloadManager {
                 }
             } else {
                 val targetDir = getDownloadDir(context)
-                val targetFile = File(targetDir, "${vidId}.mp4")
+                val targetFile = File(targetDir, finalFileName)
                 if (targetFile.exists()) targetFile.delete()
                 completedTempFile.inputStream().use { inStream ->
                     FileOutputStream(targetFile).use { outStream ->

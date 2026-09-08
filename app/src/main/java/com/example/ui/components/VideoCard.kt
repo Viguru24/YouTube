@@ -314,11 +314,25 @@ fun VideoCard(
                         }
                     }
 
+                    // Watched progress bar along bottom edge of thumbnail
+                    val durationSec = remember(video.durationText) {
+                        com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(video.durationText)
+                    }
+                    val progressFraction = remember(video.lastPositionSeconds, video.lastWatchedTimestamp, durationSec) {
+                        when {
+                            durationSec > 0 && video.lastPositionSeconds > 0 -> {
+                                (video.lastPositionSeconds.toFloat() / durationSec.toFloat()).coerceIn(0.05f, 1f)
+                            }
+                            video.lastWatchedTimestamp > 0L -> 1f
+                            else -> 0f
+                        }
+                    }
+
                     // Duration Badge Bottom Right
                     if (video.durationText.isNotBlank()) {
                         Box(
                             modifier = Modifier
-                                .padding(4.dp)
+                                .padding(end = 4.dp, bottom = if (progressFraction > 0f) 7.dp else 4.dp)
                                 .align(Alignment.BottomEnd)
                                 .background(
                                     Color.Black.copy(alpha = 0.75f),
@@ -331,6 +345,23 @@ fun VideoCard(
                                 color = Color.White,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (progressFraction > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .align(Alignment.BottomStart)
+                                .background(Color.White.copy(alpha = 0.25f))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(progressFraction)
+                                    .fillMaxHeight()
+                                    .background(YouTubeRed)
                             )
                         }
                     }

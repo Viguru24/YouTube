@@ -772,6 +772,11 @@ fun PlayerScreen(
             onSaveToSubject = { selectedSubject ->
                 showSaveToSubjectDialog = false
                 onSaveToSubject(video, selectedSubject)
+            },
+            onSaveWithTitle = { selectedSubject, updatedTitle ->
+                showSaveToSubjectDialog = false
+                val updated = video.copy(title = updatedTitle, category = selectedSubject)
+                onSaveToSubject(updated, selectedSubject)
             }
         )
     }

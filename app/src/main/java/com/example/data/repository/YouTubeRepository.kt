@@ -213,10 +213,15 @@ class YouTubeRepository(
     }
 
     // Categories
-    suspend fun updateVideoCategory(youtubeId: String, newCategory: String) {
+    suspend fun updateVideoCategory(youtubeId: String, newCategory: String, newTitle: String? = null) {
         val existing = videoDao.getVideoById(youtubeId)
         if (existing != null) {
-            videoDao.insertVideo(existing.copy(category = newCategory))
+            val updated = if (!newTitle.isNullOrBlank()) {
+                existing.copy(category = newCategory, title = newTitle.trim())
+            } else {
+                existing.copy(category = newCategory)
+            }
+            videoDao.insertVideo(updated)
         }
     }
 

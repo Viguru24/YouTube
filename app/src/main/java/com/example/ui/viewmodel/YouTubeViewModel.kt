@@ -1055,9 +1055,18 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         selectSubscribedChannel(channelName)
     }
 
-    fun updateVideoCategory(videoId: String, newCategory: String) {
+    fun updateVideoCategory(videoId: String, newCategory: String, newTitle: String? = null) {
         viewModelScope.launch {
-            repository.updateVideoCategory(videoId, newCategory)
+            repository.updateVideoCategory(videoId, newCategory, newTitle)
+            if (_activeVideo.value?.youtubeId == videoId) {
+                val current = _activeVideo.value
+                if (current != null) {
+                    _activeVideo.value = current.copy(
+                        category = newCategory,
+                        title = if (!newTitle.isNullOrBlank()) newTitle.trim() else current.title
+                    )
+                }
+            }
         }
     }
 
@@ -1140,7 +1149,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         _inMemoryWatchedIds.value = _inMemoryWatchedIds.value + youtubeId
         _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != youtubeId }
         _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != youtubeId }
-        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != youtubeId }
         _shortsQueue.value = _shortsQueue.value.filter { it.youtubeId != youtubeId }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
@@ -1331,7 +1339,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             _shortsQueue.value = (currentList + shortVid).distinctBy { it.youtubeId }
         }
         _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != video.youtubeId }
-        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != video.youtubeId }
         
         // 1. Immediately launch video with 0ms delay
         playVideo(shortVid, isShort = true)

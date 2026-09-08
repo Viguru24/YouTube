@@ -1139,8 +1139,8 @@ fun HomeScreen(
                 mutedChannels.map { it.channelName.lowercase().trim() }.filter { it.isNotEmpty() }.toSet()
             }
 
-            fun isVideoHidden(video: VideoEntity): Boolean {
-                val isWatched = video.youtubeId in watchedIds
+            fun isVideoHidden(video: VideoEntity, isSearch: Boolean = false): Boolean {
+                val isWatched = if (isSearch) false else video.youtubeId in watchedIds
                 val isDisliked = video.youtubeId in dislikedVideoIds
                 val chName = video.channelName.lowercase().trim()
                 val isMuted = chName in mutedChannelNames || mutedChannelNames.any { it == chName || (it.length >= 3 && chName.contains(it)) }
@@ -1176,7 +1176,20 @@ fun HomeScreen(
                             it.channelName.contains(searchQuery, ignoreCase = true) 
                         }
                     }
-                    searchList.filter { !isVideoHidden(it) }.distinctBy { it.youtubeId }
+                    val historyMap = historyVideos.associateBy { it.youtubeId }
+                    searchList
+                        .filter { !isVideoHidden(it, isSearch = true) }
+                        .map { video ->
+                            historyMap[video.youtubeId]?.let { hist ->
+                                video.copy(
+                                    lastWatchedTimestamp = hist.lastWatchedTimestamp,
+                                    lastPositionSeconds = hist.lastPositionSeconds,
+                                    isFavorite = hist.isFavorite,
+                                    isWatchLater = hist.isWatchLater
+                                )
+                            } ?: video
+                        }
+                        .distinctBy { it.youtubeId }
                 } else if (selectedSubscribedChannel.isNotBlank()) {
                     val targetCh = selectedSubscribedChannel.lowercase().trim()
                     candidateList.filter { video ->
@@ -1604,6 +1617,11 @@ fun HomeScreen(
                 onDismiss = { videoToSaveToSubject = null },
                 onSaveToSubject = { subject ->
                     onSaveToSubject(videoToSaveToSubject!!, subject)
+                    videoToSaveToSubject = null
+                },
+                onSaveWithTitle = { subject, updatedTitle ->
+                    val updated = videoToSaveToSubject!!.copy(title = updatedTitle, category = subject)
+                    onSaveToSubject(updated, subject)
                     videoToSaveToSubject = null
                 }
             )

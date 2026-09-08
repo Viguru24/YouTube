@@ -103,6 +103,215 @@ object AiSummarizerClient {
         null
     }
 
+    /**
+     * Generates a clean, professional, human-readable title for a video using AI (Gemini or Groq)
+     * with an instant local smart sanitizer fallback.
+     * Perfect for saved subjects, playlist titles, and file downloads.
+     */
+    suspend fun generateCleanVideoTitle(
+        context: Context,
+        rawTitle: String,
+        channelName: String
+    ): String = withContext(Dispatchers.IO) {
+        val geminiKey = getGeminiApiKey(context)
+        val groqKey = getGroqApiKey(context)
+        val provider = getAiProvider(context)
+
+        // 1. Try configured AI Provider first
+        if (provider == "groq" && groqKey.isNotBlank()) {
+            val title = callGroqForTitle(groqKey, rawTitle, channelName)
+            if (!title.isNullOrBlank()) return@withContext title
+        }
+
+        if (geminiKey.isNotBlank()) {
+            val title = callGeminiForTitle(geminiKey, rawTitle, channelName)
+            if (!title.isNullOrBlank()) return@withContext title
+        }
+
+        if (groqKey.isNotBlank()) {
+            val title = callGroqForTitle(groqKey, rawTitle, channelName)
+            if (!title.isNullOrBlank()) return@withContext title
+        }
+
+        // 2. Fallback to smart local sanitizer
+        sanitizeLocalTitle(rawTitle, channelName)
+    }
+
+    private fun callGeminiForTitle(
+        apiKey: String,
+        rawTitle: String,
+        channelName: String
+    ): String? {
+        val models = listOf("gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-1.5-flash")
+        val prompt = """
+            You are an expert audio and video archivist.
+            Create a clean, elegant, standard human-readable title for this YouTube video.
+            Channel / Creator: "$channelName"
+            Raw Title: "$rawTitle"
+
+            Rules:
+            1. Strip all clickbait, emojis, ALL-CAPS shouting, and tag brackets like [OFFICIAL MUSIC VIDEO], (Official Video), [4K 60FPS], [HD], etc.
+            2. For music: format as "Artist - Song Title".
+            3. For shows, lectures, podcasts, or tutorials: format as "Channel/Show - Topic" or a concise descriptive title.
+            4. Do NOT add file extensions like .mp4.
+            5. Return ONLY the clean title text in plain text. No quotes, no markdown, no explanation.
+        """.trimIndent()
+
+        val jsonBody = JSONObject().apply {
+            val contentsArray = JSONArray().apply {
+                val contentObj = JSONObject().apply {
+                    put("role", "user")
+                    val partsArray = JSONArray().apply {
+                        put(JSONObject().put("text", prompt))
+                    }
+                    put("parts", partsArray)
+                }
+                put(contentObj)
+            }
+            put("contents", contentsArray)
+            put("generationConfig", JSONObject().apply {
+                put("temperature", 0.1)
+                put("maxOutputTokens", 60)
+            })
+        }
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody = jsonBody.toString().toRequestBody(mediaType)
+
+        for (model in models) {
+            try {
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(response.body?.string().orEmpty())
+                        val text = respJson.optJSONArray("candidates")
+                            ?.optJSONObject(0)
+                            ?.optJSONObject("content")
+                            ?.optJSONArray("parts")
+                            ?.optJSONObject(0)
+                            ?.optString("text", "")
+                            ?.trim()
+                            ?.removeSurrounding("\"")
+                            ?.removeSurrounding("'")
+                            ?.trim()
+                        if (!text.isNullOrBlank()) {
+                            return text
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating AI title with Gemini ($model): ${e.message}")
+            }
+        }
+        return null
+    }
+
+    private fun callGroqForTitle(
+        apiKey: String,
+        rawTitle: String,
+        channelName: String
+    ): String? {
+        val models = listOf("llama-3.3-70b-versatile", "llama-3.1-8b-instant")
+        val systemPrompt = "You are an expert video archivist. Return ONLY the clean, standard title for the given video. No commentary, no quotes."
+        val userPrompt = """
+            Channel: "$channelName"
+            Raw Title: "$rawTitle"
+            Produce a clean, concise, elegant title (e.g. "Artist - Song Title" or "Channel - Topic"). Strip [OFFICIAL VIDEO], 4K, emojis, clickbait, and tags. Return ONLY the title.
+        """.trimIndent()
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        for (model in models) {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("model", model)
+                    val messagesArray = JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "system")
+                            put("content", systemPrompt)
+                        })
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("content", userPrompt)
+                        })
+                    }
+                    put("messages", messagesArray)
+                    put("temperature", 0.1)
+                    put("max_tokens", 60)
+                }
+
+                val requestBody = jsonBody.toString().toRequestBody(mediaType)
+                val url = "https://api.groq.com/openai/v1/chat/completions"
+
+                val request = Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .header("Authorization", "Bearer $apiKey")
+                    .header("Content-Type", "application/json")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val respJson = JSONObject(response.body?.string().orEmpty())
+                        val text = respJson.optJSONArray("choices")
+                            ?.optJSONObject(0)
+                            ?.optJSONObject("message")
+                            ?.optString("content", "")
+                            ?.trim()
+                            ?.removeSurrounding("\"")
+                            ?.removeSurrounding("'")
+                            ?.trim()
+                        if (!text.isNullOrBlank()) {
+                            return text
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating AI title with Groq ($model): ${e.message}")
+            }
+        }
+        return null
+    }
+
+    /**
+     * Local intelligent title cleaner: strips clickbait, resolution badges, brackets, hashtags,
+     * and prepends creator name if appropriate.
+     */
+    fun sanitizeLocalTitle(rawTitle: String, channelName: String): String {
+        var clean = rawTitle.trim()
+
+        // 1. Remove bracketed junk like [Official Video], [4K], (Lyrics), etc.
+        clean = clean.replace(Regex("(?i)\\[\\s*(?:official|music|video|audio|lyrics|4k|hd|1080p|60fps|remastered|full|extended|prod\\.|visualizer|live|clip|teaser|mv|m/v|hq)[^\\]]*\\]"), "")
+        clean = clean.replace(Regex("(?i)\\(\\s*(?:official|music|video|audio|lyrics|4k|hd|1080p|60fps|remastered|full|extended|prod\\.|visualizer|live|clip|teaser|mv|m/v|hq)[^)]*\\)"), "")
+
+        // 2. Remove hashtags (e.g. #shorts, #music)
+        clean = clean.replace(Regex("#\\w+"), "")
+
+        // 3. Remove common emojis
+        clean = clean.replace(Regex("[\\p{So}\\p{Cn}]"), "")
+
+        // 4. Remove leading/trailing quotes and clean extra whitespace
+        clean = clean.removeSurrounding("\"").removeSurrounding("'").trim()
+        clean = clean.replace(Regex("\\s+"), " ")
+
+        // 5. Prepend channel if informative and not already in title
+        val ch = channelName.trim()
+        if (ch.isNotBlank() && !ch.equals("YouTube", ignoreCase = true) && !ch.contains("Music", ignoreCase = true)) {
+            val titleLower = clean.lowercase()
+            val chLower = ch.lowercase()
+            if (!titleLower.contains(chLower)) {
+                clean = "$ch - $clean"
+            }
+        }
+
+        return clean.ifBlank { rawTitle.ifBlank { "YouTube Video" } }
+    }
+
     private fun callGemini(
         apiKey: String,
         videoId: String,

@@ -400,7 +400,7 @@ fun MainAppContent(
                     onOpenGoogleAuth = { showGoogleAuthDialog = true },
                     areAdvertsEnabled = areAdvertsEnabled,
                     onNotInterested = { v -> viewModel.deleteVideo(v) },
-                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
+                    onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject, video.title) },
                     isDownloaded = isDownloadedVideo,
                     downloadProgress = currentProgress,
                     onDownloadClick = {
@@ -552,7 +552,7 @@ fun MainAppContent(
                                 manageInitialTab = tab
                                 showManageTopicsAndCreatorsDialog = true
                             },
-                            onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject) },
+                            onSaveToSubject = { video, subject -> viewModel.updateVideoCategory(video.youtubeId, subject, video.title) },
                             algorithmSettings = algorithmSettings,
                             mutedChannels = mutedChannels,
                             onMuteChannel = { channelName -> viewModel.permanentlyDeleteChannel(channelName) }

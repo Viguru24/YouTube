@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -21,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.PlaylistCategoryEntity
 import com.example.data.model.VideoEntity
 import com.example.ui.theme.YouTubeRed
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,11 +32,16 @@ fun SaveToSubjectDialog(
     categories: List<PlaylistCategoryEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSaveToSubject: (subjectName: String) -> Unit,
-    onAddNewSubject: (subjectName: String) -> Unit = {}
+    onAddNewSubject: (subjectName: String) -> Unit = {},
+    onSaveWithTitle: ((subjectName: String, updatedTitle: String) -> Unit)? = null
 ) {
     var isCreatingNew by remember { mutableStateOf(false) }
     var newSubjectName by remember { mutableStateOf("") }
     var selectedSubject by remember { mutableStateOf(video.category.ifBlank { "General" }) }
+    var editableTitle by remember { mutableStateOf(video.title) }
+    var isAiCleaningTitle by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     val allCategoryNames = (categories.map { it.name } + listOf("General")).filter { it.isNotBlank() }.distinct()
 
     AlertDialog(
@@ -61,11 +69,56 @@ fun SaveToSubjectDialog(
                     .padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Editable Video Title with 1-Click AI Cleanup
+                OutlinedTextField(
+                    value = editableTitle,
+                    onValueChange = { editableTitle = it },
+                    label = { Text("Video Title", fontSize = 12.sp) },
+                    maxLines = 2,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    trailingIcon = {
+                        if (isAiCleaningTitle) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = YouTubeRed
+                            )
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    isAiCleaningTitle = true
+                                    coroutineScope.launch {
+                                        try {
+                                            val clean = com.example.data.remote.AiSummarizerClient.generateCleanVideoTitle(
+                                                context,
+                                                editableTitle.ifBlank { video.title },
+                                                video.channelName
+                                            )
+                                            if (clean.isNotBlank()) {
+                                                editableTitle = clean
+                                            }
+                                        } finally {
+                                            isAiCleaningTitle = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AutoAwesome,
+                                    contentDescription = "Clean title with AI",
+                                    tint = YouTubeRed,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Text(
-                    text = video.title,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1
+                    text = "✨ Tap the sparkle to generate a clean title (strips clickbait & emojis)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                 )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -91,7 +144,7 @@ fun SaveToSubjectDialog(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 200.dp),
+                            .heightIn(max = 180.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         items(allCategoryNames) { cat ->
@@ -139,14 +192,17 @@ fun SaveToSubjectDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (isCreatingNew) {
-                        val trimmed = newSubjectName.trim()
-                        if (trimmed.isNotEmpty()) {
-                            onAddNewSubject(trimmed)
-                            onSaveToSubject(trimmed)
+                    val finalTitle = editableTitle.trim().ifBlank { video.title }
+                    val targetSubject = if (isCreatingNew) newSubjectName.trim() else selectedSubject
+                    if (targetSubject.isNotEmpty()) {
+                        if (isCreatingNew) {
+                            onAddNewSubject(targetSubject)
                         }
-                    } else {
-                        onSaveToSubject(selectedSubject)
+                        if (onSaveWithTitle != null) {
+                            onSaveWithTitle(targetSubject, finalTitle)
+                        } else {
+                            onSaveToSubject(targetSubject)
+                        }
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
