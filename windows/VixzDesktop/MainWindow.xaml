@@ -223,9 +223,16 @@
                             </Button>
                         </Grid>
                     </Border>
-
                     <!-- Window Action Controls -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- ☁️ VPS Cross-Device Sync -->
+                        <Button x:Name="SyncStatusBtn"
+                                Content="☁️ Sync"
+                                Style="{StaticResource GlassButton}"
+                                Padding="10,4" Margin="0,0,8,0"
+                                ToolTip="Cross-Device VPS Sync (Synchronize Watched Videos &amp; Algorithm with Phone)"
+                                Click="VpsSyncSettings_Click"/>
+
                         <!-- 👤 Account / Google Sign-In Button -->
                         <Button x:Name="AccountBtn"
                                 Content="👤 Sign In"
@@ -311,6 +318,7 @@
                             <Button x:Name="NavWatchLaterBtn" Content="🕒   Watch Later" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavWatchLater_Click"/>
                             <Button x:Name="NavHistoryBtn" Content="📜   History" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavHistory_Click"/>
                             <Button x:Name="NavDownloadsBtn" Content="💾   Downloads" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavDownloads_Click"/>
+                            <Button x:Name="NavSyncBtn" Content="☁️   Cloud Sync" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="VpsSyncSettings_Click"/>
                         </StackPanel>
 
                         <!-- Subscribed Creators List Section in Sidebar -->
@@ -372,10 +380,10 @@
                 </Border>
 
                 <!-- Right Main Content Area -->
-                <Grid Grid.Column="1">
+                <Grid Grid.Column="1" Background="#09090C">
                     
                     <!-- A. VIDEO FEED VIEW (Cards Grid) -->
-                    <Grid x:Name="FeedView" Visibility="Visible">
+                    <Grid x:Name="FeedView" Visibility="Visible" Panel.ZIndex="1">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -575,7 +583,7 @@
                     </Grid>
 
                     <!-- B. HIGH-PERFORMANCE VIDEO PLAYER VIEW -->
-                    <Grid x:Name="PlayerView" Visibility="Collapsed" Background="#09090C"
+                    <Grid x:Name="PlayerView" Visibility="Collapsed" Background="#09090C" Panel.ZIndex="10"
                           MouseMove="PlayerView_MouseMove"
                           MouseDown="PlayerContainer_MouseDown">
                         <Grid.RowDefinitions>
@@ -617,9 +625,6 @@
 
                             <!-- WebView2 Embedded Player (Hardware Accelerated) -->
                             <wv2:WebView2 x:Name="VideoWebView"/>
-                            <Grid Width="0" Height="0" ClipToBounds="True">
-                                <wv2:WebView2 x:Name="BackgroundSyncWebView" Width="400" Height="400"/>
-                            </Grid>
 
                             <!-- Top-Right Translucent Sleep Timer Countdown Badge -->
                             <Border x:Name="SleepCountdownBadge"
@@ -715,8 +720,11 @@
                             </Button>
                         </Grid>
 
+                        <!-- Solid opaque backing for bottom bar row so fading controls never reveal background -->
+                        <Border Grid.Row="2" Background="#0E0E14" Panel.ZIndex="0"/>
+
                         <!-- Below Video Details & Desktop Utility Deck (Auto-fades after inactivity) -->
-                        <Border x:Name="PlayerBottomBar" Grid.Row="2" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
+                        <Border x:Name="PlayerBottomBar" Grid.Row="2" Panel.ZIndex="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
                                 MouseEnter="PlayerBottomBar_MouseEnter"
                                 MouseLeave="PlayerBottomBar_MouseLeave">
                             <Grid>
@@ -1310,6 +1318,10 @@
                     </Grid>
                 </Border>
             </Grid>
+            <!-- Background Sync WebView2 (Permanently isolated off-screen so it never intercepts clicks or bleeds into player) -->
+            <Canvas Width="0" Height="0" ClipToBounds="True" IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top">
+                <wv2:WebView2 x:Name="BackgroundSyncWebView" Width="400" Height="400" Canvas.Left="-50000" Canvas.Top="-50000" Visibility="Collapsed" IsHitTestVisible="False"/>
+            </Canvas>
         </Grid>
     </Border>
 </Window>

@@ -66,10 +66,11 @@ namespace VixzDesktop.Services
                 .Where(b => !string.IsNullOrEmpty(b))
                 .ToList();
 
-            // 0. Filter out permanently disliked, deleted, and blocked videos
+            // 0. Filter out permanently disliked, deleted, blocked, and already watched videos
+            var watchedIds = new HashSet<string>(watchHistory?.Select(w => w.Id) ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
             var filteredVideos = videos.Where(v =>
             {
-                if (dislikedIds.Contains(v.Id) || deletedIds.Contains(v.Id)) return false;
+                if (dislikedIds.Contains(v.Id) || deletedIds.Contains(v.Id) || watchedIds.Contains(v.Id)) return false;
                 var titleLower = v.Title.ToLowerInvariant();
                 var chanLower = v.ChannelTitle.ToLowerInvariant();
                 return !blockedLower.Any(blk => titleLower.Contains(blk) || chanLower.Contains(blk));

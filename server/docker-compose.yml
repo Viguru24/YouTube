@@ -1,0 +1,14 @@
+﻿version: '3.8'
+services:
+  vixz-sync:
+    build: .
+    container_name: vixz-sync-server
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./data:/app
+    environment:
+      - PORT=8088
+      - SYNC_TOKEN=
+      - SYNC_DB_PATH=/app/sync.db

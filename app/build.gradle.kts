@@ -1,4 +1,6 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
+import java.io.FileInputStream
 
 plugins {
   alias(libs.plugins.android.application)
@@ -13,6 +15,16 @@ android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
+  val localProps = Properties()
+  val localPropsFile = rootProject.file("local.properties")
+  if (localPropsFile.exists()) {
+    FileInputStream(localPropsFile).use { stream ->
+      localProps.load(stream)
+    }
+  }
+  val vpsDefaultUrl = (localProps.getProperty("VPS_SERVER_URL", "") ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+  val vpsDefaultKey = (localProps.getProperty("VPS_API_KEY", "") ?: "").replace("\\", "\\\\").replace("\"", "\\\"")
+
   defaultConfig {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
@@ -21,6 +33,9 @@ android {
     versionName = "1.9.7"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    buildConfigField("String", "VPS_DEFAULT_URL", "\"${vpsDefaultUrl}\"")
+    buildConfigField("String", "VPS_DEFAULT_KEY", "\"${vpsDefaultKey}\"")
   }
 
   androidComponents {

@@ -144,6 +144,11 @@ fun ShortsPlayerView(
                 isPlayingState = isPlaying
                 onPlayingStateChanged(isPlaying)
             }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                addLog("⚠️ ExoPlayer Playback Error (${error.errorCodeName}): ${error.message} -> activating fallback")
+                useWebPlayerFallback = true
+                isLoading = false
+            }
         }
         exoPlayer.addListener(listener)
         onDispose {
@@ -277,7 +282,7 @@ fun ShortsPlayerView(
                 return@LaunchedEffect
             }
 
-            val result = kotlinx.coroutines.withTimeoutOrNull(6000L) {
+            val result = kotlinx.coroutines.withTimeoutOrNull(15000L) {
                 YouTubeStreamExtractor.extractVideoStreams(videoId)
             }
             val directUrl = if (selectedQuality != "Auto" && result?.qualityUrlMap?.containsKey(selectedQuality) == true) {
@@ -292,22 +297,36 @@ fun ShortsPlayerView(
                 val isVideoOnly = result?.isVideoOnlyStream(directUrl, selectedQuality) == true ||
                         (!audioUrl.isNullOrBlank() && directUrl != result?.combinedMuxedUrl && !directUrl.contains(".m3u8") && !directUrl.startsWith("file://") && !directUrl.startsWith("/"))
 
+                val liveCookies = try {
+                    android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
+                } catch (e: Throwable) { "" }
+
                 val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                     .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
-                    .setDefaultRequestProperties(mapOf(
-                        "Referer" to "https://www.youtube.com/",
-                        "Origin" to "https://www.youtube.com",
-                        "Sec-Fetch-Dest" to "video",
-                        "Sec-Fetch-Mode" to "cors",
-                        "Sec-Fetch-Site" to "cross-site"
-                    ))
+                    .setDefaultRequestProperties(buildMap {
+                        put("Referer", "https://www.youtube.com/")
+                        put("Origin", "https://www.youtube.com")
+                        put("Sec-Fetch-Dest", "video")
+                        put("Sec-Fetch-Mode", "cors")
+                        put("Sec-Fetch-Site", "cross-site")
+                        if (liveCookies.isNotBlank()) {
+                            put("Cookie", liveCookies)
+                        }
+                    })
                     .setConnectTimeoutMs(15000)
                     .setReadTimeoutMs(30000)
                     .setAllowCrossProtocolRedirects(true)
 
                 val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
 
-                if (isVideoOnly && !audioUrl.isNullOrBlank()) {
+                val isHls = directUrl.contains(".m3u8") || directUrl.contains("manifest/hls_variant") || selectedQuality == "HLS" || directUrl == result?.qualityUrlMap?.get("HLS")
+
+                if (isHls) {
+                    val hlsSource = androidx.media3.exoplayer.hls.HlsMediaSource.Factory(dataSourceFactory)
+                        .setAllowChunklessPreparation(true)
+                        .createMediaSource(MediaItem.fromUri(directUrl))
+                    exoPlayer.setMediaSource(hlsSource)
+                } else if (isVideoOnly && !audioUrl.isNullOrBlank()) {
                     val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                         .createMediaSource(MediaItem.fromUri(directUrl))
                     val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
@@ -323,7 +342,7 @@ fun ShortsPlayerView(
                 exoPlayer.volume = 1.0f
                 exoPlayer.prepare()
                 exoPlayer.play()
-                addLog("Stream extracted & ExoPlayer prepared (videoOnly=$isVideoOnly, audioMerged=${isVideoOnly && !audioUrl.isNullOrBlank()}): $directUrl")
+                addLog("Stream extracted & ExoPlayer prepared (isHls=$isHls, videoOnly=$isVideoOnly): $directUrl")
             } else {
                 addLog("⚠️ Stream extraction timed out -> activating Shorts Web Player fallback")
                 useWebPlayerFallback = true
@@ -366,7 +385,7 @@ fun ShortsPlayerView(
                 modifier = Modifier.fillMaxSize()
             )
         } else {
-            // Automatic Fallback: Embedded YouTube Player WebView for Shorts HTML5 Video Playback
+            // Automatic Fallback: High-Reliability YouTube Embed for Shorts
             AndroidView(
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
@@ -376,94 +395,10 @@ fun ShortsPlayerView(
                         )
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
-                        settings.useWideViewPort = true
-                        settings.loadWithOverviewMode = true
                         settings.mediaPlaybackRequiresUserGesture = false
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
-                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                        // Desktop Mode User-Agent: Bypasses mobile restrictions automatically
-                        settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-
-                        try {
-                            val cookieManager = android.webkit.CookieManager.getInstance()
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setCookie("https://www.youtube.com", "PREF=f6=40000000&hl=en&gl=US; path=/; domain=.youtube.com; Secure")
-                            cookieManager.setCookie("https://www.youtube-nocookie.com", "PREF=f6=40000000&hl=en&gl=US; path=/; domain=.youtube-nocookie.com; Secure")
-                        } catch (e: Exception) { }
-
                         webChromeClient = android.webkit.WebChromeClient()
-                        webViewClient = object : android.webkit.WebViewClient() {
-                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                                super.onPageFinished(view, url)
-                                if (url?.contains("youtube.com") == true) {
-                                    view?.evaluateJavascript("""
-                                        (function() {
-                                            var style = document.createElement('style');
-                                            style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
-                                            document.head.appendChild(style);
-                                            var v = document.querySelector('video');
-                                            if (v) { v.muted = false; v.play(); }
-                                            var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
-                                            if (playBtn) playBtn.click();
-                                        })();
-                                    """.trimIndent(), null)
-                                }
-                            }
-                        }
-                        val embedHtml = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                <style>
-                                    * { margin: 0; padding: 0; box-sizing: border-box; }
-                                    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-                                    .iframe-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
-                                    iframe, #player { width: 100%; height: 100%; border: none; }
-                                </style>
-                            </head>
-                            <body>
-                                <div class="iframe-container">
-                                    <div id="player"></div>
-                                </div>
-                                <script src="https://www.youtube.com/iframe_api"></script>
-                                <script>
-                                    var player;
-                                    function onYouTubeIframeAPIReady() {
-                                        player = new YT.Player('player', {
-                                            height: '100%',
-                                            width: '100%',
-                                            videoId: '$videoId',
-                                            playerVars: {
-                                                'autoplay': 1,
-                                                'loop': 1,
-                                                'playlist': '$videoId',
-                                                'playsinline': 1,
-                                                'controls': 0,
-                                                'enablejsapi': 1,
-                                                'rel': 0,
-                                                'modestbranding': 1,
-                                                'cc_load_policy': 0,
-                                                'iv_load_policy': 3,
-                                                'origin': 'https://www.youtube.com',
-                                                'widget_referrer': 'https://www.youtube.com'
-                                            },
-                                            events: {
-                                                'onReady': function(e) { e.target.playVideo(); },
-                                                'onError': function(e) {
-                                                    console.log('Shorts embed restricted -> Bypassing to direct watch page');
-                                                    window.location.replace('https://www.youtube.com/watch?v=$videoId');
-                                                }
-                                            }
-                                        });
-                                    }
-                                </script>
-                            </body>
-                            </html>
-                        """.trimIndent()
-                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        webViewClient = android.webkit.WebViewClient()
+                        loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=0&loop=1&playlist=$videoId")
                     }
                 },
                 update = { view ->

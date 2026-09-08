@@ -291,9 +291,11 @@ fun MainAppContent(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val selectedTimeFilter by viewModel.selectedTimeFilter.collectAsStateWithLifecycle()
+    val searchSortOption by viewModel.searchSortOption.collectAsStateWithLifecycle()
     val selectedSubscribedChannel by viewModel.selectedSubscribedChannel.collectAsStateWithLifecycle()
     val liveSearchResults by viewModel.liveSearchResults.collectAsStateWithLifecycle()
     val categoryVideos by viewModel.categoryVideos.collectAsStateWithLifecycle()
+    val shortsQueue by viewModel.shortsQueue.collectAsStateWithLifecycle()
 
     val downloadedVideos by viewModel.downloadedVideos.collectAsStateWithLifecycle()
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
@@ -531,11 +533,14 @@ fun MainAppContent(
                             onRefreshFeed = { viewModel.refreshFeed() },
                             liveSearchResults = liveSearchResults,
                             categoryVideos = categoryVideos,
+                            shortsQueue = shortsQueue,
                             dislikedVideoIds = dislikedVideoIds,
                             subscribedCreators = subscribedCreators,
                             onLoadMore = { viewModel.loadMoreCategoryVideos() },
                             selectedTimeFilter = selectedTimeFilter,
                             onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },
+                            searchSortOption = searchSortOption,
+                            onSearchSortOptionSelected = { viewModel.setSearchSortOption(it) },
                             selectedSubscribedChannel = selectedSubscribedChannel,
                             onSubscribedChannelSelected = { channel -> viewModel.selectSubscribedChannel(channel) },
                             onRefreshSubscribedChannel = { channel -> viewModel.refreshSubscribedChannel(channel) },

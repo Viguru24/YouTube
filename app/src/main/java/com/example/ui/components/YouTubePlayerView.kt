@@ -1,46 +1,22 @@
 package com.example.ui.components
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.ThumbDown
-import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,19 +24,28 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import com.example.data.remote.SponsorBlockService
 import com.example.data.remote.SponsorSegment
+import com.example.data.remote.StreamExtractionResult
+import com.example.data.remote.VideoDownloadManager
+import com.example.data.remote.YouTubeCaptionService
 import com.example.data.remote.YouTubeStreamExtractor
+import com.example.ui.components.player.*
 import com.example.ui.theme.YouTubeRed
+import com.example.util.ScreenshotManager
+import com.example.util.TranscriptSegment
+import com.example.util.YouTubeUtils
+import com.example.util.findActivity
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
 
 @Composable
 fun YouTubePlayerView(
@@ -69,7 +54,7 @@ fun YouTubePlayerView(
     areAdvertsEnabled: Boolean = false,
     showDebugConsole: Boolean = false,
     onToggleDebugConsole: () -> Unit = {},
-    playerCommandFlow: kotlinx.coroutines.flow.SharedFlow<String>? = null,
+    playerCommandFlow: SharedFlow<String>? = null,
     onPlayingStateChanged: (Boolean) -> Unit = {},
     onNextVideo: () -> Unit = {},
     onPreviousVideo: () -> Unit = {},
@@ -98,9 +83,12 @@ fun YouTubePlayerView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isPlayingLocalOffline by remember(videoId) { mutableStateOf(false) }
     var isLoading by remember(videoId) { mutableStateOf(true) }
+    var isBuffering by remember(videoId) { mutableStateOf(false) }
+    var isSwitchingQuality by remember(videoId) { mutableStateOf<String?>(null) }
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
     var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
     var webViewRef by remember(videoId) { mutableStateOf<android.webkit.WebView?>(null) }
@@ -116,7 +104,7 @@ fun YouTubePlayerView(
     var hasPreparedMedia by rememberSaveable(videoId) { mutableStateOf(false) }
 
     // Stream extraction & dynamic quality state
-    var streamResult by remember(videoId) { mutableStateOf<com.example.data.remote.StreamExtractionResult?>(null) }
+    var streamResult by remember(videoId) { mutableStateOf<StreamExtractionResult?>(null) }
     var availableQualities by remember(videoId) { mutableStateOf<List<String>>(emptyList()) }
     var selectedQuality by remember(videoId) { mutableStateOf("Auto") }
 
@@ -126,26 +114,25 @@ fun YouTubePlayerView(
     var currentPosMs by remember { mutableLongStateOf(0L) }
     var totalDurationMs by remember { mutableLongStateOf(0L) }
 
-    // SponsorBlock In-Video Sponsor Skip State (Debounced single execution to prevent infinite seek freeze)
+    // SponsorBlock In-Video Sponsor Skip State
     var sponsorSegments by remember(videoId) { mutableStateOf<List<SponsorSegment>>(emptyList()) }
     val skippedSegmentIds = remember(videoId) { mutableSetOf<String>() }
 
     // Real-Time Closed Captions (CC) State
     var captionsEnabled by remember { mutableStateOf(false) }
-    var captionSegments by remember(videoId) { mutableStateOf<List<com.example.util.TranscriptSegment>>(emptyList()) }
+    var captionSegments by remember(videoId) { mutableStateOf<List<TranscriptSegment>>(emptyList()) }
     var activeCaptionText by remember { mutableStateOf<String?>(null) }
     var isCaptionsLoading by remember { mutableStateOf(false) }
+
     // Gestures: Brightness (Left) & Volume (Right)
-    val activity = remember(context) { context as? android.app.Activity }
-    val audioManager = remember(context) { context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager }
+    val activity = remember(context) { context.findActivity() }
+    val audioManager = remember(context) { context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager }
     val maxAudioVolume = remember(audioManager) { audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
 
     var gestureBrightness by remember { mutableFloatStateOf(0.5f) }
     var isAdjustingBrightness by remember { mutableStateOf(false) }
-
     var gestureVolumeFraction by remember { mutableFloatStateOf(0.5f) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
-    var lastAppliedVolume by remember { mutableIntStateOf(-1) }
 
     var localIsFavorite by remember(videoId, isFavorite) { mutableStateOf(isFavorite) }
     var localIsDisliked by remember(videoId, isDisliked) { mutableStateOf(isDisliked) }
@@ -154,7 +141,7 @@ fun YouTubePlayerView(
     val playerPrefs = remember(context) { context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE) }
     var isAutoplayEnabled by remember { mutableStateOf(playerPrefs.getBoolean("autoplay_enabled", true)) }
 
-    // Sleep Timer State (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60 mins slider & presets)
+    // Sleep Timer State
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var isSleepTimerActive by remember { mutableStateOf(false) }
     var sleepTimerMinutes by remember { mutableIntStateOf(30) }
@@ -165,70 +152,75 @@ fun YouTubePlayerView(
 
     // Screenshot & Custom Folder State
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
-    var activeScreenshotFolder by remember { mutableStateOf(com.example.util.ScreenshotManager.getActiveFolder(context)) }
+    var activeScreenshotFolder by remember { mutableStateOf(ScreenshotManager.getActiveFolder(context)) }
     var showScreenshotFolderDialog by remember { mutableStateOf(false) }
-    var screenshotFlashTrigger by remember { mutableStateOf(false) }
-    var screenshotFeedbackText by remember { mutableStateOf<String?>(null) }
 
-    fun takeScreenshot() {
-        coroutineScope.launch {
-            screenshotFlashTrigger = true
-            val bmp = com.example.util.ScreenshotManager.capturePlayerFrame(playerViewRef, activity)
-            delay(100)
-            screenshotFlashTrigger = false
-            if (bmp != null) {
-                val (uri, path) = com.example.util.ScreenshotManager.saveScreenshot(
-                    context = context,
-                    bitmap = bmp,
-                    videoTitle = videoTitle ?: "Video",
-                    timestampMs = currentPosMs,
-                    targetFolder = activeScreenshotFolder
-                )
-                if (uri != null) {
-                    val folderDisplay = if (activeScreenshotFolder.equals("Default", ignoreCase = true)) "Pictures/Vixz" else "Pictures/Vixz/$activeScreenshotFolder"
-                    screenshotFeedbackText = "📸 Saved to $folderDisplay"
-                    android.widget.Toast.makeText(context, "📸 Screenshot saved to $folderDisplay", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    android.widget.Toast.makeText(context, "⚠️ Failed to save screenshot", android.widget.Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                android.widget.Toast.makeText(context, "⚠️ Could not capture video frame", android.widget.Toast.LENGTH_SHORT).show()
-            }
-            delay(2500)
-            screenshotFeedbackText = null
-        }
-    }
+    // Transient HUD Feedback State
+    var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
+    var playPauseFeedbackState by remember { mutableStateOf<Boolean?>(null) }
+    var speedFeedbackState by remember { mutableStateOf<String?>(null) }
+
+    // Controls visibility & Scrubber dragging
+    var areControlsVisible by remember { mutableStateOf(true) }
+    var isDraggingScrubber by remember { mutableStateOf(false) }
+    var dragFraction by remember { mutableFloatStateOf(0f) }
+    var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
 
     fun addLog(msg: String) {
         val entry = "[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())}] $msg"
         debugLogs.add(entry)
     }
 
-    // Keep screen on during playback
-    DisposableEffect(Unit) {
-        val activity = (context as? android.app.Activity)
-        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose {
-            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    fun takeScreenshot() {
+        coroutineScope.launch {
+            val bmp = ScreenshotManager.capturePlayerFrame(playerViewRef, activity)
+            delay(100)
+            if (bmp != null) {
+                val (uri, _) = ScreenshotManager.saveScreenshot(
+                    context = context,
+                    bitmap = bmp,
+                    videoTitle = videoTitle,
+                    timestampMs = currentPosMs,
+                    targetFolder = activeScreenshotFolder
+                )
+                if (uri != null) {
+                    val folderDisplay = if (activeScreenshotFolder.equals("Default", ignoreCase = true)) "Pictures/Vixz" else "Pictures/Vixz/$activeScreenshotFolder"
+                    Toast.makeText(context, "📸 Screenshot saved to $folderDisplay", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "⚠️ Failed to save screenshot", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "⚠️ Could not capture video frame", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
+    // Keep screen on during playback
+    DisposableEffect(Unit) {
+        val act = (context as? android.app.Activity)
+        act?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            act?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // Initialize ExoPlayer with optimized buffer parameters
     val exoPlayer = remember(videoId) {
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
             .build()
 
-        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+        val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 45_000,
-                /* bufferForPlaybackMs = */ 250,
-                /* bufferForPlaybackAfterRebufferMs = */ 500
+                /* minBufferMs = */ 20_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 1_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_500
             )
-            .setTargetBufferBytes(androidx.media3.common.C.LENGTH_UNSET)
+            .setTargetBufferBytes(C.LENGTH_UNSET)
             .setPrioritizeTimeOverSizeThresholds(true)
-            .setBackBuffer(15_000, true)
+            .setBackBuffer(30_000, true)
             .build()
 
         ExoPlayer.Builder(context)
@@ -244,32 +236,57 @@ fun YouTubePlayerView(
             }
     }
 
+    // ExoPlayer Listener for playback events, buffering, and auto-resume
     DisposableEffect(exoPlayer) {
-        val listener = object : androidx.media3.common.Player.Listener {
+        val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 isFirstFrameRendered = true
             }
+
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == androidx.media3.common.Player.STATE_READY) {
-                    isFirstFrameRendered = true
-                } else if (state == androidx.media3.common.Player.STATE_ENDED) {
-                    playerPrefs.edit().putInt("resume_pos_sec_${videoId}", 0).apply()
-                    onPositionUpdate(0)
-                    if (isAutoplayEnabled) {
-                        onNextVideo()
-                        android.widget.Toast.makeText(context, "Autoplay: Playing Next Video ⏭️", android.widget.Toast.LENGTH_SHORT).show()
+                when (state) {
+                    Player.STATE_READY -> {
+                        isFirstFrameRendered = true
+                        isBuffering = false
+                        isSwitchingQuality = null
+                    }
+                    Player.STATE_BUFFERING -> {
+                        if (isFirstFrameRendered) {
+                            isBuffering = true
+                        }
+                    }
+                    Player.STATE_ENDED -> {
+                        isBuffering = false
+                        isSwitchingQuality = null
+                        playerPrefs.edit().putInt("resume_pos_sec_${videoId}", 0).apply()
+                        onPositionUpdate(0)
+                        if (isAutoplayEnabled) {
+                            onNextVideo()
+                            Toast.makeText(context, "Autoplay: Playing Next Video ⏭️", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    Player.STATE_IDLE -> {
+                        isBuffering = false
                     }
                 }
             }
+
+            override fun onIsLoadingChanged(isLoadingNow: Boolean) {
+                if (isFirstFrameRendered && !isLoading) {
+                    isBuffering = isLoadingNow && (exoPlayer.playbackState == Player.STATE_BUFFERING)
+                }
+            }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
                 onPlayingStateChanged(isPlaying)
             }
+
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 addLog("⚠️ ExoPlayer Playback Error (${error.errorCodeName}): ${error.message}")
                 val isOfflineSource = isPlayingLocalOffline || isDownloaded || (streamUrl?.startsWith("file://") == true)
                 if (isOfflineSource) {
-                    addLog("⚠️ Offline local playback error. Staying offline (will not fall back to online web player).")
+                    addLog("⚠️ Offline local playback error. Staying offline.")
                 } else {
                     addLog("-> Activating Web Player Fallback")
                     useWebPlayerFallback = true
@@ -286,14 +303,12 @@ fun YouTubePlayerView(
                 val sec = (pos / 1000).toInt().coerceAtLeast(0)
                 playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
                 onPositionUpdate(sec)
-            } catch (e: Exception) {
-                // Ignore
-            }
+            } catch (e: Exception) { }
             exoPlayer.release()
         }
     }
 
-    // Handle remote PiP and external commands (Play/Pause, Seek)
+    // Remote PiP and external commands (Play/Pause, Seek)
     LaunchedEffect(playerCommandFlow) {
         playerCommandFlow?.collect { cmd ->
             when {
@@ -312,7 +327,7 @@ fun YouTubePlayerView(
         }
     }
 
-    // Fetch SponsorBlock skip segments for video
+    // SponsorBlock fetch
     LaunchedEffect(videoId) {
         val segments = SponsorBlockService.getSponsorSegments(videoId)
         if (segments.isNotEmpty()) {
@@ -321,25 +336,15 @@ fun YouTubePlayerView(
         }
     }
 
-    // Scrubber drag state (smooth scrubbing without ticker fighting)
-    var isDraggingScrubber by remember { mutableStateOf(false) }
-    var dragFraction by remember { mutableFloatStateOf(0f) }
-
-    var areControlsVisible by remember { mutableStateOf(true) }
-    var showSettingsMenu by remember { mutableStateOf(false) }
-    var showSpeedSubMenu by remember { mutableStateOf(false) }
-    var showQualitySubMenu by remember { mutableStateOf(false) }
-    var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
-
-    // Auto-hide bottom utility controls: ONLY when actively playing; when PAUSED, keep controls visible permanently
-    LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSettingsMenu, showSpeedSubMenu, showQualitySubMenu) {
-        if (areControlsVisible && isPlayingState && !isDraggingScrubber && !showSettingsMenu && !showSpeedSubMenu && !showQualitySubMenu) {
+    // Auto-hide bottom utility controls: when actively playing, auto-hide after 3.5s
+    LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber) {
+        if (areControlsVisible && isPlayingState && !isDraggingScrubber) {
             delay(3500L)
             areControlsVisible = false
         }
     }
 
-    // Position ticker: saves current playback timestamp & automatically skips SponsorBlock segments & updates CC subtitles
+    // Position ticker: updates playback position, checks SponsorBlock, and matches CC lines
     LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments, isDraggingScrubber, captionsEnabled, captionSegments) {
         if (hasPreparedMedia) {
             var lastSavedSec = -1
@@ -367,7 +372,7 @@ fun YouTubePlayerView(
                             activeCaptionText = null
                         }
 
-                        // Automatic SponsorBlock In-Video Segment Skip (Strict single execution per segment)
+                        // Automatic SponsorBlock In-Video Segment Skip
                         if (sponsorSegments.isNotEmpty()) {
                             val segment = sponsorSegments.firstOrNull { seg ->
                                 val key = "${seg.startMs}_${seg.endMs}"
@@ -382,7 +387,7 @@ fun YouTubePlayerView(
                                 val endFormatted = formatMs(segment.endMs)
                                 val message = "⏭️ Skipped ${segment.category.replaceFirstChar { it.uppercase() }} ($startFormatted → $endFormatted)"
                                 addLog(message)
-                                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -391,15 +396,13 @@ fun YouTubePlayerView(
                         totalDurationMs = dur
                     }
                     isPlayingState = exoPlayer.isPlaying
-                } catch (e: Exception) {
-                    // Ignore
-                }
+                } catch (e: Exception) { }
                 delay(100)
             }
         }
     }
 
-    // Sleep Timer Countdown Engine (Automatically pauses playback when countdown expires or video ends)
+    // Sleep Timer Countdown Engine
     LaunchedEffect(isSleepTimerActive, sleepTimerEndOfVideo) {
         if (isSleepTimerActive) {
             if (sleepTimerEndOfVideo) {
@@ -410,7 +413,7 @@ fun YouTubePlayerView(
                         isSleepTimerActive = false
                         sleepTimerEndOfVideo = false
                         wasPausedBySleepTimer = true
-                        android.widget.Toast.makeText(context, "🌙 Sleep Timer: End of video reached. Tap 🌙 to resume.", android.widget.Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "🌙 Sleep Timer: End of video reached. Tap 🌙 to resume.", Toast.LENGTH_LONG).show()
                         break
                     }
                     delay(500L)
@@ -424,7 +427,7 @@ fun YouTubePlayerView(
                         isPlayingState = false
                         isSleepTimerActive = false
                         wasPausedBySleepTimer = true
-                        android.widget.Toast.makeText(context, "🌙 Sleep Timer finished. Tap 🌙 to resume for ${lastSleepDurationMinutes}m.", android.widget.Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "🌙 Sleep Timer finished. Tap 🌙 to resume for ${lastSleepDurationMinutes}m.", Toast.LENGTH_LONG).show()
                         break
                     }
                 }
@@ -437,7 +440,7 @@ fun YouTubePlayerView(
         if (captionsEnabled && captionSegments.isEmpty()) {
             isCaptionsLoading = true
             try {
-                val segments = com.example.data.remote.YouTubeCaptionService.fetchTimedCaptions(videoId)
+                val segments = YouTubeCaptionService.fetchTimedCaptions(videoId)
                 captionSegments = segments
                 if (segments.isEmpty()) {
                     addLog("ℹ️ No English captions found for this video.")
@@ -452,6 +455,7 @@ fun YouTubePlayerView(
         }
     }
 
+    // Main Stream Extraction
     LaunchedEffect(videoId) {
         isLoading = true
         isFirstFrameRendered = false
@@ -463,14 +467,14 @@ fun YouTubePlayerView(
         panOffsetX = 0f
         panOffsetY = 0f
 
-        // 1. Check if video is downloaded locally (Offline / Airplane Mode Playback)
-        val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(
+        // 1. Check if video is downloaded locally
+        val localFile = VideoDownloadManager.getLocalVideoFile(
             context = context,
             youtubeId = videoId,
             knownPath = localFilePath.ifBlank { null }
         )
         if (localFile.exists() && localFile.length() > 1024 * 100) {
-            val localUri = android.net.Uri.fromFile(localFile).toString()
+            val localUri = Uri.fromFile(localFile).toString()
             isPlayingLocalOffline = true
             streamUrl = localUri
             availableQualities = listOf("Offline Ready")
@@ -481,7 +485,7 @@ fun YouTubePlayerView(
         }
 
         // 2. Otherwise extract online stream & all available resolutions
-        addLog("Extracting direct MP4 stream URL & available qualities for videoId: $videoId")
+        addLog("Extracting direct stream URL & available qualities for videoId: $videoId")
         val result = kotlinx.coroutines.withTimeoutOrNull(15000L) {
             YouTubeStreamExtractor.extractVideoStreams(videoId)
         }
@@ -505,43 +509,32 @@ fun YouTubePlayerView(
             isLoading = false
             useWebPlayerFallback = true
             statusLog = "Direct stream timed out or restricted. Activating Web Player."
-            addLog("Direct stream timeout (15.0s) -> Activating Web Player Fallback")
+            addLog("Direct stream timeout -> Activating Web Player Fallback")
         }
     }
 
-    // Seamless in-place switch: When a video finishes downloading while being watched, switch to local file
-    LaunchedEffect(isDownloaded, downloadProgress) {
-        if ((isDownloaded || downloadProgress == 100) && !isPlayingLocalOffline) {
-            val localFile = com.example.data.remote.VideoDownloadManager.getLocalVideoFile(
-                context = context,
-                youtubeId = videoId,
-                knownPath = localFilePath.ifBlank { null }
-            )
-            if (localFile.exists() && localFile.length() > 1024 * 100) {
+    // Seamless in-place switch to local offline file if download completes while watching
+    LaunchedEffect(localFilePath) {
+        if (localFilePath.isNotBlank() && !isPlayingLocalOffline) {
+            val f = java.io.File(localFilePath)
+            if (f.exists() && f.length() > 1024 * 100) {
                 val currentPos = exoPlayer.currentPosition
-                val localUri = android.net.Uri.fromFile(localFile).toString()
-                if (streamUrl != localUri) {
-                    isPlayingLocalOffline = true
-                    savedPositionMs = currentPos
-                    availableQualities = listOf("Offline Ready")
-                    selectedQuality = "Offline Ready"
-                    streamUrl = localUri
-                    addLog("⚡ Download complete! Seamlessly switched from stream to local file at ${currentPos / 1000}s")
-                }
+                savedPositionMs = currentPos
+                isPlayingLocalOffline = true
+                streamUrl = Uri.fromFile(f).toString()
+                availableQualities = listOf("Offline Ready")
+                selectedQuality = "Offline Ready"
+                addLog("⚡ Seamless switch to downloaded offline file at ${currentPos / 1000}s")
             }
         }
     }
 
-    LaunchedEffect(isMutedState) {
-        exoPlayer.volume = if (isMutedState) 0f else 1.0f
-    }
-
+    // ExoPlayer MediaSource Preparation
     LaunchedEffect(streamUrl) {
         streamUrl?.let { url ->
             val isLocalFile = url.startsWith("file://") || url.startsWith("/")
 
             if (isLocalFile) {
-                // Direct local file source without remote OkHttp or YouTube request headers
                 val fileDataSourceFactory = androidx.media3.datasource.FileDataSource.Factory()
                 val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(fileDataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(url))
@@ -626,454 +619,101 @@ fun YouTubePlayerView(
         }
     }
 
-    var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
-    var swipeVideoFeedback by remember { mutableStateOf<String?>(null) }
-    var playPauseFeedbackState by remember { mutableStateOf<Boolean?>(null) }
-    var speedFeedbackState by remember { mutableStateOf<String?>(null) }
+    // Safety timeout for quality switching indicator
+    LaunchedEffect(isSwitchingQuality) {
+        if (isSwitchingQuality != null) {
+            delay(5000L)
+            isSwitchingQuality = null
+        }
+    }
 
+    val shouldShowControls = !isInPipMode && (streamUrl != null && !useWebPlayerFallback && !isLoading) && areControlsVisible
+
+    // Main Player Composables Tree
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
             .clipToBounds()
-            .pointerInput(videoId) {
-                val viewConfig = android.view.ViewConfiguration.get(context)
-                val touchSlop = viewConfig.scaledTouchSlop.toFloat()
-                val densityVal = density
-
-                awaitPointerEventScope {
-                    var lastTapTime = 0L
-                    var lastTapX = 0f
-
-                    while (true) {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val downTime = System.currentTimeMillis()
-                        val startPos = down.position
-                        val w = size.width.toFloat()
-                        val h = size.height.toFloat()
-
-                        var totalDx = 0f
-                        var totalDy = 0f
-                        var isDragging = false
-                        var isPinching = false
-                        var prevPinchDist = 0f
-                        var prevCentroid: androidx.compose.ui.geometry.Offset? = null
-
-                        val dragZone = when {
-                            startPos.x < w * 0.35f -> 1 // Left 35%: Brightness
-                            startPos.x > w * 0.65f -> 2 // Right 35%: Volume
-                            else -> 3 // Center 30%: Next/Previous Video
-                        }
-
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val activePointers = event.changes.filter { it.pressed }
-
-                            if (activePointers.isEmpty()) {
-                                // Fingers lifted
-                                val duration = System.currentTimeMillis() - downTime
-                                val movedDist = kotlin.math.hypot(totalDx, totalDy)
-                                prevPinchDist = 0f
-                                prevCentroid = null
-
-                                val wasConsumedByChild = event.changes.any { it.isConsumed } || down.isConsumed
-
-                                if (!isDragging && !isPinching && movedDist < touchSlop && duration < 450 && !wasConsumedByChild) {
-                                    val now = System.currentTimeMillis()
-                                    if (now - lastTapTime < 320 && kotlin.math.abs(startPos.x - lastTapX) < w * 0.30f) {
-                                        // DOUBLE TAP
-                                        lastTapTime = 0L
-                                        if (startPos.x < w * 0.35f) {
-                                            val currentPos = exoPlayer.currentPosition
-                                            val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
-                                            exoPlayer.seekTo(newPos)
-                                            forwardRewindFeedback = "⏪ -10s"
-                                            coroutineScope.launch {
-                                                kotlinx.coroutines.delay(750)
-                                                forwardRewindFeedback = null
-                                            }
-                                        } else if (startPos.x > w * 0.65f) {
-                                            val currentPos = exoPlayer.currentPosition
-                                            val dur = if (totalDurationMs > 0) totalDurationMs else Long.MAX_VALUE
-                                            val newPos = (currentPos + 10_000L).coerceAtMost(dur)
-                                            exoPlayer.seekTo(newPos)
-                                            forwardRewindFeedback = "⏩ +10s"
-                                            coroutineScope.launch {
-                                                kotlinx.coroutines.delay(750)
-                                                forwardRewindFeedback = null
-                                            }
-                                        } else {
-                                            if (zoomScale > 1.05f) {
-                                                zoomScale = 1f
-                                                panOffsetX = 0f
-                                                panOffsetY = 0f
-                                            } else {
-                                                onToggleFullscreen()
-                                            }
-                                        }
-                                    } else {
-                                        // SINGLE TAP: ALWAYS TOGGLE PLAY/PAUSE INSTANTLY (0ms delay)
-                                        lastTapTime = now
-                                        lastTapX = startPos.x
-
-                                        val wasPlaying = if (streamUrl != null && !useWebPlayerFallback) {
-                                            exoPlayer.isPlaying
-                                        } else {
-                                            isPlayingState
-                                        }
-                                        val willPlay = !wasPlaying
-
-                                        if (streamUrl != null && !useWebPlayerFallback) {
-                                            if (willPlay) {
-                                                exoPlayer.play()
-                                            } else {
-                                                exoPlayer.pause()
-                                            }
-                                        } else {
-                                            webViewRef?.evaluateJavascript(
-                                                "var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); }",
-                                                null
-                                            )
-                                        }
-                                        isPlayingState = willPlay
-                                        areControlsVisible = true
-                                        playPauseFeedbackState = willPlay
-                                        coroutineScope.launch {
-                                            kotlinx.coroutines.delay(650)
-                                            playPauseFeedbackState = null
-                                        }
-                                    }
-                                }
-
-                                if (isDragging) {
-                                    if (dragZone == 3) {
-                                        val swipeThresholdPx = 65f * densityVal
-                                        if (totalDy < -swipeThresholdPx) {
-                                            swipeVideoFeedback = "Next Video ⏭️"
-                                            onNextVideo()
-                                        } else if (totalDy > swipeThresholdPx) {
-                                            swipeVideoFeedback = "Previous Video ⏮️"
-                                            onPreviousVideo()
-                                        }
-                                        coroutineScope.launch {
-                                            kotlinx.coroutines.delay(800)
-                                            swipeVideoFeedback = null
-                                        }
-                                    } else {
-                                        coroutineScope.launch {
-                                            kotlinx.coroutines.delay(1000)
-                                            isAdjustingBrightness = false
-                                            isAdjustingVolume = false
-                                        }
-                                    }
-                                }
-
-                                isPinching = false
-                                isDragging = false
-                                break
-                            }
-
-                            if (activePointers.size >= 2) {
-                                isPinching = true
-                                isDragging = false
-                                val p1 = activePointers[0].position
-                                val p2 = activePointers[1].position
-                                val dist = kotlin.math.hypot(p1.x - p2.x, p1.y - p2.y)
-                                val centroid = androidx.compose.ui.geometry.Offset((p1.x + p2.x) / 2f, (p1.y + p2.y) / 2f)
-
-                                if (prevPinchDist > 0f) {
-                                    val scale = dist / prevPinchDist
-                                    val newZoom = (zoomScale * scale).coerceIn(1f, 5f)
-                                    zoomScale = newZoom
-
-                                    if (prevCentroid != null && newZoom > 1.02f) {
-                                        val panDelta = centroid - prevCentroid!!
-                                        val maxPanX = (w * (newZoom - 1f)) / 2f
-                                        val maxPanY = (h * (newZoom - 1f)) / 2f
-                                        panOffsetX = (panOffsetX + panDelta.x).coerceIn(-maxPanX, maxPanX)
-                                        panOffsetY = (panOffsetY + panDelta.y).coerceIn(-maxPanY, maxPanY)
-                                    } else if (newZoom <= 1.02f) {
-                                        panOffsetX = 0f
-                                        panOffsetY = 0f
-                                        zoomScale = 1f
-                                    }
-                                }
-                                prevPinchDist = dist
-                                prevCentroid = centroid
-                                event.changes.forEach { it.consume() }
-                            } else if (activePointers.size == 1) {
-                                val change = activePointers[0]
-                                val dx = change.position.x - startPos.x
-                                val dy = change.position.y - startPos.y
-                                totalDx = dx
-                                totalDy = dy
-
-                                if (zoomScale > 1.05f && !isPinching) {
-                                    val maxPanX = (w * (zoomScale - 1f)) / 2f
-                                    val maxPanY = (h * (zoomScale - 1f)) / 2f
-                                    val dragChange = change.positionChange()
-                                    panOffsetX = (panOffsetX + dragChange.x).coerceIn(-maxPanX, maxPanX)
-                                    panOffsetY = (panOffsetY + dragChange.y).coerceIn(-maxPanY, maxPanY)
-                                    change.consume()
-                                } else if (!isPinching) {
-                                    if (!isDragging && kotlin.math.abs(dy) > touchSlop && kotlin.math.abs(dy) > kotlin.math.abs(dx) * 1.2f) {
-                                        isDragging = true
-                                        if (dragZone == 1) {
-                                            isAdjustingBrightness = true
-                                            val currentLpBrightness = activity?.window?.attributes?.screenBrightness ?: -1f
-                                            gestureBrightness = if (currentLpBrightness in 0.01f..1.0f) {
-                                                currentLpBrightness
-                                            } else {
-                                                try {
-                                                    val sysVal = android.provider.Settings.System.getInt(
-                                                        context.contentResolver,
-                                                        android.provider.Settings.System.SCREEN_BRIGHTNESS,
-                                                        128
-                                                    )
-                                                    (sysVal / 255f).coerceIn(0.01f, 1.0f)
-                                                } catch (e: Exception) {
-                                                    0.5f
-                                                }
-                                            }
-                                        } else if (dragZone == 2) {
-                                            isAdjustingVolume = true
-                                            val currentVol = audioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-                                            gestureVolumeFraction = (currentVol.toFloat() / maxAudioVolume.toFloat()).coerceIn(0f, 1f)
-                                            lastAppliedVolume = currentVol
-                                        }
-                                    }
-
-                                    if (isDragging) {
-                                        change.consume()
-                                        val dragDeltaY = change.positionChange().y
-                                        when (dragZone) {
-                                            1 -> {
-                                                val delta = -dragDeltaY / (h * 0.50f)
-                                                val newB = (gestureBrightness + delta).coerceIn(0.01f, 1.0f)
-                                                if (kotlin.math.abs(newB - gestureBrightness) > 0.003f) {
-                                                    gestureBrightness = newB
-                                                    activity?.let { act ->
-                                                        val lp = act.window.attributes
-                                                        lp.screenBrightness = newB
-                                                        act.window.attributes = lp
-                                                    }
-                                                }
-                                            }
-                                            2 -> {
-                                                val delta = -dragDeltaY / (h * 0.50f)
-                                                val newV = (gestureVolumeFraction + delta).coerceIn(0f, 1f)
-                                                gestureVolumeFraction = newV
-                                                val targetVol = kotlin.math.round(newV * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
-                                                if (targetVol != lastAppliedVolume) {
-                                                    lastAppliedVolume = targetVol
-                                                    try {
-                                                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, targetVol, 0)
-                                                    } catch (e: Exception) { }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-        contentAlignment = Alignment.Center
+            .playerGestureEngine(
+                context = context,
+                videoId = videoId,
+                exoPlayer = exoPlayer,
+                streamUrl = streamUrl,
+                useWebPlayerFallback = useWebPlayerFallback,
+                webViewRef = webViewRef,
+                totalDurationMs = totalDurationMs,
+                zoomScale = zoomScale,
+                panOffsetX = panOffsetX,
+                panOffsetY = panOffsetY,
+                onZoomChange = { scale, x, y ->
+                    zoomScale = scale
+                    panOffsetX = x
+                    panOffsetY = y
+                },
+                onToggleFullscreen = onToggleFullscreen,
+                isPlayingState = isPlayingState,
+                onPlayingStateChange = { isPlayingState = it },
+                areControlsVisible = areControlsVisible,
+                onControlsVisibilityChange = { areControlsVisible = it },
+                onPlayPauseFeedback = { playPauseFeedbackState = it },
+                onSeekFeedback = { forwardRewindFeedback = it },
+                onAdjustingBrightness = { isAdjustingBrightness = it },
+                onBrightnessChange = { gestureBrightness = it },
+                onAdjustingVolume = { isAdjustingVolume = it },
+                onVolumeFractionChange = { gestureVolumeFraction = it },
+                activity = activity,
+                audioManager = audioManager,
+                maxAudioVolume = maxAudioVolume,
+                coroutineScope = coroutineScope
+            )
     ) {
-        // Video Surface Container with Pinch-to-Zoom and Pan Graphics Layer
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clipToBounds()
-                .graphicsLayer {
-                    if (zoomScale > 1.02f) {
-                        scaleX = zoomScale
-                        scaleY = zoomScale
-                        translationX = panOffsetX
-                        translationY = panOffsetY
-                    } else {
-                        scaleX = 1f
-                        scaleY = 1f
-                        translationX = 0f
-                        translationY = 0f
+        // 1. Video Surface Layer (ExoPlayer texture or fallback WebView)
+        if (streamUrl != null && !useWebPlayerFallback) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        this.player = exoPlayer
+                        useController = false
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        playerViewRef = this
                     }
                 },
-            contentAlignment = Alignment.Center
-        ) {
-            if (streamResult?.isMembersOnly == true) {
-                // Native Clean Card for Members-Only / Restricted Videos
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF161616)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFD4AF37).copy(alpha = 0.18f),
-                            modifier = Modifier.size(54.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Filled.Lock,
-                                    contentDescription = "Members Only",
-                                    tint = Color(0xFFFFD700),
-                                    modifier = Modifier.size(26.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "Channel Members-Only Video",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "This video is restricted to paid channel members by the creator.",
-                            color = Color(0xFFAAAAAA),
-                            fontSize = 12.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Button(
-                                onClick = onNextVideo,
-                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.SkipNext,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Play Next Video", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        val intent = android.content.Intent(
-                                            android.content.Intent.ACTION_VIEW,
-                                            android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId")
-                                        )
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {}
-                                },
-                                shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF555555)),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                            ) {
-                                Text("Open on YouTube", fontSize = 12.sp)
-                            }
-                        }
+                update = { pv ->
+                    pv.player = exoPlayer
+                    playerViewRef = pv
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = zoomScale,
+                        scaleY = zoomScale,
+                        translationX = panOffsetX,
+                        translationY = panOffsetY
+                    )
+            )
+        } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
+            AndroidView(
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        webViewClient = android.webkit.WebViewClient()
+                        loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1")
+                        webViewRef = this
                     }
-                }
-            } else if (streamUrl != null && !useWebPlayerFallback) {
-                AndroidView(
-                    factory = { ctx ->
-                        PlayerView(ctx).apply {
-                            player = exoPlayer
-                            useController = false
-                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                            setOnTouchListener { _, _ -> false }
-                            playerViewRef = this
-                        }
-                    },
-                    update = { view ->
-                        if (view.player != exoPlayer) {
-                            view.player = exoPlayer
-                        }
-                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        playerViewRef = view
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("native_exoplayer_view")
-                )
-            } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
-                // Automatic Clean Fallback: Clean Embedded YouTube Player Iframe (No mobile website clutter)
-                AndroidView(
-                    factory = { ctx ->
-                        android.webkit.WebView(ctx).apply {
-                            layoutParams = android.view.ViewGroup.LayoutParams(
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
-
-                            webChromeClient = object : android.webkit.WebChromeClient() {
-                                override fun onShowCustomView(view: android.view.View?, callback: CustomViewCallback?) {
-                                    super.onShowCustomView(view, callback)
-                                    onToggleFullscreen()
-                                }
-                                override fun onHideCustomView() {
-                                    super.onHideCustomView()
-                                    onToggleFullscreen()
-                                }
-                            }
-                            webViewClient = object : android.webkit.WebViewClient() {
-                                override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                                    super.onPageFinished(view, url)
-                                    isFirstFrameRendered = true
-                                }
-                            }
-
-                            val cachedResumeSec = playerPrefs.getInt("resume_pos_sec_${videoId}", -1)
-                            val webStartSec = if (startSeconds > 0) startSeconds else if (cachedResumeSec > 0) cachedResumeSec else 0
-                            val startParam = if (webStartSec > 0) "&start=$webStartSec" else ""
-
-                            val embedHtml = """
-                                <!DOCTYPE html>
-                                <html>
-                                <head>
-                                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                <style>
-                                * { margin: 0; padding: 0; background: #000; overflow: hidden; }
-                                html, body, iframe { width: 100%; height: 100%; border: none; }
-                                </style>
-                                </head>
-                                <body>
-                                <iframe src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&modestbranding=1&rel=0$startParam" 
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                                        allowfullscreen>
-                                </iframe>
-                                </body>
-                                </html>
-                            """.trimIndent()
-                            loadDataWithBaseURL("https://www.youtube-nocookie.com", embedHtml, "text/html", "UTF-8", null)
-                            webViewRef = this
-                            onPlayerReady(this)
-                        }
-                    },
-                    update = { webView ->
-                        // Keep loaded
-                    },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("fallback_webview_player")
-                )
-            }
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("fallback_webview_player")
+            )
         }
 
-        // Preview thumbnail poster while buffering / preparing (prevents initial black screen)
+        // 2. Initial Preview Thumbnail Poster (prevents initial black flash)
         if ((isLoading || (!isFirstFrameRendered && !useWebPlayerFallback && streamUrl != null)) && streamResult?.isMembersOnly != true) {
             Box(
                 modifier = Modifier
@@ -1082,7 +722,7 @@ fun YouTubePlayerView(
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
-                    model = com.example.util.YouTubeUtils.getThumbnailUrl(videoId),
+                    model = YouTubeUtils.getThumbnailUrl(videoId),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -1107,1632 +747,255 @@ fun YouTubePlayerView(
             }
         }
 
-        val shouldShowControls = !isInPipMode && (streamUrl != null && !useWebPlayerFallback && !isLoading) && (areControlsVisible || showSettingsMenu || isDraggingScrubber)
+        // 3. Mid-Playback Buffering & Quality Switching Glassmorphic HUD
+        PlayerBufferingOverlay(
+            isBuffering = isBuffering,
+            isFirstFrameRendered = isFirstFrameRendered,
+            isLoading = isLoading,
+            useWebPlayerFallback = useWebPlayerFallback,
+            isSwitchingQuality = isSwitchingQuality
+        )
 
-        // Top-Right Corner Tiny Translucent Sleep Timer Countdown Badge
-        if (isSleepTimerActive && !isInPipMode) {
-            val countdownText = if (sleepTimerEndOfVideo) {
-                "End"
-            } else {
-                val m = sleepTimerRemainingSec / 60
-                val s = sleepTimerRemainingSec % 60
-                String.format("%02d:%02d", m, s)
-            }
+        // 4. Top-Right Sleep Timer Countdown Badge
+        PlayerSleepTimerBadge(
+            isActive = isSleepTimerActive,
+            isInPipMode = isInPipMode,
+            endOfVideo = sleepTimerEndOfVideo,
+            remainingSec = sleepTimerRemainingSec,
+            onClick = { showSleepTimerDialog = true },
+            modifier = Modifier.align(Alignment.TopEnd)
+        )
 
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Black.copy(alpha = 0.35f),
-                border = androidx.compose.foundation.BorderStroke(0.75.dp, Color.White.copy(alpha = 0.25f)),
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 8.dp)
-                    .clickable { showSleepTimerDialog = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Bedtime,
-                        contentDescription = "Sleep Countdown",
-                        tint = com.example.ui.theme.GoldStar.copy(alpha = 0.85f),
-                        modifier = Modifier.size(10.dp)
-                    )
-                    Text(
-                        text = countdownText,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                    )
-                }
-            }
-        }
+        // 5. Fullscreen Top Header Bar (Back button + Video title)
+        PlayerTopHeader(
+            isFullscreen = isFullscreen,
+            shouldShowControls = shouldShowControls,
+            videoTitle = videoTitle,
+            onToggleFullscreen = onToggleFullscreen,
+            modifier = Modifier.align(Alignment.TopStart)
+        )
 
-        // Fullscreen Top Header: Back Arrow Button [⬅️] + Video Title (Tapping exits fullscreen to portrait)
-        if (isFullscreen && shouldShowControls) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopStart)
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
-                        )
-                    )
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = { onToggleFullscreen() },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Exit Fullscreen (Back to Portrait)",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = videoTitle,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        // Real-Time Closed Caption (CC) Subtitle Overlay
-        if (captionsEnabled && !activeCaptionText.isNullOrBlank() && !isInPipMode) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(
-                        bottom = if (shouldShowControls) 50.dp else 16.dp,
-                        start = 20.dp,
-                        end = 20.dp
-                    )
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = activeCaptionText!!,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    lineHeight = 18.sp
-                )
-            }
-        }
-
-        // Quick Animated Play / Pause Center Bubble Indicator
-        androidx.compose.animation.AnimatedVisibility(
-            visible = playPauseFeedbackState != null,
-            enter = androidx.compose.animation.scaleIn(initialScale = 0.6f) + androidx.compose.animation.fadeIn(),
-            exit = androidx.compose.animation.scaleOut(targetScale = 1.2f) + androidx.compose.animation.fadeOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(68.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (playPauseFeedbackState == true) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = if (playPauseFeedbackState == true) "Playing" else "Paused",
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-        }
-
-        // White Window Options Pill: 👍 | 👎 | Share | ✨ | ⬇️
-        if (!isPlayingState && !isInPipMode) {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = true,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.92f),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(targetScale = 0.92f),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = if (isFullscreen) 56.dp else 48.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(50.dp),
-                    color = Color.White.copy(alpha = 0.93f),
-                    shadowElevation = 6.dp,
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE0E0E0))
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(0.dp),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                    ) {
-                        // 1. 👍 Like
-                        IconButton(
-                            onClick = {
-                                localIsFavorite = !localIsFavorite
-                                if (localIsFavorite) localIsDisliked = false
-                                onFavoriteToggle()
-                                android.widget.Toast.makeText(context, if (localIsFavorite) "Liked 👍" else "Unliked", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                                contentDescription = "Like",
-                                tint = if (localIsFavorite) YouTubeRed else Color(0xFF444444),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
-
-                        // 2. 👎 Dislike (Lower in Algorithm) - Vibrant Orange Accent
-                        IconButton(
-                            onClick = {
-                                localIsDisliked = !localIsDisliked
-                                if (localIsDisliked) localIsFavorite = false
-                                onDislikeToggle()
-                                val msg = if (localIsDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed"
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(
-                                    if (localIsDisliked) YouTubeRed.copy(alpha = 0.20f) else Color.Transparent,
-                                    CircleShape
-                                )
-                        ) {
-                            Icon(
-                                imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                                contentDescription = "Dislike",
-                                tint = if (localIsDisliked) YouTubeRed else Color(0xFF444444),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
-
-                        // 3. ↗️ Share
-                        IconButton(
-                            onClick = {
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Share,
-                                contentDescription = "Share",
-                                tint = Color(0xFF444444),
-                                modifier = Modifier.size(17.dp)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
-
-                        // 4. ✨ AI Summary
-                        IconButton(
-                            onClick = { onAiSummaryClick() },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(Color(0xFF8E24AA).copy(alpha = 0.10f), shape = CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AutoAwesome,
-                                contentDescription = "AI Summary",
-                                tint = Color(0xFF8E24AA),
-                                modifier = Modifier.size(17.dp)
-                            )
-                        }
-
-                        Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
-
-                        // 5. ⬇️ Download
-                        IconButton(
-                            onClick = { if (isDownloaded) onDeleteDownloadClick() else onDownloadClick() },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            if (isDownloaded) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = "Downloaded",
-                                    tint = Color(0xFF4CAF50),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            } else if (downloadProgress in 1..99) {
-                                CircularProgressIndicator(
-                                    progress = { downloadProgress / 100f },
-                                    modifier = Modifier.size(18.dp),
-                                    color = YouTubeRed,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.Download,
-                                    contentDescription = "Download",
-                                    tint = Color(0xFF444444),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Sleek YouTube Bottom Utility Bar (Scrubber + Volume + Timestamp + CC + Settings) - Auto-vanishes & Reappears on Touch
-        androidx.compose.animation.AnimatedVisibility(
-            visible = shouldShowControls,
-            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(200)),
-            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(300)),
+        // 6. Real-Time Closed Captions (CC) Subtitle Overlay
+        PlayerCaptionsOverlay(
+            captionsEnabled = captionsEnabled,
+            activeCaptionText = activeCaptionText,
+            isInPipMode = isInPipMode,
+            shouldShowControls = shouldShowControls,
             modifier = Modifier.align(Alignment.BottomCenter)
-        ) {
-            val isLiveStream = exoPlayer.isCurrentMediaItemLive
+        )
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
-                        )
-                    )
-                    .padding(horizontal = 8.dp, vertical = 1.dp)
-            ) {
-                // 1. YouTube Red Scrubber Slider
-                if (!isLiveStream && totalDurationMs > 0) {
-                    val activeSliderValue = if (isDraggingScrubber) {
-                        dragFraction
-                    } else {
-                        (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
-                    }
+        // 7. Center Play / Pause Animated Bubble
+        PlayerPlayPauseBubble(
+            state = playPauseFeedbackState,
+            modifier = Modifier.align(Alignment.Center)
+        )
 
-                    Slider(
-                        value = activeSliderValue,
-                        onValueChange = { fraction ->
-                            isDraggingScrubber = true
-                            dragFraction = fraction
-                            currentPosMs = (fraction * totalDurationMs).toLong()
-                        },
-                        onValueChangeFinished = {
-                            val targetMs = (dragFraction * totalDurationMs).toLong()
-                            exoPlayer.seekTo(targetMs)
-                            isDraggingScrubber = false
-                            val sec = (targetMs / 1000).toInt()
-                            if (sec >= 0) {
-                                playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
-                                onPositionUpdate(sec)
-                            }
-                        },
-                        colors = SliderDefaults.colors(
-                            thumbColor = YouTubeRed,
-                            activeTrackColor = YouTubeRed,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(14.dp)
-                    )
+        // 8. White Options Pill when Paused: 👍 | 👎 | ↗️ | ✨ | ⬇️
+        PlayerPauseActionStrip(
+            visible = !isPlayingState && !isInPipMode,
+            isFullscreen = isFullscreen,
+            context = context,
+            videoId = videoId,
+            videoTitle = videoTitle,
+            isFavorite = localIsFavorite,
+            isDisliked = localIsDisliked,
+            isDownloaded = isDownloaded,
+            downloadProgress = downloadProgress,
+            onFavoriteToggle = {
+                localIsFavorite = !localIsFavorite
+                if (localIsFavorite) localIsDisliked = false
+                onFavoriteToggle()
+            },
+            onDislikeToggle = {
+                localIsDisliked = true
+                localIsFavorite = false
+                onDislikeToggle()
+                onNextVideo()
+            },
+            onAiSummaryClick = onAiSummaryClick,
+            onDownloadClick = onDownloadClick,
+            onDeleteDownloadClick = onDeleteDownloadClick,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+
+        // 9. Bottom Utility Bar: Scrubber + Time + Action Buttons + Settings Anchor
+        PlayerBottomBar(
+            shouldShowControls = shouldShowControls,
+            exoPlayer = exoPlayer,
+            context = context,
+            videoId = videoId,
+            videoTitle = videoTitle,
+            totalDurationMs = totalDurationMs,
+            currentPosMs = currentPosMs,
+            isDraggingScrubber = isDraggingScrubber,
+            dragFraction = dragFraction,
+            onScrubberDragChange = { fraction ->
+                isDraggingScrubber = true
+                dragFraction = fraction
+                currentPosMs = (fraction * totalDurationMs).toLong()
+            },
+            onScrubberDragFinished = { targetMs ->
+                exoPlayer.seekTo(targetMs)
+                isDraggingScrubber = false
+                val sec = (targetMs / 1000).toInt()
+                if (sec >= 0) {
+                    playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
+                    onPositionUpdate(sec)
                 }
-
-                // 2. Utility Row: [▶ Play/Pause] [🔊 Volume] [08:28 / 16:52] ---------- [[CC] Captions] [⚙️ Settings]
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Left side: Play/Pause + Favorites + Subject + Watch Later + Timestamp
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // 0. Quick Play / Pause Button in Bottom Bar
-                        IconButton(
-                            onClick = {
-                                if (exoPlayer.isPlaying) {
-                                    exoPlayer.pause()
-                                    isPlayingState = false
-                                    playPauseFeedbackState = false
-                                } else {
-                                    exoPlayer.play()
-                                    isPlayingState = true
-                                    playPauseFeedbackState = true
-                                }
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(650)
-                                    playPauseFeedbackState = null
-                                }
-                            },
-                            modifier = Modifier.size(32.dp).testTag("bottom_bar_play_pause_btn")
-                        ) {
-                            Icon(
-                                imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = if (isPlayingState) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        // On-Screen Direct Star (Favorite) Button
-                        IconButton(
-                            onClick = { onFavoriteToggle() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
-                                contentDescription = "Favorite",
-                                tint = if (isFavorite) com.example.ui.theme.GoldStar else Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // On-Screen Direct Save to Subject Button
-                        IconButton(
-                            onClick = { onSaveToSubject() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Folder,
-                                contentDescription = "Save to Subject",
-                                tint = Color.White,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-
-                        // On-Screen Direct Watch Later Button
-                        IconButton(
-                            onClick = { onWatchLaterToggle() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Filled.AccessTime,
-                                contentDescription = "Watch Later",
-                                tint = if (isWatchLater) YouTubeRed else Color.White,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-
-                        if (isLiveStream) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .background(YouTubeRed, RoundedCornerShape(3.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "LIVE",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        } else if (totalDurationMs > 0) {
-                            Text(
-                                text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-
-                    // Right side: Discreet Speed Pill + Screenshot + Folder + Sleep Timer + CC + Settings Gear
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Discreet Speed Controls [ - ] 1.0x [ + ]
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color.Black.copy(alpha = 0.65f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedSpeed != 1.0f) YouTubeRed.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.25f))
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp)
-                            ) {
-                                // Slower [ - ]
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
-                                            val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
-                                            if (prev != selectedSpeed) {
-                                                selectedSpeed = prev
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(prev)
-                                                speedFeedbackState = "🐢 ${prev}x Speed"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("–", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-
-                                // Speed Label (Tap to reset to 1.0x)
-                                Text(
-                                    text = "${selectedSpeed}x",
-                                    color = if (selectedSpeed == 1.0f) Color.White else YouTubeRed,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .padding(horizontal = 3.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .clickable {
-                                            if (selectedSpeed != 1.0f) {
-                                                selectedSpeed = 1.0f
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(1.0f)
-                                                speedFeedbackState = "⚡ 1.0x Speed (Normal)"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        }
-                                )
-
-                                // Faster [ + ]
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clip(CircleShape)
-                                        .clickable {
-                                            val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
-                                            val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
-                                            if (next != selectedSpeed) {
-                                                selectedSpeed = next
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(next)
-                                                speedFeedbackState = "⚡ ${next}x Speed"
-                                                coroutineScope.launch {
-                                                    kotlinx.coroutines.delay(750)
-                                                    speedFeedbackState = null
-                                                }
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("+", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-                            }
-                        }
-
-                        // 1. Screenshot Button [📸]
-                        IconButton(
-                            onClick = { takeScreenshot() },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.CameraAlt,
-                                contentDescription = "Screenshot",
-                                tint = Color.White,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-
-                        // 2. Screenshot Folder Switcher [📁]
-                        IconButton(
-                            onClick = { showScreenshotFolderDialog = true },
-                            modifier = Modifier.size(26.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.FolderOpen,
-                                contentDescription = "Screenshot Folder",
-                                tint = com.example.ui.theme.GoldStar,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-
-                        // 3. Autoplay Toggle [▶️ / ⏸️] (Auto-advances next video)
-                        IconButton(
-                            onClick = {
-                                val next = !isAutoplayEnabled
-                                isAutoplayEnabled = next
-                                playerPrefs.edit().putBoolean("autoplay_enabled", next).apply()
-                                val msg = if (next) "▶️ Autoplay is ON (Auto-advance next video)" else "⏸️ Autoplay is OFF"
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(19.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isAutoplayEnabled) com.example.ui.theme.GoldStar.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = if (isAutoplayEnabled) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                                        contentDescription = if (isAutoplayEnabled) "Autoplay is ON" else "Autoplay is OFF",
-                                        tint = if (isAutoplayEnabled) com.example.ui.theme.GoldStar else Color.LightGray,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-                                if (isAutoplayEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(10.dp)
-                                            .height(2.dp)
-                                            .background(com.example.ui.theme.GoldStar)
-                                    )
-                                }
-                            }
-                        }
-
-                        // 4. Sleep Timer [🌙] (1-tap repeat when paused by sleep, or toggle mini-popup)
-                        IconButton(
-                            onClick = {
-                                if (wasPausedBySleepTimer) {
-                                    wasPausedBySleepTimer = false
-                                    sleepTimerRemainingSec = lastSleepDurationMinutes * 60
-                                    isSleepTimerActive = true
-                                    exoPlayer.play()
-                                    isPlayingState = true
-                                    android.widget.Toast.makeText(context, "🌙 Resumed for ${lastSleepDurationMinutes}m", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    showSleepTimerDialog = !showSleepTimerDialog
-                                }
-                            },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Filled.Bedtime,
-                                    contentDescription = "Sleep Timer",
-                                    tint = if (isSleepTimerActive || wasPausedBySleepTimer) com.example.ui.theme.GoldStar else Color.White,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                                if (isSleepTimerActive || wasPausedBySleepTimer) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(12.dp)
-                                            .height(2.dp)
-                                            .background(com.example.ui.theme.GoldStar)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Subtitles [CC]
-                        IconButton(
-                            onClick = {
-                                val next = !captionsEnabled
-                                captionsEnabled = next
-                                val msg = if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
-                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Filled.ClosedCaption,
-                                    contentDescription = "Subtitles",
-                                    tint = if (captionsEnabled) YouTubeRed else Color.White,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                                if (captionsEnabled) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(12.dp)
-                                            .height(2.dp)
-                                            .background(YouTubeRed)
-                                    )
-                                }
-                            }
-                        }
-
-                        // Share Button [↗️] (WhatsApp, Socials, Copy Link)
-                        IconButton(
-                            onClick = {
-                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                }
-                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                            },
-                            modifier = Modifier.size(30.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Share,
-                                contentDescription = "Share Video",
-                                tint = Color.White,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-
-                        // Settings Gear [⚙️]
-                        Box {
-                            IconButton(
-                                onClick = {
-                                    showSettingsMenu = true
-                                },
-                                modifier = Modifier.size(30.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Settings,
-                                    contentDescription = "Settings",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = showSettingsMenu,
-                                onDismissRequest = {
-                                    showSettingsMenu = false
-                                    showSpeedSubMenu = false
-                                    showQualitySubMenu = false
-                                }
-                            ) {
-                                if (!showSpeedSubMenu && !showQualitySubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                        leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = { showQualitySubMenu = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Playback Speed: ${selectedSpeed}x", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                        leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = { showSpeedSubMenu = true }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Pop-Out Floating Player (PiP)", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            onEnterPip()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Rotate 180° (Flip Screen)", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.ScreenRotation, contentDescription = null, tint = YouTubeRed) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            onRotate180()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Stats & Debug Console", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            onToggleDebugConsole()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Share Video ↗️", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = Color.White) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            try {
-                                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                    type = "text/plain"
-                                                    putExtra(android.content.Intent.EXTRA_SUBJECT, videoTitle)
-                                                    putExtra(android.content.Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
-                                                }
-                                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Video"))
-                                            } catch (e: Exception) { }
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Open in Browser 🌐", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Filled.OpenInBrowser, contentDescription = null) },
-                                        onClick = {
-                                            showSettingsMenu = false
-                                            try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$videoId"))
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) { }
-                                        }
-                                    )
-                                } else if (showQualitySubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                                        onClick = { showQualitySubMenu = false }
-                                    )
-                                    availableQualities.forEach { q ->
-                                        val isCurrent = q.equals(selectedQuality, ignoreCase = true)
-                                        val label = when (q) {
-                                            "2160p" -> "4K Ultra HD (2160p)"
-                                            "1440p" -> "Quad HD (1440p)"
-                                            "1080p" -> "1080p (Full HD)"
-                                            "720p"  -> "720p (HD)"
-                                            "480p"  -> "480p (Standard)"
-                                            "360p"  -> "360p (Data Saver)"
-                                            "240p"  -> "240p (Low)"
-                                            "144p"  -> "144p (Lowest)"
-                                            "Auto"  -> "Auto (Best Quality)"
-                                            else    -> q
-                                        }
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = if (isCurrent) "✓ $label" else label,
-                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 13.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                selectedQuality = q
-                                                showQualitySubMenu = false
-                                                showSettingsMenu = false
-
-                                                val (maxW, maxH) = when (q) {
-                                                    "2160p" -> Pair(3840, 2160)
-                                                    "1440p" -> Pair(2560, 1440)
-                                                    "1080p" -> Pair(1920, 1080)
-                                                    "720p"  -> Pair(1280, 720)
-                                                    "480p"  -> Pair(854, 480)
-                                                    "360p"  -> Pair(640, 360)
-                                                    else    -> Pair(Int.MAX_VALUE, Int.MAX_VALUE)
-                                                }
-                                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
-                                                .buildUpon().setMaxVideoSize(maxW, maxH).build()
-
-                                                coroutineScope.launch {
-                                                    val targetUrl = streamResult?.qualityUrlMap?.get(q)
-                                                        ?: com.example.data.remote.YouTubeStreamExtractor.getDirectStreamUrl(videoId, q)
-                                                    if (!targetUrl.isNullOrEmpty()) {
-                                                        val currentPos = exoPlayer.currentPosition
-                                                        savedPositionMs = currentPos
-                                                        streamUrl = targetUrl
-                                                        android.widget.Toast.makeText(context, "Quality switched to $q", android.widget.Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            }
-                                        )
-                                    }
-                                } else if (showSpeedSubMenu) {
-                                    DropdownMenuItem(
-                                        text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                                        onClick = { showSpeedSubMenu = false }
-                                    )
-                                    listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
-                                        val isCurrent = s == selectedSpeed
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = if (isCurrent) "✓ ${s}x (Normal)" else "${s}x",
-                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                    fontSize = 13.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                selectedSpeed = s
-                                                showSpeedSubMenu = false
-                                                showSettingsMenu = false
-                                                exoPlayer.playbackParameters = androidx.media3.common.PlaybackParameters(s)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Pop-Out / PiP Floating Window Button
-                        IconButton(
-                            onClick = { onEnterPip() },
-                            modifier = Modifier.size(30.dp).testTag("pip_popout_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.PictureInPictureAlt,
-                                contentDescription = "Pop-Out Floating Player (PiP)",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
-                        IconButton(
-                            onClick = { onToggleFullscreen() },
-                            modifier = Modifier.size(30.dp).testTag("fullscreen_toggle_btn")
-                        ) {
-                            Icon(
-                                imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                                contentDescription = if (isFullscreen) "Exit Fullscreen" else "Maximize / Fullscreen",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
+            },
+            isPlayingState = isPlayingState,
+            onPlayPauseClick = {
+                if (exoPlayer.isPlaying) {
+                    exoPlayer.pause()
+                    isPlayingState = false
+                    playPauseFeedbackState = false
+                } else {
+                    exoPlayer.play()
+                    isPlayingState = true
+                    playPauseFeedbackState = true
                 }
-            }
-        }
-
-        // Tiny Out-of-the-Way Bottom-Right Floating Zoom Reset Button
-        if (zoomScale > 1.05f) {
-            Surface(
-                onClick = {
-                    zoomScale = 1f
-                    panOffsetX = 0f
-                    panOffsetY = 0f
-                },
-                shape = CircleShape,
-                color = Color.Black.copy(alpha = 0.75f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(bottom = if (shouldShowControls) 72.dp else 20.dp, end = 16.dp)
-                    .size(36.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Filled.ZoomOutMap,
-                        contentDescription = "Reset Zoom",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
+                coroutineScope.launch {
+                    delay(650)
+                    playPauseFeedbackState = null
                 }
-            }
-        }
+            },
+            isFavorite = isFavorite,
+            onFavoriteToggle = onFavoriteToggle,
+            onSaveToSubject = onSaveToSubject,
+            isWatchLater = isWatchLater,
+            onWatchLaterToggle = onWatchLaterToggle,
+            selectedSpeed = selectedSpeed,
+            onSpeedChange = { s ->
+                selectedSpeed = s
+                exoPlayer.playbackParameters = PlaybackParameters(s)
+            },
+            onSpeedFeedback = { speedFeedbackState = it },
+            onTakeScreenshot = { takeScreenshot() },
+            onOpenScreenshotFolder = { showScreenshotFolderDialog = true },
+            isAutoplayEnabled = isAutoplayEnabled,
+            onToggleAutoplay = {
+                val next = !isAutoplayEnabled
+                isAutoplayEnabled = next
+                playerPrefs.edit().putBoolean("autoplay_enabled", next).apply()
+                val msg = if (next) "▶️ Autoplay is ON" else "⏸️ Autoplay is OFF"
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            },
+            isSleepTimerActive = isSleepTimerActive,
+            wasPausedBySleepTimer = wasPausedBySleepTimer,
+            onSleepTimerClick = {
+                if (wasPausedBySleepTimer) {
+                    wasPausedBySleepTimer = false
+                    sleepTimerRemainingSec = lastSleepDurationMinutes * 60
+                    isSleepTimerActive = true
+                    exoPlayer.play()
+                    isPlayingState = true
+                    Toast.makeText(context, "🌙 Resumed for ${lastSleepDurationMinutes}m", Toast.LENGTH_SHORT).show()
+                } else {
+                    showSleepTimerDialog = !showSleepTimerDialog
+                }
+            },
+            captionsEnabled = captionsEnabled,
+            onToggleCaptions = {
+                val next = !captionsEnabled
+                captionsEnabled = next
+                val msg = if (next) "Subtitles (CC) Enabled 💬" else "Subtitles (CC) Turned Off"
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            },
+            streamResult = streamResult,
+            availableQualities = availableQualities,
+            selectedQuality = selectedQuality,
+            onQualitySelected = { selectedQuality = it },
+            onEnterPip = onEnterPip,
+            onRotate180 = onRotate180,
+            onToggleDebugConsole = onToggleDebugConsole,
+            onSwitchStreamUrl = { targetUrl, quality ->
+                val currentPos = exoPlayer.currentPosition
+                savedPositionMs = currentPos
+                isSwitchingQuality = quality
+                streamUrl = targetUrl
+            },
+            isFullscreen = isFullscreen,
+            onToggleFullscreen = onToggleFullscreen,
+            coroutineScope = coroutineScope,
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
-        // Overlay Debug Logs Overlay Panel
-        AnimatedVisibility(
+        // 10. Zoom Reset Button (Bottom-Right)
+        PlayerZoomResetButton(
+            zoomScale = zoomScale,
+            shouldShowControls = shouldShowControls,
+            onResetZoom = {
+                zoomScale = 1f
+                panOffsetX = 0f
+                panOffsetY = 0f
+            },
+            modifier = Modifier.align(Alignment.BottomEnd)
+        )
+
+        // 11. Left Side Brightness HUD
+        PlayerBrightnessHUD(
+            isAdjustingBrightness = isAdjustingBrightness,
+            brightnessFraction = gestureBrightness,
+            modifier = Modifier.align(Alignment.CenterStart)
+        )
+
+        // 12. Right Side Volume HUD
+        PlayerVolumeHUD(
+            isAdjustingVolume = isAdjustingVolume,
+            volumeFraction = gestureVolumeFraction,
+            modifier = Modifier.align(Alignment.CenterEnd)
+        )
+
+        // 13. Center Seek / Scrub Feedback Pill (or Speed feedback)
+        PlayerSeekFeedbackHUD(
+            feedback = forwardRewindFeedback ?: speedFeedbackState,
+            modifier = Modifier.align(Alignment.Center)
+        )
+
+        // 14. Native Extractor Debug Console Overlay
+        PlayerDebugConsole(
             visible = showDebugConsole,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.92f))
-                .padding(12.dp)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Native Extractor Debug Console",
-                        color = Color.Green,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Row {
-                        IconButton(onClick = {
-                            val textToCopy = debugLogs.joinToString("\n")
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Debug Logs", textToCopy))
-                            Toast.makeText(context, "Logs Copied to Clipboard 📋", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(imageVector = Icons.Filled.ContentCopy, contentDescription = "Copy", tint = Color.White)
-                        }
-                        IconButton(onClick = { onToggleDebugConsole() }) {
-                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = Color.White)
-                        }
-                    }
+            debugLogs = debugLogs,
+            onClose = onToggleDebugConsole,
+            context = context
+        )
+
+        // 15. Screenshot Folder Chooser Dialog
+        PlayerScreenshotFolderDialog(
+            visible = showScreenshotFolderDialog,
+            onDismissRequest = { showScreenshotFolderDialog = false },
+            context = context,
+            activeFolder = activeScreenshotFolder,
+            onFolderSelected = { activeScreenshotFolder = it }
+        )
+
+        // 16. Sleep Timer Setup Dialog
+        PlayerSleepTimerDialog(
+            visible = showSleepTimerDialog,
+            onDismissRequest = { showSleepTimerDialog = false },
+            context = context,
+            sleepTimerMinutes = sleepTimerMinutes,
+            sleepTimerEndOfVideo = sleepTimerEndOfVideo,
+            isSleepTimerActive = isSleepTimerActive,
+            onStartTimer = { mins, endOfVideo ->
+                sleepTimerMinutes = mins
+                lastSleepDurationMinutes = mins
+                sleepTimerEndOfVideo = endOfVideo
+                if (endOfVideo) {
+                    isSleepTimerActive = true
+                } else {
+                    sleepTimerRemainingSec = mins * 60
+                    isSleepTimerActive = true
                 }
-                HorizontalDivider(color = Color.DarkGray)
-                Spacer(modifier = Modifier.height(6.dp))
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(debugLogs) { log ->
-                        Text(
-                            text = log,
-                            color = if (log.contains("Successfully")) Color.Green else if (log.contains("Failed")) Color.Red else Color.LightGray,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
+                showSleepTimerDialog = false
+            },
+            onTurnOffTimer = {
+                isSleepTimerActive = false
+                sleepTimerRemainingSec = 0
+                sleepTimerEndOfVideo = false
+                showSleepTimerDialog = false
             }
-        }
-
-        // Left Side Screen Brightness Gesture HUD Overlay
-        androidx.compose.animation.AnimatedVisibility(
-            visible = isAdjustingBrightness,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 24.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(alpha = 0.82f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
-                ) {
-                    Icon(
-                        imageVector = if (gestureBrightness > 0.6f) Icons.Filled.BrightnessHigh else if (gestureBrightness > 0.25f) Icons.Filled.BrightnessMedium else Icons.Filled.BrightnessLow,
-                        contentDescription = "Brightness",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(8.dp)
-                            .height(100.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.White.copy(alpha = 0.25f)),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .fillMaxHeight(gestureBrightness.coerceIn(0f, 1f))
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "${(gestureBrightness * 100).toInt()}%",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
-        // Right Side Device Volume Gesture HUD Overlay
-        androidx.compose.animation.AnimatedVisibility(
-            visible = isAdjustingVolume,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 24.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(alpha = 0.82f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 18.dp)
-                ) {
-                    Icon(
-                        imageVector = if (gestureVolumeFraction > 0.5f) Icons.Filled.VolumeUp else if (gestureVolumeFraction > 0.05f) Icons.Filled.VolumeDown else Icons.Filled.VolumeMute,
-                        contentDescription = "Volume",
-                        tint = Color.White,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .width(8.dp)
-                            .height(100.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.White.copy(alpha = 0.25f)),
-                        contentAlignment = Alignment.BottomCenter
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .fillMaxHeight(gestureVolumeFraction.coerceIn(0f, 1f))
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.White)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "${(gestureVolumeFraction * 100).toInt()}%",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-
-        // Center Fast-Forward / Rewind Gesture HUD Overlay
-        androidx.compose.animation.AnimatedVisibility(
-            visible = forwardRewindFeedback != null,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.80f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
-            ) {
-                Text(
-                    text = forwardRewindFeedback ?: "",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
-                )
-            }
-        }
-
-        // Center Swipe Next / Previous Video Gesture HUD Overlay
-        androidx.compose.animation.AnimatedVisibility(
-            visible = swipeVideoFeedback != null,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = YouTubeRed.copy(alpha = 0.90f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-            ) {
-                Text(
-                    text = swipeVideoFeedback ?: "",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
-                )
-            }
-        }
-
-        // Center Speed Adjustment 2-Finger Swipe Gesture HUD Overlay
-        androidx.compose.animation.AnimatedVisibility(
-            visible = speedFeedbackState != null,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF1E1E1E).copy(alpha = 0.92f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.75f))
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Speed,
-                        contentDescription = null,
-                        tint = YouTubeRed,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = speedFeedbackState ?: "",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                }
-            }
-        }
-
-        // 1-Click Center Resume & Repeat Sleep Timer Pill (shows when video was paused by sleep timer)
-        if (wasPausedBySleepTimer && !isPlayingState) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = Color.Black.copy(alpha = 0.88f),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, com.example.ui.theme.GoldStar),
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(16.dp)
-                    .clickable {
-                        wasPausedBySleepTimer = false
-                        sleepTimerRemainingSec = lastSleepDurationMinutes * 60
-                        isSleepTimerActive = true
-                        exoPlayer.play()
-                        isPlayingState = true
-                        android.widget.Toast.makeText(context, "🌙 Resumed with ${lastSleepDurationMinutes}m timer", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Bedtime,
-                        contentDescription = "Resume Sleep Timer",
-                        tint = com.example.ui.theme.GoldStar,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Text(
-                        text = "Resume for ${lastSleepDurationMinutes}m 🌙",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-        }
-
-        // Camera Shutter Flash Effect (150ms white flash fade)
-        androidx.compose.animation.AnimatedVisibility(
-            visible = screenshotFlashTrigger,
-            enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(30)),
-            exit = androidx.compose.animation.fadeOut(animationSpec = androidx.compose.animation.core.tween(150)),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.85f))
-            )
-        }
-
-        // Screenshot Saved Feedback Toast Chip
-        androidx.compose.animation.AnimatedVisibility(
-            visible = screenshotFeedbackText != null,
-            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut(),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 45.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color.Black.copy(alpha = 0.85f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.7f)),
-                shadowElevation = 6.dp,
-                modifier = Modifier.clickable { showScreenshotFolderDialog = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.CameraAlt,
-                        contentDescription = "Screenshot",
-                        tint = com.example.ui.theme.GoldStar,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = screenshotFeedbackText ?: "",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // Screenshot Folder Manager Dialog
-        if (showScreenshotFolderDialog) {
-            var newFolderInput by remember { mutableStateOf("") }
-            var isCreatingFolder by remember { mutableStateOf(false) }
-            val folders = remember(showScreenshotFolderDialog) { mutableStateListOf(*com.example.util.ScreenshotManager.getFolders(context).toTypedArray()) }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) { showScreenshotFolderDialog = false },
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF18181A).copy(alpha = 0.96f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    shadowElevation = 10.dp,
-                    modifier = Modifier
-                        .width(290.dp)
-                        .clickable(enabled = false) {}
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Header
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
-                                    contentDescription = "Folder",
-                                    tint = com.example.ui.theme.GoldStar,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = "Screenshot Folder",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            IconButton(
-                                onClick = { showScreenshotFolderDialog = false },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = "Close",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        Text(
-                            text = "Save in: Pictures/Vixz/$activeScreenshotFolder",
-                            color = Color.Gray,
-                            fontSize = 11.sp,
-                            modifier = Modifier
-                                .padding(vertical = 4.dp)
-                                .align(Alignment.Start)
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Folder List
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 160.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(folders) { fName ->
-                                val isSelected = fName == activeScreenshotFolder
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) com.example.ui.theme.GoldStar.copy(alpha = 0.2f) else Color(0xFF242426),
-                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar) else null,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            com.example.util.ScreenshotManager.setActiveFolder(context, fName)
-                                            activeScreenshotFolder = fName
-                                            android.widget.Toast.makeText(context, "Active folder: $fName", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.Folder,
-                                                contentDescription = null,
-                                                tint = if (isSelected) com.example.ui.theme.GoldStar else Color.LightGray,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                            Text(
-                                                text = fName,
-                                                color = if (isSelected) Color.White else Color.LightGray,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-
-                                        if (fName != "Default" && fName != "Screenshots") {
-                                            IconButton(
-                                                onClick = {
-                                                    com.example.util.ScreenshotManager.deleteFolder(context, fName)
-                                                    folders.remove(fName)
-                                                    if (activeScreenshotFolder == fName) {
-                                                        activeScreenshotFolder = "Default"
-                                                    }
-                                                },
-                                                modifier = Modifier.size(20.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Delete,
-                                                    contentDescription = "Delete",
-                                                    tint = Color.Gray,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Add Custom Folder Section
-                        if (isCreatingFolder) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = newFolderInput,
-                                    onValueChange = { newFolderInput = it },
-                                    placeholder = { Text("Folder Name", fontSize = 12.sp, color = Color.Gray) },
-                                    singleLine = true,
-                                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = com.example.ui.theme.GoldStar,
-                                        unfocusedBorderColor = Color.Gray,
-                                        cursorColor = com.example.ui.theme.GoldStar
-                                    ),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                )
-                                Button(
-                                    onClick = {
-                                        val trimmed = newFolderInput.trim()
-                                        if (trimmed.isNotBlank()) {
-                                            com.example.util.ScreenshotManager.addFolder(context, trimmed)
-                                            com.example.util.ScreenshotManager.setActiveFolder(context, trimmed)
-                                            activeScreenshotFolder = trimmed
-                                            if (!folders.contains(trimmed)) folders.add(trimmed)
-                                            newFolderInput = ""
-                                            isCreatingFolder = false
-                                            android.widget.Toast.makeText(context, "Created folder: $trimmed", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.GoldStar),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(44.dp)
-                                ) {
-                                    Text("Add", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        } else {
-                            OutlinedButton(
-                                onClick = { isCreatingFolder = true },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.GoldStar),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.GoldStar.copy(alpha = 0.6f)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(34.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Add", modifier = Modifier.size(14.dp))
-                                    Text("New Folder", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Tiny, Sleek Floating Sleep Timer Mini-Card
-        if (showSleepTimerDialog) {
-            var tempMinutes by remember { mutableFloatStateOf(if (sleepTimerMinutes in 5..60) sleepTimerMinutes.toFloat() else 30f) }
-            var tempEndOfVideo by remember { mutableStateOf(sleepTimerEndOfVideo) }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) { showSleepTimerDialog = false },
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0xFF18181A).copy(alpha = 0.95f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier
-                        .width(270.dp)
-                        .clickable(enabled = false) {}
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Header: Title + Close X
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Bedtime,
-                                    contentDescription = "Sleep",
-                                    tint = com.example.ui.theme.GoldStar,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = "Sleep Timer",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp
-                                )
-                            }
-                            IconButton(
-                                onClick = { showSleepTimerDialog = false },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = "Close",
-                                    tint = Color.Gray,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        if (isSleepTimerActive) {
-                            val remM = sleepTimerRemainingSec / 60
-                            val remS = sleepTimerRemainingSec % 60
-                            val statusText = if (sleepTimerEndOfVideo) "Active: Stops at video end" else "Active: ${remM}m ${remS}s left"
-                            Text(
-                                text = statusText,
-                                color = Color(0xFF81C784),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(bottom = 2.dp)
-                            )
-                        }
-
-                        // Duration Readout
-                        val chosenMins = ((tempMinutes / 5f).toInt() * 5).coerceIn(5, 60)
-                        val readoutText = if (tempEndOfVideo) "End of Video" else if (chosenMins == 60) "1 Hour" else "$chosenMins Min"
-
-                        Text(
-                            text = readoutText,
-                            color = if (tempEndOfVideo) com.example.ui.theme.GoldStar else Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 22.sp
-                        )
-
-                        // Compact Step Slider
-                        if (!tempEndOfVideo) {
-                            Slider(
-                                value = tempMinutes,
-                                onValueChange = { raw ->
-                                    tempMinutes = ((raw / 5f).toInt() * 5).toFloat().coerceIn(5f, 60f)
-                                },
-                                valueRange = 5f..60f,
-                                steps = 10,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = com.example.ui.theme.GoldStar,
-                                    activeTrackColor = com.example.ui.theme.GoldStar,
-                                    inactiveTrackColor = Color.DarkGray
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(28.dp)
-                            )
-                        }
-
-                        // Preset Chips
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            listOf(15, 30, 45, 60).forEach { p ->
-                                val sel = !tempEndOfVideo && chosenMins == p
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = if (sel) com.example.ui.theme.GoldStar else Color(0xFF2A2A2C),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable {
-                                            tempMinutes = p.toFloat()
-                                            tempEndOfVideo = false
-                                        }
-                                ) {
-                                    Text(
-                                        text = if (p == 60) "1h" else "${p}m",
-                                        color = if (sel) Color.Black else Color.White,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 11.sp,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Action Buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (isSleepTimerActive) {
-                                Button(
-                                    onClick = {
-                                        isSleepTimerActive = false
-                                        sleepTimerRemainingSec = 0
-                                        sleepTimerEndOfVideo = false
-                                        showSleepTimerDialog = false
-                                        android.widget.Toast.makeText(context, "Timer Off ⏹️", android.widget.Toast.LENGTH_SHORT).show()
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333336)),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(34.dp)
-                                ) {
-                                    Text("Turn Off", color = Color(0xFFFF5252), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    val finalMins = ((tempMinutes / 5f).toInt() * 5).coerceIn(5, 60)
-                                    sleepTimerMinutes = finalMins
-                                    lastSleepDurationMinutes = finalMins
-                                    sleepTimerEndOfVideo = tempEndOfVideo
-                                    if (tempEndOfVideo) {
-                                        isSleepTimerActive = true
-                                        android.widget.Toast.makeText(context, "🌙 Sleep: End of Video", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        sleepTimerRemainingSec = finalMins * 60
-                                        isSleepTimerActive = true
-                                        android.widget.Toast.makeText(context, "🌙 Sleep set for $finalMins min", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
-                                    showSleepTimerDialog = false
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = com.example.ui.theme.GoldStar),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(34.dp)
-                            ) {
-                                Text(
-                                    text = if (isSleepTimerActive) "Reset (${readoutText})" else "Start (${readoutText})",
-                                    color = Color.Black,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        )
     }
 }
 

@@ -76,7 +76,20 @@ object YouTubeLiveSearchService {
         "veritasium" to listOf("veritasium", "Veritasium"),
         "huberman lab" to listOf("hubermanlab", "HubermanLab"),
         "andrew huberman" to listOf("hubermanlab", "HubermanLab"),
-        "cleo abram" to listOf("cleoabram", "CleoAbram")
+        "cleo abram" to listOf("cleoabram", "CleoAbram"),
+        "the joe rogan experience" to listOf("joerogan", "TheJoeRoganExperience"),
+        "joe rogan" to listOf("joerogan", "TheJoeRoganExperience"),
+        "matt wolfe" to listOf("maborle", "MattWolfe"),
+        "fireship" to listOf("Fireship"),
+        "two minute papers" to listOf("TwoMinutePapers"),
+        "dwarkesh patel" to listOf("DwarkeshPatel"),
+        "matthew berman" to listOf("MatthewBerman"),
+        "triggernometry" to listOf("triggerpod"),
+        "timcast irl" to listOf("TimcastIRL"),
+        "liberal hivemind" to listOf("LiberalHivemind"),
+        "david ondrej" to listOf("DavidOndrej"),
+        "anastasi in tech" to listOf("AnastasiInTech"),
+        "alex ziskind" to listOf("AlexZiskind")
     )
 
     /**
@@ -103,13 +116,20 @@ object YouTubeLiveSearchService {
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
-        val channelSemaphore = Semaphore(2)
+        val channelSemaphore = Semaphore(8)
 
-        val jobs = channels.map { channel ->
+        val targetChannels = if (channels.size > 20) {
+            val startIndex = (batchIndex * 20) % channels.size
+            (0 until 20.coerceAtMost(channels.size)).map { channels[(startIndex + it) % channels.size] }
+        } else {
+            channels
+        }
+
+        val jobs = targetChannels.map { channel ->
             async {
                 channelSemaphore.withPermit {
                     try {
-                        val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
+                        val fetched = kotlinx.coroutines.withTimeoutOrNull(4000L) {
                             fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
                         } ?: emptyList()
                         results.addAll(fetched.take(20))
@@ -126,82 +146,170 @@ object YouTubeLiveSearchService {
             .distinctBy { it.youtubeId }
             .sortedWith(
                 compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    .thenByDescending { it.addedTimestamp }
             )
         putCache(cacheKey, finalResults)
         return@withContext finalResults
     }
 
     /**
-     * Searches YouTube for any query using direct channel RSS, upload-date sorted web search, and NewPipe.
+     * Searches YouTube for any query using parallel standard relevance search, date-filtered search,
+     * creator channel inspection, and NewPipe. Strictly defaults to "Latest" uploads first.
      */
-    suspend fun searchRealYouTubeVideos(query: String, sortByUploadDate: Boolean = false, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
+    suspend fun searchRealYouTubeVideos(
+        query: String,
+        sortByUploadDate: Boolean = true,
+        forceRefresh: Boolean = false,
+        sortOption: String = "Latest"
+    ): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        val cacheKey = "search:$trimmed:$sortByUploadDate"
+        val effectiveSort = when {
+            sortOption.equals("Most Popular", ignoreCase = true) -> "Most Popular"
+            sortOption.equals("Relevance", ignoreCase = true) -> "Relevance"
+            !sortByUploadDate && sortOption.isBlank() -> "Relevance"
+            else -> "Latest" // Default is strictly "Latest"
+        }
+
+        val cacheKey = "search:$trimmed:$effectiveSort"
         if (!forceRefresh) {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
-        val results = mutableListOf<VideoEntity>()
+        val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
 
-        // 1. Direct High-Speed YouTube Web HTML Search (200ms)
-        val webResults = searchWebHtml(trimmed, sortByUploadDate).filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-        results.addAll(webResults)
+        // 1. Parallel Searches across multiple YouTube endpoints to guarantee brand-new uploads are never dropped:
+        val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
-        // 2. If results are few, check if query matches a channel or use NewPipe
+        // Job A: Standard Search (high relevance + always includes the creator's latest uploads from hours ago!)
+        jobs.add(async {
+            try {
+                val std = searchWebHtml(trimmed, sortByUploadDate = false)
+                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                results.addAll(std)
+            } catch (e: Exception) {
+                logD("YouTubeLiveSearchService", "Std search error: ${e.message}")
+            }
+        })
+
+        // Job B: Date-Sorted Search (&sp=CAISAhAB)
+        jobs.add(async {
+            try {
+                val dateSorted = searchWebHtml(trimmed, sortByUploadDate = true)
+                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                results.addAll(dateSorted)
+            } catch (e: Exception) {
+                logD("YouTubeLiveSearchService", "Date search error: ${e.message}")
+            }
+        })
+
+        // Job B1: YouTube Last Hour Filter (&sp=EgIIAQ%253D%253D) to guarantee sub-60-minute uploads
+        if (effectiveSort == "Latest") {
+            jobs.add(async {
+                try {
+                    val lastHour = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAQ%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(lastHour)
+                } catch (e: Exception) { }
+            })
+            // Job B2: YouTube Today Filter (&sp=EgIIAg%253D%253D)
+            jobs.add(async {
+                try {
+                    val today = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAg%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(today)
+                } catch (e: Exception) { }
+            })
+        }
+
+        // Job C: Channel upload search if query matches known creator or contains 1-3 words
+        val lower = trimmed.lowercase()
+        val isLikelyCreator = VERIFIED_HANDLES.containsKey(lower) || trimmed.split("\\s+".toRegex()).size <= 3
+        if (isLikelyCreator) {
+            jobs.add(async {
+                try {
+                    val ch = fetchChannelLatestVideos(trimmed, forceRefresh = forceRefresh)
+                    results.addAll(ch)
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Channel search error: ${e.message}")
+                }
+            })
+        }
+
+        // Job D: If "Most Popular" is selected, fetch with view count parameter
+        if (effectiveSort == "Most Popular") {
+            jobs.add(async {
+                try {
+                    val pop = searchWebHtml(trimmed, customSortParam = "&sp=CAMSAhAB")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(pop)
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Popular search error: ${e.message}")
+                }
+            })
+        }
+
+        jobs.forEach { it.join() }
+
+        // Fallback: If still few results, try NewPipe
         if (results.size < 5) {
             try {
-                val channelUploads = fetchChannelLatestVideos(trimmed, forceRefresh = forceRefresh)
-                if (channelUploads.isNotEmpty()) {
-                    results.addAll(0, channelUploads)
-                }
-            } catch (e: Exception) { }
+                val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+                val extractor = service.getSearchExtractor(trimmed)
+                extractor.fetchPage()
+                val page = extractor.initialPage
+                for (item in page.items) {
+                    if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
+                        val vidId = com.example.util.YouTubeUtils.extractVideoId(item.url) ?: item.url.substringAfter("v=").take(11)
+                        if (vidId.isNotBlank() && vidId.length == 11) {
+                            val durSec = item.duration
+                            val durFormatted = if (durSec > 0) {
+                                String.format("%d:%02d", durSec / 60, durSec % 60)
+                            } else "0:00"
 
-            if (results.size < 5) {
-                try {
-                    val service = org.schabi.newpipe.extractor.ServiceList.YouTube
-                    val extractor = service.getSearchExtractor(trimmed)
-                    extractor.fetchPage()
-                    val page = extractor.initialPage
-                    for (item in page.items) {
-                        if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                            val vidId = com.example.util.YouTubeUtils.extractVideoId(item.url) ?: item.url.substringAfter("v=").take(11)
-                            if (vidId.isNotBlank() && vidId.length == 11) {
-                                val durSec = item.duration
-                                val durFormatted = if (durSec > 0) {
-                                    String.format("%d:%02d", durSec / 60, durSec % 60)
-                                } else "0:00"
+                            val title = item.name ?: "YouTube Video"
+                            val channel = item.uploaderName ?: "YouTube"
 
-                                val title = item.name ?: "YouTube Video"
-                                val channel = item.uploaderName ?: "YouTube"
-
-                                if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
-                                    results.add(
-                                        VideoEntity(
-                                            youtubeId = vidId,
-                                            title = title,
-                                            channelName = channel,
-                                            thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
-                                            durationText = durFormatted,
-                                            category = "YouTube",
-                                            publishedTimeText = item.textualUploadDate ?: "",
-                                            viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
-                                        )
+                            if (!YouTubeUtils.isForeignLanguageContent(title, channel)) {
+                                results.add(
+                                    VideoEntity(
+                                        youtubeId = vidId,
+                                        title = title,
+                                        channelName = channel,
+                                        thumbnailUrl = item.thumbnails.firstOrNull()?.url ?: com.example.util.YouTubeUtils.getThumbnailUrl(vidId),
+                                        durationText = durFormatted,
+                                        category = "YouTube",
+                                        publishedTimeText = item.textualUploadDate ?: "",
+                                        viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
                                     )
-                                }
+                                )
                             }
                         }
                     }
-                } catch (e: Exception) { }
-            }
+                }
+            } catch (e: Exception) { }
         }
 
-        val finalResults = if (sortByUploadDate) {
-            results.distinctBy { it.youtubeId }
-                .sortedWith(compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-        } else {
-            results.distinctBy { it.youtubeId }
+        val distinctList = results.distinctBy { it.youtubeId }
+
+        val finalResults = when (effectiveSort) {
+            "Most Popular" -> {
+                distinctList.sortedWith(
+                    compareByDescending<VideoEntity> { YouTubeUtils.parseViewCount(it.viewCountText) }
+                        .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                )
+            }
+            "Relevance" -> {
+                distinctList
+            }
+            else -> {
+                // "Latest" (Default): Strictly sort by elapsed seconds ascending (0s = newest upload at top)
+                distinctList.sortedWith(
+                    compareBy<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenByDescending { it.addedTimestamp }
+                )
+            }
         }
 
         putCache(cacheKey, finalResults)
@@ -577,10 +685,10 @@ object YouTubeLiveSearchService {
         return@withContext emptyList()
     }
 
-    private fun searchWebHtml(query: String, sortByUploadDate: Boolean = false): List<VideoEntity> {
+    private fun searchWebHtml(query: String, sortByUploadDate: Boolean = false, customSortParam: String? = null): List<VideoEntity> {
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val sortParam = if (sortByUploadDate) "&sp=CAISAhAB" else ""
+            val sortParam = customSortParam ?: if (sortByUploadDate) "&sp=CAISAhAB" else ""
             val url = "https://www.youtube.com/results?search_query=$encodedQuery$sortParam&hl=en&gl=US"
 
             val request = Request.Builder()

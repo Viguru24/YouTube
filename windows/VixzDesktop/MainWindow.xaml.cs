@@ -82,6 +82,28 @@ namespace VixzDesktop
             ApplyAmbientGlowState();
             UpdateFolderChipHighlights();
 
+            // Restore AI Copilot custom font size
+            if (AiFontSizeSlider != null && StorageService.Settings.AiFontSize >= 11 && StorageService.Settings.AiFontSize <= 20)
+            {
+                AiFontSizeSlider.Value = StorageService.Settings.AiFontSize;
+            }
+
+            // Initialize VPS Cross-Device Cloud Sync
+            VpsSyncService.InitializeAutoSync();
+            VpsSyncService.OnSyncCompleted += () =>
+            {
+                if (FeedTitleText?.Text == "🏠 Home Feed" && _currentFeed != null)
+                {
+                    var watchedIds = new HashSet<string>(StorageService.Settings.WatchHistory.Select(v => v.Id), StringComparer.OrdinalIgnoreCase);
+                    var removed = _currentFeed.RemoveAll(v => watchedIds.Contains(v.Id));
+                    if (removed > 0 && VideoItemsControl != null)
+                    {
+                        VideoItemsControl.ItemsSource = null;
+                        VideoItemsControl.ItemsSource = _currentFeed;
+                    }
+                }
+            };
+
             await InitializeWebViewAsync();
 
             if (StorageService.Settings.UserAccount?.IsSignedIn == true)
@@ -192,10 +214,6 @@ namespace VixzDesktop
         var startSec = parseFloat(urlParams.get('t') || '0') || 0;
         var preferredQuality = urlParams.get('vq') || 'hd1080';
 
-        if (currentVideoId) {
-            fallbackToDirectIframe(currentVideoId, startSec);
-        }
-
         function applyHighQuality() {
             try {
                 if (player) {
@@ -214,7 +232,7 @@ namespace VixzDesktop
             try {
                 player = new YT.Player('player', {
                     videoId: currentVideoId,
-                    host: 'https://www.youtube-nocookie.com',
+                    host: 'https://www.youtube.com',
                     playerVars: {
                         'autoplay': 1,
                         'playsinline': 1,
@@ -224,6 +242,7 @@ namespace VixzDesktop
                         'modestbranding': 1,
                         'iv_load_policy': 3,
                         'enablejsapi': 1,
+                        'origin': window.location.origin || 'https://vixz.app',
                         'start': Math.floor(startSec),
                         'vq': preferredQuality,
                         'hd': 1
@@ -252,7 +271,13 @@ namespace VixzDesktop
                             if (window.chrome && window.chrome.webview) {
                                 window.chrome.webview.postMessage('PLAYER_ERROR:' + e.data);
                             }
-                            fallbackToDirectIframe(currentVideoId, startSec);
+                            if (e.data === 101 || e.data === 150 || e.data === 2) {
+                                if (window.chrome && window.chrome.webview) {
+                                    window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
+                                }
+                            } else {
+                                fallbackToDirectIframe(currentVideoId, startSec);
+                            }
                         }
                     }
                 });
@@ -266,7 +291,8 @@ namespace VixzDesktop
             var pdiv = document.getElementById('player');
             if (!pdiv) return;
             var startParam = sec > 0 ? '&start=' + Math.floor(sec) : '';
-            pdiv.innerHTML = '<iframe id=""fallback-yt-frame"" src=""https://www.youtube-nocookie.com/embed/' + vid + '?autoplay=1&playsinline=1&controls=1&rel=0&enablejsapi=1' + startParam + '"" style=""width:100%;height:100%;border:none;position:absolute;top:0;left:0;"" allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" allowfullscreen></iframe>';
+            var originParam = '&origin=' + encodeURIComponent(window.location.origin || 'https://vixz.app');
+            pdiv.innerHTML = '<iframe id=""fallback-yt-frame"" src=""https://www.youtube.com/embed/' + vid + '?autoplay=1&playsinline=1&controls=1&rel=0&enablejsapi=1' + originParam + startParam + '"" style=""width:100%;height:100%;border:none;position:absolute;top:0;left:0;"" allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" allowfullscreen></iframe>';
         }
 
         // F12 key listener to open DevTools from within player iframe/page
@@ -845,6 +871,31 @@ namespace VixzDesktop
                 {
                     var errCode = msg.Substring("PLAYER_ERROR:".Length);
                     System.Diagnostics.Debug.WriteLine($"[Vixz] Player error code: {errCode}");
+                }
+                else if (msg.StartsWith("PLAYER_STREAM_FALLBACK:"))
+                {
+                    var vid = msg.Substring("PLAYER_STREAM_FALLBACK:".Length);
+                    if (!string.IsNullOrEmpty(vid))
+                    {
+                        _ = Dispatcher.InvokeAsync(async () =>
+                        {
+                            try
+                            {
+                                var streamUrl = await YouTubeService.GetStreamUrlAsync(vid);
+                                if (!string.IsNullOrEmpty(streamUrl))
+                                {
+                                    var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
+                                    double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
+                                    await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{vid}')");
+                                    ShowToast("🛡️ Fallback: Playing via stream engine");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[Vixz] Stream fallback failed: {ex.Message}");
+                            }
+                        });
+                    }
                 }
                 else if (msg == "VIDEO_ENDED")
                 {
@@ -3432,6 +3483,7 @@ namespace VixzDesktop
 
             try
             {
+                BackgroundSyncWebView.Visibility = Visibility.Visible;
                 var env = await WebViewManager.GetEnvironmentAsync();
                 await BackgroundSyncWebView.EnsureCoreWebView2Async(env);
                 await WebViewManager.MaskWebViewIndicatorsAsync(BackgroundSyncWebView.CoreWebView2);
@@ -3544,6 +3596,12 @@ namespace VixzDesktop
             finally
             {
                 _isSyncingAccount = false;
+                try
+                {
+                    BackgroundSyncWebView.Visibility = Visibility.Collapsed;
+                    BackgroundSyncWebView.CoreWebView2?.Navigate("about:blank");
+                }
+                catch { }
             }
 
             return StorageService.Settings.UserAccount;
@@ -3751,8 +3809,12 @@ namespace VixzDesktop
 
             if (PlayerView != null)
             {
+                // Always keep PlayerView 100% opaque (Alpha = 255) so background feed never bleeds through
+                byte bgR = (byte)Math.Clamp(9 + (r * 0.12), 0, 255);
+                byte bgG = (byte)Math.Clamp(9 + (g * 0.12), 0, 255);
+                byte bgB = (byte)Math.Clamp(12 + (b * 0.12), 0, 255);
                 PlayerView.Background = StorageService.Settings.IsAmbientGlowEnabled 
-                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(50, r, g, b))
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(bgR, bgG, bgB))
                     : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(9, 9, 12));
             }
         }
@@ -3855,12 +3917,23 @@ namespace VixzDesktop
         {
             if (AiMessageStack == null) return;
             ApplyAiFontSize(e.NewValue);
+
+            // Persist setting permanently
+            if (Math.Abs(StorageService.Settings.AiFontSize - e.NewValue) > 0.05)
+            {
+                StorageService.Settings.AiFontSize = e.NewValue;
+                StorageService.Save();
+            }
         }
 
         private void AiFontResetBtn_Click(object sender, RoutedEventArgs e)
         {
             if (AiFontSizeSlider != null)
+            {
                 AiFontSizeSlider.Value = AiFontSizeDefault;
+                StorageService.Settings.AiFontSize = AiFontSizeDefault;
+                StorageService.Save();
+            }
         }
 
         private void AiChatScrollViewer_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
@@ -3916,6 +3989,11 @@ namespace VixzDesktop
                 AiCopilotPanel.Visibility = Visibility.Visible;
                 AiGridSplitter.Visibility = Visibility.Visible;
                 AiDrawerCol.Width = new GridLength(Math.Max(320, _savedAiDrawerWidth));
+                if (AiFontSizeSlider != null && StorageService.Settings.AiFontSize >= 11 && StorageService.Settings.AiFontSize <= 20)
+                {
+                    AiFontSizeSlider.Value = StorageService.Settings.AiFontSize;
+                    ApplyAiFontSize(StorageService.Settings.AiFontSize);
+                }
                 AiPromptBox.Focus();
             }
         }
@@ -4005,6 +4083,185 @@ namespace VixzDesktop
             sp.Children.Add(heading);
             sp.Children.Add(desc);
             sp.Children.Add(txtBox);
+            sp.Children.Add(btnRow);
+
+            prompt.Content = sp;
+            prompt.ShowDialog();
+        }
+
+        private void VpsSyncSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var prompt = new Window
+            {
+                Title = "☁️ VPS Cross-Device Cloud Sync",
+                Width = 500,
+                Height = 440,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkPrimary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                WindowStyle = WindowStyle.ToolWindow,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var sp = new StackPanel { Margin = new Thickness(18) };
+
+            var heading = new TextBlock
+            {
+                Text = "☁️ VPS Cross-Device Synchronization",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var desc = new TextBlock
+            {
+                Text = "Synchronize watched videos, playback positions, and algorithm preferences directly with your private VPS sync server so you never see or re-watch the same video twice across PC and Mobile.",
+                FontSize = 11.5,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 14)
+            };
+
+            var urlLabel = new TextBlock
+            {
+                Text = "VPS Server URL (e.g. http://192.168.1.100:8089 or https://sync.mydomain.com):",
+                FontSize = 11,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var urlBox = new TextBox
+            {
+                Text = StorageService.Settings.VpsServerUrl ?? "",
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkTertiary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle"),
+                FontSize = 12,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var keyLabel = new TextBlock
+            {
+                Text = "Optional API Key / Access Token:",
+                FontSize = 11,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var keyBox = new TextBox
+            {
+                Text = StorageService.Settings.VpsApiKey ?? "",
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkTertiary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle"),
+                FontSize = 12,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var autoSyncCb = new CheckBox
+            {
+                Content = "Enable automatic background sync (every 5 minutes)",
+                IsChecked = StorageService.Settings.IsVpsSyncEnabled,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                FontSize = 11.5,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+
+            var lastSyncText = StorageService.Settings.LastVpsSyncTime.HasValue 
+                ? $"Last Synced: {StorageService.Settings.LastVpsSyncTime.Value.ToLocalTime():g}" 
+                : "Not synced yet";
+
+            var statusBlock = new TextBlock
+            {
+                Text = $"Status: {lastSyncText} • Watched videos recorded: {StorageService.Settings.WatchHistory.Count}",
+                FontSize = 11,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextMuted"),
+                Margin = new Thickness(0, 0, 0, 14),
+                TextWrapping = TextWrapping.Wrap
+            };
+
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+            var testBtn = new Button
+            {
+                Content = "⚡ Test & Sync Now",
+                Style = (Style)FindResource("GlassButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+
+            var saveBtn = new Button
+            {
+                Content = "Save Settings",
+                Style = (Style)FindResource("GlassButton"),
+                Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                Foreground = System.Windows.Media.Brushes.Black,
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(14, 6, 14, 6)
+            };
+
+            testBtn.Click += async (s, ev) =>
+            {
+                var url = urlBox.Text.Trim();
+                var key = keyBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    statusBlock.Foreground = System.Windows.Media.Brushes.OrangeRed;
+                    statusBlock.Text = "Please enter a VPS server URL first.";
+                    return;
+                }
+
+                statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
+                statusBlock.Text = "Connecting & synchronizing with VPS...";
+                testBtn.IsEnabled = false;
+
+                StorageService.Settings.VpsServerUrl = url;
+                StorageService.Settings.VpsApiKey = string.IsNullOrWhiteSpace(key) ? null : key;
+                StorageService.Settings.IsVpsSyncEnabled = autoSyncCb.IsChecked == true;
+
+                var (success, message) = await VpsSyncService.SyncWithServerAsync();
+                testBtn.IsEnabled = true;
+
+                if (success)
+                {
+                    statusBlock.Foreground = System.Windows.Media.Brushes.LightGreen;
+                    statusBlock.Text = $"✅ {message}";
+                    ShowToast("☁️ Synced with VPS successfully!");
+                }
+                else
+                {
+                    statusBlock.Foreground = System.Windows.Media.Brushes.OrangeRed;
+                    statusBlock.Text = $"❌ {message}";
+                }
+            };
+
+            saveBtn.Click += (s, ev) =>
+            {
+                var url = urlBox.Text.Trim();
+                var key = keyBox.Text.Trim();
+                StorageService.Settings.VpsServerUrl = string.IsNullOrWhiteSpace(url) ? null : url;
+                StorageService.Settings.VpsApiKey = string.IsNullOrWhiteSpace(key) ? null : key;
+                StorageService.Settings.IsVpsSyncEnabled = autoSyncCb.IsChecked == true;
+                StorageService.Save();
+                ShowToast("☁️ VPS Sync Settings Saved!");
+                prompt.Close();
+            };
+
+            btnRow.Children.Add(testBtn);
+            btnRow.Children.Add(saveBtn);
+
+            sp.Children.Add(heading);
+            sp.Children.Add(desc);
+            sp.Children.Add(urlLabel);
+            sp.Children.Add(urlBox);
+            sp.Children.Add(keyLabel);
+            sp.Children.Add(keyBox);
+            sp.Children.Add(autoSyncCb);
+            sp.Children.Add(statusBlock);
             sp.Children.Add(btnRow);
 
             prompt.Content = sp;
@@ -4199,6 +4456,10 @@ namespace VixzDesktop
             };
             border.Child = tb;
             AiMessageStack.Children.Add(border);
+            if (AiFontSizeSlider != null)
+            {
+                ApplyAiFontSize(AiFontSizeSlider.Value);
+            }
         }
 
         private void AddAiResponseBubble(AiCommandResult result)
@@ -4248,16 +4509,67 @@ namespace VixzDesktop
 
                 var cardStack = new StackPanel();
 
-                // TL;DR Header & Block
+                // Warning / Auth notification if user's API key had issues
+                if (!string.IsNullOrWhiteSpace(sum.AuthWarning))
+                {
+                    var warnBorder = new Border
+                    {
+                        Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2E1A1A")),
+                        BorderBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7043")),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(8, 5, 8, 5),
+                        Margin = new Thickness(0, 0, 0, 8)
+                    };
+                    var warnText = new TextBlock
+                    {
+                        Text = sum.AuthWarning,
+                        Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFAA88")),
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap
+                    };
+                    warnBorder.Child = warnText;
+                    cardStack.Children.Add(warnBorder);
+                }
+
+                // TL;DR Header & Source Citation
+                var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
                 var tldrHeader = new TextBlock
                 {
                     Text = "📌 EXECUTIVE SUMMARY",
                     Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
                     FontSize = 12,
-                    FontWeight = FontWeights.Bold,
-                    Margin = new Thickness(0, 0, 0, 6)
+                    FontWeight = FontWeights.Bold
                 };
-                cardStack.Children.Add(tldrHeader);
+                Grid.SetColumn(tldrHeader, 0);
+                headerGrid.Children.Add(tldrHeader);
+
+                if (!string.IsNullOrWhiteSpace(sum.SourceCitation))
+                {
+                    var citeBadge = new Border
+                    {
+                        Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#1F2937")),
+                        BorderBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#374151")),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(5, 2, 5, 2)
+                    };
+                    var citeText = new TextBlock
+                    {
+                        Text = sum.SourceCitation,
+                        Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#9CA3AF")),
+                        FontSize = 9.5,
+                        FontWeight = FontWeights.SemiBold
+                    };
+                    citeBadge.Child = citeText;
+                    Grid.SetColumn(citeBadge, 1);
+                    headerGrid.Children.Add(citeBadge);
+                }
+
+                cardStack.Children.Add(headerGrid);
 
                 var tldrBody = new TextBlock
                 {
@@ -4566,6 +4878,10 @@ namespace VixzDesktop
             mainContainer.Children.Add(copyRow);
 
             AiMessageStack.Children.Add(mainContainer);
+            if (AiFontSizeSlider != null)
+            {
+                ApplyAiFontSize(AiFontSizeSlider.Value);
+            }
             AiChatScrollViewer.ScrollToEnd();
         }
 

@@ -51,6 +51,8 @@ namespace VixzDesktop.Services
         public List<string> KeyTakeaways { get; set; } = new List<string>();
         public List<TimestampChapter> Chapters { get; set; } = new List<TimestampChapter>();
         public bool HasTranscript { get; set; }
+        public string? SourceCitation { get; set; }
+        public string? AuthWarning { get; set; }
     }
 
     public class TimestampChapter
@@ -383,9 +385,6 @@ namespace VixzDesktop.Services
                 // 1. Groq Provider (Keys starting with gsk_)
                 if (apiKey.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
                 {
-                    using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
-                    req.Headers.Add("Authorization", "Bearer " + apiKey);
-
                     var systemMsg = "You are Vixz AI, an intelligent, lightning-fast AI assistant integrated inside Vixz Desktop, a modern YouTube player app on Windows. Be direct, clear, highly accurate, concise, and helpful.";
                     if (currentVideo != null)
                     {
@@ -405,34 +404,45 @@ namespace VixzDesktop.Services
 
                     messages.Add(new { role = "user", content = prompt });
 
-                    var payload = new
+                    foreach (var groqModel in new[] { "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
                     {
-                        model = "openai/gpt-oss-120b",
-                        messages = messages,
-                        temperature = 0.5,
-                        max_tokens = 600
-                    };
+                        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                        req.Headers.Add("Authorization", "Bearer " + apiKey);
 
-                    req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                    var resp = await _httpClient.SendAsync(req);
-                    if (resp.IsSuccessStatusCode)
-                    {
-                        var json = await resp.Content.ReadAsStringAsync();
-                        var jObj = JObject.Parse(json);
-                        var aiText = (string?)jObj["choices"]?[0]?["message"]?["content"];
-                        if (!string.IsNullOrWhiteSpace(aiText))
+                        var payload = new
                         {
-                            var trimmed = aiText.Trim();
-                            _conversationHistory.Add(("user", prompt));
-                            _conversationHistory.Add(("assistant", trimmed));
-                            if (_conversationHistory.Count > 20) _conversationHistory.RemoveRange(0, 4);
+                            model = groqModel,
+                            messages = messages,
+                            temperature = 0.5,
+                            max_tokens = 600
+                        };
 
-                            return new AiCommandResult
+                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        var resp = await _httpClient.SendAsync(req);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            var json = await resp.Content.ReadAsStringAsync();
+                            var jObj = JObject.Parse(json);
+                            var aiText = (string?)jObj["choices"]?[0]?["message"]?["content"];
+                            if (!string.IsNullOrWhiteSpace(aiText))
                             {
-                                Type = AiCommandType.ChatAnswer,
-                                ResponseMessage = trimmed,
-                                SourceCitation = "Groq Llama 3 / GPT"
-                            };
+                                var trimmed = aiText.Trim();
+                                _conversationHistory.Add(("user", prompt));
+                                _conversationHistory.Add(("assistant", trimmed));
+                                if (_conversationHistory.Count > 20) _conversationHistory.RemoveRange(0, 4);
+
+                                return new AiCommandResult
+                                {
+                                    Type = AiCommandType.ChatAnswer,
+                                    ResponseMessage = trimmed,
+                                    SourceCitation = $"Groq {groqModel}"
+                                };
+                            }
+                        }
+                        else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            // Invalid or blocked Groq key
+                            break;
                         }
                     }
                 }
@@ -655,20 +665,41 @@ namespace VixzDesktop.Services
         {
             try
             {
+                string apiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+                try
+                {
+                    using var pageReq = new HttpRequestMessage(HttpMethod.Get, $"https://www.youtube.com/watch?v={videoId}&hl=en");
+                    pageReq.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                    var pageResp = await _httpClient.SendAsync(pageReq);
+                    if (pageResp.IsSuccessStatusCode)
+                    {
+                        var html = await pageResp.Content.ReadAsStringAsync();
+                        var mKey = Regex.Match(html, @"""INNERTUBE_API_KEY"":\s*""([a-zA-Z0-9_-]+)""");
+                        if (mKey.Success && !string.IsNullOrWhiteSpace(mKey.Groups[1].Value))
+                        {
+                            apiKey = mKey.Groups[1].Value;
+                        }
+                    }
+                }
+                catch { }
+
                 var payload = new
                 {
                     context = new
                     {
                         client = new
                         {
-                            clientName = "ANDROID_VR",
-                            clientVersion = "1.61.48"
+                            clientName = "ANDROID",
+                            clientVersion = "20.10.38",
+                            hl = "en",
+                            gl = "US"
                         }
                     },
                     videoId = videoId
                 };
 
-                using var req = new HttpRequestMessage(HttpMethod.Post, "https://www.youtube.com/youtubei/v1/player");
+                using var req = new HttpRequestMessage(HttpMethod.Post, $"https://www.youtube.com/youtubei/v1/player?key={apiKey}");
+                req.Headers.Add("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 14)");
                 req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
                 var resp = await _httpClient.SendAsync(req);
@@ -687,7 +718,12 @@ namespace VixzDesktop.Services
                 var baseUrl = (string?)selectedTrack?["baseUrl"];
                 if (string.IsNullOrWhiteSpace(baseUrl)) return "";
 
-                var capResp = await _httpClient.GetStringAsync(baseUrl);
+                using var capReq = new HttpRequestMessage(HttpMethod.Get, baseUrl);
+                capReq.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+                var capHttpResp = await _httpClient.SendAsync(capReq);
+                if (!capHttpResp.IsSuccessStatusCode) return "";
+
+                var capResp = await capHttpResp.Content.ReadAsStringAsync();
                 if (string.IsNullOrWhiteSpace(capResp)) return "";
 
                 // Parse XML <p> and <s> or <text> elements
@@ -724,9 +760,9 @@ namespace VixzDesktop.Services
                 cleanedTranscript = Regex.Replace(cleanedTranscript, @"https?://\S+", " ", RegexOptions.IgnoreCase);
                 cleanedTranscript = Regex.Replace(cleanedTranscript, @"\s+", " ").Trim();
 
-                // Trim to ~6000 chars to stay within token limits
-                if (cleanedTranscript.Length > 6000)
-                    cleanedTranscript = cleanedTranscript.Substring(0, 6000);
+                // Allow full transcript up to 45,000 chars (~7,500 words, ~35 min video) for modern LLMs
+                if (cleanedTranscript.Length > 45000)
+                    cleanedTranscript = cleanedTranscript.Substring(0, 45000);
 
                 var llmPrompt =
                     $"You are an expert content analyst. Read the following YouTube video transcript and produce a high-quality summary.\n\n" +
@@ -743,18 +779,29 @@ namespace VixzDesktop.Services
                 try
                 {
                     string? llmJson = null;
+                    string providerCitation = "";
 
                     if (apiKey.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
                     {
-                        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
-                        req.Headers.Add("Authorization", "Bearer " + apiKey);
-                        var payload = new { model = "openai/gpt-oss-120b", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
-                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-                        var resp = await _llmHttpClient.SendAsync(req);
-                        if (resp.IsSuccessStatusCode)
+                        foreach (var groqModel in new[] { "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
                         {
-                            var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
-                            llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                            using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                            req.Headers.Add("Authorization", "Bearer " + apiKey);
+                            var payload = new { model = groqModel, messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
+                            req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                            var resp = await _llmHttpClient.SendAsync(req);
+                            if (resp.IsSuccessStatusCode)
+                            {
+                                var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+                                llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                                providerCitation = $"Groq {groqModel}";
+                                break;
+                            }
+                            else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                            {
+                                summary.AuthWarning = "⚠️ AI API Key returned 403 Forbidden. Using smart video analysis.";
+                                break;
+                            }
                         }
                     }
                     else if (apiKey.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
@@ -768,6 +815,11 @@ namespace VixzDesktop.Services
                         {
                             var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
                             llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                            providerCitation = "OpenAI GPT-4o-mini";
+                        }
+                        else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            summary.AuthWarning = "⚠️ OpenAI API Key invalid or expired. Using smart video analysis.";
                         }
                     }
                     else
@@ -781,7 +833,16 @@ namespace VixzDesktop.Services
                             {
                                 var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
                                 llmJson = (string?)json["candidates"]?[0]?["content"]?["parts"]?[0]?["text"];
-                                if (!string.IsNullOrWhiteSpace(llmJson)) break;
+                                if (!string.IsNullOrWhiteSpace(llmJson))
+                                {
+                                    providerCitation = $"Google {model}";
+                                    break;
+                                }
+                            }
+                            else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                            {
+                                summary.AuthWarning = "⚠️ Gemini API Key invalid or quota exceeded. Using smart video analysis.";
+                                break;
                             }
                         }
                     }
@@ -803,6 +864,7 @@ namespace VixzDesktop.Services
                                     .Where(t => !string.IsNullOrWhiteSpace(t))
                                     .Select(t => t.Trim())
                                     .ToList();
+                                summary.SourceCitation = providerCitation;
                                 return;
                             }
                         }
@@ -811,49 +873,56 @@ namespace VixzDesktop.Services
                 catch { /* fall through to heuristic logic below */ }
             }
 
-            // 2. Heuristic fallback: clean raw transcript sentences (no API key, or LLM failed)
+            // 2. High-precision heuristic fallback: clean raw transcript sentences (Spoken words take top priority)
             var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
             if (cleanTranscriptSentences.Count >= 3)
             {
                 summary.Tldr = string.Join(". ", cleanTranscriptSentences.Take(3)) + ".";
                 summary.KeyTakeaways = DistributeKeyPoints(cleanTranscriptSentences, 5);
+                summary.SourceCitation = "Transcript Extraction";
                 return;
             }
 
-            // 3. Live web intelligence based on video title
+            // 3. Fallback to creator description only if transcript was absent/insufficient
+            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
+            if (cleanDescSentences.Count >= 2)
+            {
+                summary.Tldr = string.Join(". ", cleanDescSentences.Take(Math.Min(2, cleanDescSentences.Count))) + ".";
+                summary.KeyTakeaways = DistributeKeyPoints(cleanDescSentences.Skip(1).ToList(), 5);
+                if (summary.KeyTakeaways.Count >= 2)
+                {
+                    summary.SourceCitation = "Smart Video Analysis";
+                    return;
+                }
+            }
+
+            // 4. Live web intelligence based on video title & topic
             var topicQuery = CleanTopicQuery(video.Title);
             var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
             if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage) && webResult.ResponseMessage.Length > 30)
             {
                 summary.Tldr = $"**{video.Title}** ({video.ChannelTitle})\n\n{webResult.ResponseMessage}";
-                var takeaways = webResult.WebFacts.Take(4)
+                var takeaways = webResult.WebFacts.Take(5)
                     .Where(f => !string.IsNullOrWhiteSpace(f) && f.Length > 25)
                     .ToList();
                 if (takeaways.Count >= 2)
                 {
                     summary.KeyTakeaways = takeaways;
+                    summary.SourceCitation = "Live Web Intelligence";
                     return;
                 }
             }
 
-            // 4. Clean description sentences
-            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
-            if (cleanDescSentences.Count >= 4)
-            {
-                summary.Tldr = string.Join(". ", cleanDescSentences.Take(2)) + ".";
-                summary.KeyTakeaways = DistributeKeyPoints(cleanDescSentences, 4);
-                return;
-            }
-
-            // 5. Ultimate fallback
-            summary.Tldr = $"**{video.Title}** — presented by **{video.ChannelTitle}**.";
+            // 5. Ultimate structured fallback
+            summary.Tldr = $"**{video.Title}** — discussion and commentary presented by **{video.ChannelTitle}**.";
             summary.KeyTakeaways = new List<string>
             {
-                $"Comprehensive commentary and analysis: {video.Title}",
-                $"Channel: {video.ChannelTitle}",
-                $"Published: {video.UploadDateText} • Length: {video.DurationText}",
-                $"Video stream currently active on Vixz Desktop."
+                $"In-depth presentation: {video.Title}",
+                $"Channel & Creator: {video.ChannelTitle}",
+                $"Published: {video.UploadDateText} • Runtime: {video.DurationText}",
+                $"Currently playing and active on Vixz Desktop."
             };
+            summary.SourceCitation = "Video Metadata";
         }
 
         private static string CleanTopicQuery(string title)
@@ -902,36 +971,53 @@ namespace VixzDesktop.Services
                 RegexOptions.IgnoreCase
             );
 
-            var rawSentences = text.Split(new[] { '.', '!', '?', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            // Split on semicolons, newlines, and sentence boundary punctuation
+            var rawSentences = Regex.Split(text, @"[;\n\r]+|[.!?](?:\s+|$)")
                                    .Select(s => s.Trim())
+                                   .Where(s => !string.IsNullOrWhiteSpace(s))
                                    .ToList();
 
             var cleanSentences = new List<string>();
+            var seenPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var s in rawSentences)
             {
                 if (blacklistRegex.IsMatch(s)) continue;
 
                 var cleaned = Regex.Replace(s, @"\s+", " ").Trim();
 
-                // Must be at least 7 words (avoids bare caption fragments)
-                var wordCount = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-                if (wordCount < 7) continue;
+                // Trim leading conjunctions like "and ", "or ", "why ", "how " if needed
+                cleaned = Regex.Replace(cleaned, @"^(?:and|or|plus|also)\s+", "", RegexOptions.IgnoreCase).Trim();
 
-                // Skip if > 60% of words are single characters (caption noise)
+                // Must be at least 6 words
+                var wordCount = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+                if (wordCount < 6) continue;
+
+                // Skip if > 40% of words are single characters
                 var singleCharWords = cleaned.Split(' ').Count(w => w.Length == 1);
                 if (singleCharWords > wordCount * 0.4) continue;
 
                 if (cleaned.Equals(video.Title, StringComparison.OrdinalIgnoreCase)) continue;
 
-                // Skip ALL CAPS single-word spam
+                // Skip ALL CAPS spam
                 if (cleaned.Length > 15 && cleaned.ToUpperInvariant() == cleaned && !cleaned.Contains(" ")) continue;
 
                 // Skip filler openers
                 if (fillerOpeners.IsMatch(cleaned)) continue;
 
+                // Strip trailing boilerplate phrases like "and much more"
+                cleaned = Regex.Replace(cleaned, @"(?i),?\s*and much more\.?$", "").Trim();
+
                 // Capitalize first letter
                 if (char.IsLower(cleaned[0]))
                     cleaned = char.ToUpper(cleaned[0]) + cleaned.Substring(1);
+
+                // Deduplicate by prefix (first 28 chars) to avoid repetitive sentences
+                var prefixKey = new string(cleaned.ToLowerInvariant().Where(char.IsLetterOrDigit).Take(28).ToArray());
+                if (prefixKey.Length >= 10 && seenPrefixes.Contains(prefixKey))
+                    continue;
+
+                seenPrefixes.Add(prefixKey);
 
                 if (!cleanSentences.Contains(cleaned, StringComparer.OrdinalIgnoreCase))
                     cleanSentences.Add(cleaned);

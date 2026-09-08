@@ -24,8 +24,38 @@ namespace VixzDesktop.Models
         public string ThumbnailUrl { get; set; } = string.Empty;
         public string DurationText { get; set; } = "0:00";
         public TimeSpan? Duration { get; set; }
-        public string ViewCountText { get; set; } = string.Empty;
-        public string UploadDateText { get; set; } = string.Empty;
+        private string _viewCountText = string.Empty;
+        private string _uploadDateText = string.Empty;
+
+        public string ViewCountText
+        {
+            get => _viewCountText;
+            set
+            {
+                if (_viewCountText != value)
+                {
+                    _viewCountText = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(SubtitleText));
+                    OnPropertyChanged(nameof(MetaSubtitleText));
+                }
+            }
+        }
+
+        public string UploadDateText
+        {
+            get => _uploadDateText;
+            set
+            {
+                if (_uploadDateText != value)
+                {
+                    _uploadDateText = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(SubtitleText));
+                    OnPropertyChanged(nameof(MetaSubtitleText));
+                }
+            }
+        }
         public string Description { get; set; } = string.Empty;
         public bool IsShort { get; set; } = false;
 

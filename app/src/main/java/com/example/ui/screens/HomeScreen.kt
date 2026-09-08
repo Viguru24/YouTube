@@ -3,9 +3,9 @@ package com.example.ui.screens
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -22,9 +22,12 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -35,10 +38,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,6 +88,8 @@ fun HomeScreen(
     onLoadMore: () -> Unit = {},
     selectedTimeFilter: String = "Any Time",
     onTimeFilterSelected: (String) -> Unit = {},
+    searchSortOption: String = "Latest",
+    onSearchSortOptionSelected: (String) -> Unit = {},
     selectedSubscribedChannel: String = "",
     onSubscribedChannelSelected: (String) -> Unit = {},
     onRefreshSubscribedChannel: (String) -> Unit = {},
@@ -88,11 +97,45 @@ fun HomeScreen(
     onOpenManageTopicsAndCreators: (initialTab: Int) -> Unit = {},
     onSaveToSubject: (video: VideoEntity, subject: String) -> Unit = { _, _ -> },
     subscribedCreators: List<String> = emptyList(),
+    shortsQueue: List<VideoEntity> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
-    var isSearchExpanded by remember { mutableStateOf(false) }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    var isSearchExpanded by remember { mutableStateOf(searchQuery.isNotEmpty()) }
+    var searchTextFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = searchQuery,
+                selection = TextRange(searchQuery.length)
+            )
+        )
+    }
+
+    // Sync external searchQuery changes to local searchTextFieldValue and expanded state
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != searchTextFieldValue.text) {
+            searchTextFieldValue = TextFieldValue(
+                text = searchQuery,
+                selection = TextRange(searchQuery.length)
+            )
+        }
+        if (searchQuery.isNotEmpty() && !isSearchExpanded) {
+            isSearchExpanded = true
+        }
+    }
+
+    // Handle system back gesture when search is expanded
+    BackHandler(enabled = isSearchExpanded) {
+        if (searchTextFieldValue.text.isNotEmpty()) {
+            searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+            onSearchQueryChanged("")
+        }
+        isSearchExpanded = false
+        keyboardController?.hide()
+    }
+
     var showSubscribedChannelsMenu by remember { mutableStateOf(false) }
     var showAddChannelDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -114,6 +157,10 @@ fun HomeScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val spokenText = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spokenText.isNullOrBlank()) {
+                searchTextFieldValue = TextFieldValue(
+                    text = spokenText,
+                    selection = TextRange(spokenText.length)
+                )
                 onSearchQueryChanged(spokenText)
                 isSearchExpanded = true
             }
@@ -152,80 +199,128 @@ fun HomeScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 ),
+                navigationIcon = {
+                    if (isSearchExpanded) {
+                        IconButton(onClick = {
+                            searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+                            onSearchQueryChanged("")
+                            isSearchExpanded = false
+                            keyboardController?.hide()
+                        }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                },
                 title = {
                     if (isSearchExpanded) {
-                        var localSearchQuery by remember(searchQuery) { mutableStateOf(searchQuery) }
-                        val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
-
-                        OutlinedTextField(
-                            value = localSearchQuery,
-                            onValueChange = { newText ->
-                                localSearchQuery = newText
-                                onSearchQueryChanged(newText)
+                        BasicTextField(
+                            value = searchTextFieldValue,
+                            onValueChange = { newValue ->
+                                searchTextFieldValue = newValue
+                                if (newValue.text != searchQuery) {
+                                    onSearchQueryChanged(newValue.text)
+                                }
                             },
-                            placeholder = { Text("Search videos or channels...", fontSize = 14.sp) },
                             singleLine = true,
+                            textStyle = TextStyle(
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            cursorBrush = SolidColor(YouTubeRed),
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Search
                             ),
                             keyboardActions = KeyboardActions(onSearch = {
-                                onSearchQueryChanged(localSearchQuery)
+                                onSearchQueryChanged(searchTextFieldValue.text)
                                 keyboardController?.hide()
-                                val pastedId = com.example.util.YouTubeUtils.extractVideoId(localSearchQuery)
-                                if (pastedId != null) {
-                                    val video = VideoEntity(
-                                        youtubeId = pastedId,
-                                        title = "YouTube Video",
-                                        channelName = "YouTube",
-                                        thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(pastedId),
-                                        durationText = "",
-                                        category = "YouTube"
-                                    )
-                                    onVideoClick(video)
+                                if (com.example.util.YouTubeUtils.isExplicitYouTubeUrl(searchTextFieldValue.text)) {
+                                    val pastedId = com.example.util.YouTubeUtils.extractVideoId(searchTextFieldValue.text)
+                                    if (pastedId != null) {
+                                        val video = VideoEntity(
+                                            youtubeId = pastedId,
+                                            title = "YouTube Video",
+                                            channelName = "YouTube",
+                                            thumbnailUrl = com.example.util.YouTubeUtils.getThumbnailUrl(pastedId),
+                                            durationText = "",
+                                            category = "YouTube"
+                                        )
+                                        onVideoClick(video)
+                                    }
                                 }
                             }),
-                            leadingIcon = {
-                                IconButton(onClick = {
-                                    localSearchQuery = ""
-                                    onSearchQueryChanged("")
-                                    isSearchExpanded = false
-                                    keyboardController?.hide()
-                                }) {
-                                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
-                                }
-                            },
-                            trailingIcon = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (localSearchQuery.isNotEmpty()) {
-                                        IconButton(onClick = {
-                                            localSearchQuery = ""
-                                            onSearchQueryChanged("")
-                                        }) {
-                                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 6.dp)
+                                .focusRequester(focusRequester)
+                                .testTag("search_text_field"),
+                            decorationBox = { innerTextField ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(
+                                            width = 1.dp,
+                                            color = YouTubeRed.copy(alpha = 0.4f),
+                                            shape = RoundedCornerShape(22.dp)
+                                        )
+                                        .padding(horizontal = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Search,
+                                        contentDescription = "Search",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (searchTextFieldValue.text.isEmpty()) {
+                                            Text(
+                                                text = "Search videos or channels...",
+                                                fontSize = 14.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    if (searchTextFieldValue.text.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+                                                onSearchQueryChanged("")
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Clear",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.size(18.dp)
+                                            )
                                         }
                                     }
-                                    IconButton(onClick = launchVoiceSearch) {
+                                    IconButton(
+                                        onClick = launchVoiceSearch,
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Filled.Mic,
                                             contentDescription = "Voice Search",
-                                            tint = YouTubeRed
+                                            tint = YouTubeRed,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 }
-                            },
-                            shape = RoundedCornerShape(24.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedBorderColor = YouTubeRed,
-                                unfocusedBorderColor = Color.Transparent
-                            ),
-                            textStyle = LocalTextStyle.current.copy(fontSize = 15.sp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp)
-                                .focusRequester(focusRequester)
-                                .testTag("search_text_field")
+                            }
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -310,6 +405,8 @@ fun HomeScreen(
                                             showSubscribedChannelsMenu = false
                                             onSubscribedChannelSelected("")
                                             onCategorySelected("All")
+                                            searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
+                                            onSearchQueryChanged("")
                                         }
                                     )
                                     DropdownMenuItem(
@@ -347,7 +444,12 @@ fun HomeScreen(
                         val currentLang by com.example.util.LanguageManager.currentLanguage.collectAsState()
 
                         // 1. Search 🔍
-                        IconButton(onClick = { isSearchExpanded = true }) {
+                        IconButton(onClick = {
+                            isSearchExpanded = true
+                            searchTextFieldValue = searchTextFieldValue.copy(
+                                selection = TextRange(searchTextFieldValue.text.length)
+                            )
+                        }) {
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
                         }
 
@@ -505,8 +607,12 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Direct Link Extraction Bar (Quick Paste Player)
-            val extractedVideoId = remember(searchQuery) { com.example.util.YouTubeUtils.extractVideoId(searchQuery) }
+            // Direct Link Extraction Bar (Quick Paste Player) - only triggers if search query is an explicit YouTube URL
+            val extractedVideoId = remember(searchQuery) {
+                if (com.example.util.YouTubeUtils.isExplicitYouTubeUrl(searchQuery)) {
+                    com.example.util.YouTubeUtils.extractVideoId(searchQuery)
+                } else null
+            }
             AnimatedVisibility(visible = extractedVideoId != null) {
                 Card(
                     modifier = Modifier
@@ -572,8 +678,72 @@ fun HomeScreen(
             val allCategoryNames = (defaultCategories + categories.map { it.name }).distinct()
 
             if (searchQuery.isNotEmpty()) {
-                // Upload Date / Time Selector Bar for Search Results
+                // Search Sort Bar & Upload Date Filter Bar
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    // Row 1: Search Sort Mode Selector (Latest, Most Popular, Relevance)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Sort Results:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Default: Latest",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = YouTubeRed,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    val searchSortOptions = listOf("🕒 Latest", "🔥 Most Popular", "⭐ Relevance")
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(searchSortOptions) { opt ->
+                            val rawOpt = when {
+                                opt.contains("Latest") -> "Latest"
+                                opt.contains("Popular") -> "Most Popular"
+                                else -> "Relevance"
+                            }
+                            val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { onSearchSortOptionSelected(rawOpt) },
+                                label = {
+                                    Text(
+                                        text = opt,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = YouTubeRed,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFF1E1E1E),
+                                    labelColor = Color(0xFFCCCCCC)
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = Color(0xFF333333),
+                                    selectedBorderColor = YouTubeRed,
+                                    borderWidth = 1.dp,
+                                    selectedBorderWidth = 1.5.dp
+                                ),
+                                modifier = Modifier.testTag("search_sort_chip_$rawOpt")
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Row 2: Upload Date / Time Selector Bar for Search Results
                     Text(
                         text = "Filter Upload Date:",
                         style = MaterialTheme.typography.labelSmall,
@@ -705,6 +875,7 @@ fun HomeScreen(
                 extractedVideoId,
                 selectedCategory,
                 selectedTimeFilter,
+                searchSortOption,
                 selectedSort,
                 watchedIds,
                 dislikedVideoIds,
@@ -770,8 +941,8 @@ fun HomeScreen(
                         .distinctBy { it.youtubeId }
                 }
 
-                // Apply Upload Date Time Selector Filter to Search Results
-                val timeFilteredList = if (selectedTimeFilter != "Any Time" && searchQuery.isNotBlank()) {
+                // Apply Upload Date Time Selector Filter to Feed and Search Results
+                val timeFilteredList = if (selectedTimeFilter != "Any Time") {
                     val maxSeconds = when (selectedTimeFilter.lowercase().trim()) {
                         "last hour", "1 hour" -> 3600L
                         "today", "last 24h", "last 24 hours", "24 hours", "24h" -> 86400L
@@ -798,11 +969,23 @@ fun HomeScreen(
                     settings = algorithmSettings
                 )
 
-                if (selectedSubscribedChannel.isNotBlank() || searchQuery.isNotBlank()) {
+                if (selectedSubscribedChannel.isNotBlank()) {
                     timeFilteredList.sortedWith(
                         compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                             .thenByDescending { it.addedTimestamp }
                     )
+                } else if (searchQuery.isNotBlank()) {
+                    when (searchSortOption) {
+                        "Most Popular" -> timeFilteredList.sortedWith(
+                            compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
+                                .thenBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        )
+                        "Relevance" -> timeFilteredList
+                        else -> timeFilteredList.sortedWith( // "Latest" (Default)
+                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                                .thenByDescending { it.addedTimestamp }
+                        )
+                    }
                 } else when (selectedSort) {
                     "Oldest" -> rankedDisplayList.sortedWith(
                         compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
@@ -868,11 +1051,13 @@ fun HomeScreen(
                     }
                 }
 
-                val shortsList = remember(displayList, algorithmSettings.shortsMode) {
+                val shortsList = remember(displayList, shortsQueue, algorithmSettings.shortsMode) {
                     if (algorithmSettings.shortsMode == "Hidden") {
                         emptyList()
                     } else {
-                        displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                        val fromDisplay = displayList.filter { com.example.util.YouTubeUtils.isShortVideo(it) }
+                        val fromQueue = shortsQueue.filter { !isVideoHidden(it) }
+                        (fromQueue + fromDisplay).distinctBy { it.youtubeId }
                     }
                 }
                 val mainVideosList = remember(displayList) {

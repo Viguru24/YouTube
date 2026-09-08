@@ -13,7 +13,8 @@ data class AlgorithmSettings(
     val downloadResolution: String = "720p",   // "1080p", "720p", "480p", "360p"
     val blockedKeywords: List<String> = emptyList(), // Custom keywords/channels permanently excluded
     val boostedTopics: List<String> = emptyList(),     // Custom topics/creators prioritized at the top
-    val demotedCreators: List<String> = emptyList()    // Downvoted creators placed lower in algorithm
+    val demotedCreators: List<String> = emptyList(),   // Downvoted creators placed lower in algorithm
+    val subscriptionLimit: Int = 20                   // Max active subscriptions on phone (prevents sluggishness, default 20)
 )
 
 object RecommendationEngine {

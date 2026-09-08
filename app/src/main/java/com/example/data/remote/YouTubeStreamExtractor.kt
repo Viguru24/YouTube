@@ -280,6 +280,11 @@ object YouTubeStreamExtractor {
 
                         val streamingData = playerJson.optJSONObject("streamingData")
                         if (streamingData != null) {
+                            val hlsUrl = streamingData.optString("hlsManifestUrl", "")
+                            if (hlsUrl.isNotBlank() && hlsUrl.startsWith("http") && !qualityMap.containsKey("HLS")) {
+                                qualityMap["HLS"] = hlsUrl
+                                logD("YouTubeStreamExtractor", "[Innertube] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
+                            }
                             val formats = streamingData.optJSONArray("formats")
                             if (formats != null) {
                                 for (i in 0 until formats.length()) {

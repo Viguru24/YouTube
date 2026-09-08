@@ -334,6 +334,30 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val searchQuery = MutableStateFlow("")
     val selectedCategory = MutableStateFlow("All")
     val selectedTimeFilter = MutableStateFlow("Any Time")
+    val searchSortOption = MutableStateFlow("Latest") // "Latest" (Default), "Most Popular", "Relevance"
+
+    fun setSearchSortOption(option: String) {
+        if (searchSortOption.value == option) return
+        searchSortOption.value = option
+        val current = _liveSearchResults.value
+        if (current.isNotEmpty()) {
+            _liveSearchResults.value = sortVideos(current, option)
+        }
+    }
+
+    fun sortVideos(list: List<VideoEntity>, sortOption: String): List<VideoEntity> {
+        return when (sortOption) {
+            "Most Popular" -> list.sortedWith(
+                compareByDescending<VideoEntity> { YouTubeUtils.parseViewCount(it.viewCountText) }
+                    .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+            )
+            "Relevance" -> list
+            else -> list.sortedWith( // "Latest" (Default)
+                compareBy<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    .thenByDescending { it.addedTimestamp }
+            )
+        }
+    }
 
     private var currentSearchBatchIndex = 0
 
@@ -365,6 +389,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             .putStringSet("blocked_keywords", settings.blockedKeywords.toSet())
             .putStringSet("boosted_topics", settings.boostedTopics.toSet())
             .putStringSet("demoted_creators", settings.demotedCreators.toSet())
+            .putInt("subscription_limit", settings.subscriptionLimit)
             .apply()
     }
 
@@ -380,21 +405,51 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             downloadResolution = algoPrefs.getString("download_resolution", "720p") ?: "720p",
             blockedKeywords = algoPrefs.getStringSet("blocked_keywords", emptySet())?.toList() ?: emptyList(),
             boostedTopics = algoPrefs.getStringSet("boosted_topics", emptySet())?.toList() ?: emptyList(),
-            demotedCreators = algoPrefs.getStringSet("demoted_creators", emptySet())?.toList() ?: emptyList()
+            demotedCreators = algoPrefs.getStringSet("demoted_creators", emptySet())?.toList() ?: emptyList(),
+            subscriptionLimit = algoPrefs.getInt("subscription_limit", 20)
         )
     }
 
     // Subscribed Creators Management (Add, Remove, Rename)
     private val DEFAULT_CREATORS = listOf(
         "Benny Johnson",
-        "The Rubin Report",
-        "Lex Fridman",
         "Tucker Carlson",
+        "The Rubin Report",
         "Piers Morgan Uncensored",
-        "Veritasium",
+        "Lex Fridman",
+        "The Joe Rogan Experience",
         "Huberman Lab",
-        "Cleo Abram"
+        "Veritasium",
+        "Cleo Abram",
+        "Matt Wolfe",
+        "Fireship",
+        "Two Minute Papers",
+        "Dwarkesh Patel",
+        "Matthew Berman",
+        "Triggernometry",
+        "Timcast IRL",
+        "Liberal Hivemind",
+        "David Ondrej",
+        "Anastasi In Tech",
+        "Alex Ziskind"
     )
+
+    private fun loadDefaultSubscriptionsFromAssets(): List<String> {
+        return try {
+            val context = getApplication<android.app.Application>()
+            context.assets.open("default_subscriptions.json").bufferedReader().use { reader ->
+                val jsonArray = org.json.JSONArray(reader.readText())
+                val result = mutableListOf<String>()
+                for (i in 0 until jsonArray.length()) {
+                    val s = jsonArray.optString(i, "").trim()
+                    if (s.isNotBlank()) result.add(s)
+                }
+                result
+            }
+        } catch (e: Exception) {
+            DEFAULT_CREATORS
+        }
+    }
 
     private fun saveSubscribedCreators(creators: List<String>) {
         val prefs = getApplication<android.app.Application>().getSharedPreferences("creator_prefs", android.content.Context.MODE_PRIVATE)
@@ -403,15 +458,46 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadSubscribedCreators(): List<String> {
         val prefs = getApplication<android.app.Application>().getSharedPreferences("creator_prefs", android.content.Context.MODE_PRIVATE)
+        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        val limit = algoPrefs.getInt("subscription_limit", 20)
+
+        val assetDefaults = loadDefaultSubscriptionsFromAssets()
         val saved = prefs.getStringSet("subscribed_creators", null)
-        val list = if (saved != null && saved.isNotEmpty()) {
-            saved.toList().sorted()
-        } else {
-            DEFAULT_CREATORS
+
+        val ordered = mutableListOf<String>()
+        // 1. VIP Creators first (guarantees Benny, Tucker, Rubin, Piers, etc. are always front and center)
+        DEFAULT_CREATORS.forEach { vip ->
+            if (!ordered.any { it.equals(vip, ignoreCase = true) }) {
+                ordered.add(vip)
+            }
         }
+        // 2. Saved creators from preferences
+        if (saved != null) {
+            saved.forEach { ch ->
+                val trimmed = ch.trim()
+                if (trimmed.isNotBlank() && !ordered.any { it.equals(trimmed, ignoreCase = true) }) {
+                    ordered.add(trimmed)
+                }
+            }
+        }
+        // 3. Asset defaults from PC
+        assetDefaults.forEach { ch ->
+            val trimmed = ch.trim()
+            if (trimmed.isNotBlank() && !ordered.any { it.equals(trimmed, ignoreCase = true) }) {
+                ordered.add(trimmed)
+            }
+        }
+
+        val limited = if (limit > 0 && ordered.size > limit) {
+            ordered.take(limit)
+        } else {
+            ordered
+        }
+
         com.example.data.model.WillRyanProfileData.clearAllSubscribedChannels()
-        list.forEach { com.example.data.model.WillRyanProfileData.addSubscribedChannel(it) }
-        return list
+        limited.forEach { com.example.data.model.WillRyanProfileData.addSubscribedChannel(it) }
+        saveSubscribedCreators(limited)
+        return limited
     }
 
     private val _subscribedCreators = MutableStateFlow<List<String>>(loadSubscribedCreators())
@@ -434,9 +520,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val algorithmSettings: StateFlow<com.example.data.repository.AlgorithmSettings> = _algorithmSettings.asStateFlow()
 
     fun updateAlgorithmSettings(newSettings: com.example.data.repository.AlgorithmSettings) {
+        val limitChanged = _algorithmSettings.value.subscriptionLimit != newSettings.subscriptionLimit
         _algorithmSettings.value = newSettings
         saveAlgorithmSettings(newSettings)
         checkAndCleanExpiredDownloads()
+        if (limitChanged) {
+            _subscribedCreators.value = loadSubscribedCreators()
+            refreshTrendingFeed()
+        }
     }
 
     // Background continuous feed buffer for seamless, instant infinite scrolling
@@ -528,34 +619,41 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         // 3. Search: SWR Flow (Instant In-Memory Cache -> Instant Local DB Matches -> Smooth Background Network Search)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
-            searchQuery
-                .debounce(350L)
-                .collectLatest { query ->
+            kotlinx.coroutines.flow.combine(
+                searchQuery.debounce(350L),
+                searchSortOption
+            ) { query, sort -> Pair(query, sort) }
+                .collectLatest { (query, sort) ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
                         currentSearchBatchIndex = 0
+                        val cacheKey = "${trimmed.lowercase()}:$sort"
 
                         // Step 0: Check Instant In-Memory Cache first (<1ms)
-                        val memoryCached = _searchCache[trimmed.lowercase()]
+                        val memoryCached = _searchCache[cacheKey]
                         if (!memoryCached.isNullOrEmpty()) {
                             _liveSearchResults.value = memoryCached
                         } else {
                             // Step A: Instant cached search results from Room DB
                             val cachedMatches = repository.searchVideosDirect(trimmed)
                             if (cachedMatches.isNotEmpty()) {
-                                _liveSearchResults.value = cachedMatches
-                                _searchCache[trimmed.lowercase()] = cachedMatches
+                                _liveSearchResults.value = sortVideos(cachedMatches, sort)
                             }
                         }
 
                         // Step B: Live Network Search in background without blocking
                         try {
-                            val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(trimmed, sortByUploadDate = true)
+                            val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(
+                                query = trimmed,
+                                sortByUploadDate = (sort == "Latest"),
+                                forceRefresh = true,
+                                sortOption = sort
+                            )
                             if (realVideos.isNotEmpty()) {
-                                val distinct = realVideos.distinctBy { it.youtubeId }
-                                _liveSearchResults.value = distinct
-                                _searchCache[trimmed.lowercase()] = distinct
-                                realVideos.forEach { v -> repository.saveVideo(v) }
+                                val sorted = sortVideos(realVideos.distinctBy { it.youtubeId }, sort)
+                                _liveSearchResults.value = sorted
+                                _searchCache[cacheKey] = sorted
+                                sorted.forEach { v -> repository.saveVideo(v) }
                             }
                         } catch (e: Exception) {
                             android.util.Log.e("YouTubeViewModel", "Live search failed: ${e.message}")
@@ -596,16 +694,16 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     // Step B: Parallel Live Network Sync with Strict Upload Date Sorting
                     val fetched = if (category == "All") {
                         val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = false)
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
                         } catch (e: Exception) { emptyList() }
 
                         val freshTechNews = try {
-                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("breaking news latest uploads today", sortByUploadDate = true, forceRefresh = false)
+                            com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos("breaking news", sortByUploadDate = true, forceRefresh = true, sortOption = "Latest")
                         } catch (e: Exception) { emptyList() }
 
                         (profileFeed + freshTechNews).distinctBy { it.youtubeId }
                     } else {
-                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = false)
+                        com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = true)
                     }
                     val filtered = fetched
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
@@ -622,6 +720,37 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) {
                     android.util.Log.e("YouTubeViewModel", "Category fetch error: ${e.message}")
                 }
+            }
+        }
+
+        // 5. VPS Cross-Device Cloud Sync on Startup
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                if (com.example.data.remote.VpsSyncManager.isSyncEnabled(getApplication()) &&
+                    com.example.data.remote.VpsSyncManager.getServerUrl(getApplication()).isNotBlank()) {
+                    com.example.data.remote.VpsSyncManager.syncWithServer(
+                        context = getApplication(),
+                        videoDao = db.videoDao(),
+                        subscribedChannels = _subscribedCreators.value,
+                        onSubscriptionsUpdated = { mergeIncomingSubscriptions(it) }
+                    )
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("YouTubeViewModel", "Initial VPS sync failed: ${e.message}")
+            }
+        }
+
+        // 6. Pre-populate Shorts Queue with fresh real shorts on startup
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val initialShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                val unDisliked = initialShorts.filter { it.youtubeId !in _dislikedVideoIds.value }
+                if (unDisliked.isNotEmpty()) {
+                    _shortsQueue.value = unDisliked
+                    unDisliked.forEach { repository.saveVideo(it) }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeViewModel", "Initial Shorts feed fetch error: ${e.message}")
             }
         }
     }
@@ -832,7 +961,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(currentQuery, currentSearchBatchIndex)
                 if (newBatch.isNotEmpty()) {
                     val updated = (_liveSearchResults.value + newBatch).distinctBy { it.youtubeId }
-                    _liveSearchResults.value = updated
+                    _liveSearchResults.value = sortVideos(updated, searchSortOption.value)
                     newBatch.forEach { v -> repository.saveVideo(v) }
                 }
             } finally {
@@ -899,7 +1028,51 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 repository.updatePlaybackPosition(youtubeId, positionSeconds)
+                val vid = repository.getVideoDirect(youtubeId)
+                com.example.data.remote.VpsSyncManager.notifyWatched(
+                    context = getApplication(),
+                    youtubeId = youtubeId,
+                    title = vid?.title ?: "",
+                    channel = vid?.channelName ?: "",
+                    duration = vid?.durationText ?: "",
+                    thumbnail = vid?.thumbnailUrl ?: "",
+                    positionSeconds = positionSeconds
+                )
             } catch (e: Exception) { }
+        }
+    }
+
+    fun mergeIncomingSubscriptions(incoming: List<String>) {
+        if (incoming.isEmpty()) return
+        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
+        val limit = algoPrefs.getInt("subscription_limit", 20)
+
+        val current = _subscribedCreators.value
+        val ordered = mutableListOf<String>()
+        DEFAULT_CREATORS.forEach { ordered.add(it) }
+        current.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
+        incoming.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
+
+        val limited = if (limit > 0 && ordered.size > limit) ordered.take(limit) else ordered
+        if (limited != current) {
+            _subscribedCreators.value = limited
+            saveSubscribedCreators(limited)
+            com.example.data.model.WillRyanProfileData.clearAllSubscribedChannels()
+            limited.forEach { com.example.data.model.WillRyanProfileData.addSubscribedChannel(it) }
+        }
+    }
+
+    fun syncWithVps(onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val res = com.example.data.remote.VpsSyncManager.syncWithServer(
+                context = getApplication(),
+                videoDao = db.videoDao(),
+                subscribedChannels = _subscribedCreators.value,
+                onSubscriptionsUpdated = { mergeIncomingSubscriptions(it) }
+            )
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onResult(res.first, res.second)
+            }
         }
     }
 
@@ -1331,6 +1504,22 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshFeed() {
         refreshTrendingFeed()
+        refreshShortsFeed()
+    }
+
+    fun refreshShortsFeed() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val freshShorts = com.example.data.remote.YouTubeLiveSearchService.fetchShortsFeed()
+                val unDisliked = freshShorts.filter { it.youtubeId !in _dislikedVideoIds.value }
+                if (unDisliked.isNotEmpty()) {
+                    _shortsQueue.value = (unDisliked + _shortsQueue.value).distinctBy { it.youtubeId }
+                    unDisliked.forEach { repository.saveVideo(it) }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeViewModel", "Refresh Shorts feed error: ${e.message}")
+            }
+        }
     }
 
     fun addNoteToActiveVideo(timestampSeconds: Int, timestampFormatted: String, noteText: String) {

@@ -32,6 +32,7 @@ import com.example.data.repository.AlgorithmSettings
 import com.example.ui.theme.YouTubeRed
 import com.example.util.LanguageManager
 import com.example.util.LocalAppStrings
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +68,17 @@ fun SettingsDialog(
     val hasApiKey = com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)
     val playerPrefs = remember(context) { context.getSharedPreferences("vixz_player_prefs", android.content.Context.MODE_PRIVATE) }
     var autoPipEnabled by remember { mutableStateOf(playerPrefs.getBoolean("auto_pip_enabled", false)) }
+
+    // VPS Cloud Sync state
+    var vpsUrlInput by remember { mutableStateOf(com.example.data.remote.VpsSyncManager.getServerUrl(context)) }
+    var vpsKeyInput by remember { mutableStateOf(com.example.data.remote.VpsSyncManager.getApiKey(context)) }
+    var vpsSyncEnabled by remember { mutableStateOf(com.example.data.remote.VpsSyncManager.isSyncEnabled(context)) }
+    var vpsSyncStatusText by remember {
+        val lastTime = com.example.data.remote.VpsSyncManager.getLastSyncTime(context)
+        mutableStateOf(if (lastTime > 0) "Last Synced: " + java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastTime)) else "Not synced yet")
+    }
+    var isVpsTesting by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     if (showLanguageDialog) {
         LanguageSelectionDialog(onDismiss = { showLanguageDialog = false })
@@ -512,6 +524,67 @@ fun SettingsDialog(
 
                             Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+                            // 2b. Active Subscription Limit (Fast & Smooth Feed)
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Subscription Feed Limit:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (algorithmSettings.subscriptionLimit in 1..20) Color(0xFF4CAF50).copy(alpha = 0.15f) else YouTubeRed.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = if (algorithmSettings.subscriptionLimit == 0) "All (Uncapped)" else "Top ${algorithmSettings.subscriptionLimit} Channels",
+                                            color = if (algorithmSettings.subscriptionLimit in 1..20) Color(0xFF4CAF50) else YouTubeRed,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Limits parallel channel queries to keep feed loading ultra-fast, smooth, and lag-free.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                                ) {
+                                    FilterChip(
+                                        selected = algorithmSettings.subscriptionLimit == 10,
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(subscriptionLimit = 10)) },
+                                        label = { Text("⚡ Top 10 (Fastest)", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = algorithmSettings.subscriptionLimit == 20,
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(subscriptionLimit = 20)) },
+                                        label = { Text("🚀 Top 20 (Balanced)", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = algorithmSettings.subscriptionLimit == 35,
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(subscriptionLimit = 35)) },
+                                        label = { Text("🎯 Top 35", fontSize = 11.sp) }
+                                    )
+                                    FilterChip(
+                                        selected = algorithmSettings.subscriptionLimit == 0,
+                                        onClick = { onAlgorithmSettingsChanged(algorithmSettings.copy(subscriptionLimit = 0)) },
+                                        label = { Text("♾️ All 117", fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+
+                            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
                             // 3. Floating Pop-out (Picture-in-Picture)
                             Column {
                                 Text(
@@ -686,6 +759,117 @@ fun SettingsDialog(
                                         )
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // 6. ☁️ VPS Cross-Device Cloud Sync
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "☁️ VPS Cross-Device Cloud Sync",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Synchronize watched videos, playback positions, and algorithm preferences with your private VPS sync server so you never watch the same video twice across PC and Phone.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            OutlinedTextField(
+                                value = vpsUrlInput,
+                                onValueChange = {
+                                    vpsUrlInput = it
+                                    com.example.data.remote.VpsSyncManager.setServerUrl(context, it)
+                                },
+                                label = { Text("VPS Server Address", fontSize = 12.sp) },
+                                placeholder = { Text("http://192.168.1.100:8089 or https://sync.mydomain.com", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = vpsKeyInput,
+                                onValueChange = {
+                                    vpsKeyInput = it
+                                    com.example.data.remote.VpsSyncManager.setApiKey(context, it)
+                                },
+                                label = { Text("Optional API Token / Key", fontSize = 12.sp) },
+                                placeholder = { Text("Leave empty if auth is disabled on VPS", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Auto-sync on startup & watch",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Switch(
+                                    checked = vpsSyncEnabled,
+                                    onCheckedChange = {
+                                        vpsSyncEnabled = it
+                                        com.example.data.remote.VpsSyncManager.setSyncEnabled(context, it)
+                                    }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            Text(
+                                text = vpsSyncStatusText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Button(
+                                onClick = {
+                                    val db = com.example.data.db.AppDatabase.getInstance(context)
+                                    isVpsTesting = true
+                                    vpsSyncStatusText = "Connecting & syncing with VPS..."
+                                    coroutineScope.launch {
+                                        val res = com.example.data.remote.VpsSyncManager.syncWithServer(context, db.videoDao())
+                                        isVpsTesting = false
+                                        vpsSyncStatusText = if (res.first) "✅ " + res.second else "❌ " + res.second
+                                    }
+                                },
+                                enabled = !isVpsTesting && vpsUrlInput.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                if (isVpsTesting) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (isVpsTesting) "Syncing..." else "⚡ Test Connection & Sync Now", fontWeight = FontWeight.Bold)
                             }
                         }
                     }

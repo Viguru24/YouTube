@@ -213,6 +213,28 @@ fun PlayerScreen(
         }
     }
 
+    val handleNextVideo: () -> Unit = {
+        val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
+        val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
+            playlistVideos[currentIndex + 1]
+        } else {
+            otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+        }
+        if (next != null) {
+            onSelectOtherVideo(next)
+        } else {
+            android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val handleDislikeAndNext: () -> Unit = {
+        localIsDisliked = true
+        localIsFavorite = false
+        onDislikeToggle(video)
+        android.widget.Toast.makeText(context, "👎 I don't like • Next video", android.widget.Toast.LENGTH_SHORT).show()
+        handleNextVideo()
+    }
+
     Scaffold(
         topBar = {
             if (!isFullscreen && !isInPipMode) {
@@ -288,19 +310,7 @@ fun PlayerScreen(
                         onPositionUpdate = onPositionUpdate,
                         playerCommandFlow = playerCommandFlow,
                         onPlayingStateChanged = onPlayingStateChanged,
-                        onNextVideo = {
-                            val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-                            val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
-                                playlistVideos[currentIndex + 1]
-                            } else {
-                                otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
-                            }
-                            if (next != null) {
-                                onSelectOtherVideo(next)
-                            } else {
-                                android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
+                        onNextVideo = handleNextVideo,
                         onPreviousVideo = {
                             val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
                             val prev = if (currentIndex > 0) {
@@ -318,11 +328,7 @@ fun PlayerScreen(
                         isWatchLater = video.isWatchLater,
                         isDisliked = localIsDisliked,
                         onDislikeToggle = {
-                            localIsDisliked = !localIsDisliked
-                            if (localIsDisliked) localIsFavorite = false
-                            onDislikeToggle(video)
-                            val msg = if (localIsDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed"
-                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            handleDislikeAndNext()
                         },
                         onFavoriteToggle = {
                             localIsFavorite = !localIsFavorite
@@ -350,36 +356,37 @@ fun PlayerScreen(
                 // Below-video content (portrait non-PiP only)
                 if (!isFullscreen && !isInPipMode) {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .background(MaterialTheme.colorScheme.surface),
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {
-                        // Title + Channel + Below-Video Action Buttons
+                        // Title + Channel + Action Pills
                         item {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                                    .padding(horizontal = 14.dp, vertical = 6.dp)
                             ) {
                                 Text(
                                     text = video.title,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    maxLines = 3,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
-                                // Creator Row + Subscribe Button
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    // Channel Info & Subscribe
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         modifier = Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(8.dp))
@@ -387,7 +394,7 @@ fun PlayerScreen(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .size(38.dp)
+                                                .size(28.dp)
                                                 .clip(CircleShape)
                                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                                             contentAlignment = Alignment.Center
@@ -395,25 +402,21 @@ fun PlayerScreen(
                                             Text(
                                                 text = video.channelName.take(1).uppercase(),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 16.sp,
+                                                fontSize = 13.sp,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
                                         Column {
                                             Text(
                                                 text = video.channelName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            val subDetails = listOfNotNull(
-                                                video.publishedTimeText.takeIf { it.isNotBlank() },
-                                                video.viewCountText.takeIf { it.isNotBlank() }
-                                            ).joinToString(" • ")
-                                            if (subDetails.isNotBlank()) {
+                                            if (video.viewCountText.isNotBlank()) {
                                                 Text(
-                                                    text = subDetails,
+                                                    text = video.viewCountText,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -424,17 +427,17 @@ fun PlayerScreen(
                                     val isSubbed = subscribedCreators.any { it.equals(video.channelName.trim(), ignoreCase = true) }
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(16.dp))
                                             .clickable {
                                                 onToggleSubscribe(video.channelName)
                                                 val msg = if (!isSubbed) "Subscribed to ${video.channelName}! 🎉" else "Unsubscribed from ${video.channelName}"
                                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                             },
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(16.dp),
                                         color = if (isSubbed) MaterialTheme.colorScheme.surfaceVariant else YouTubeRed
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                                         ) {
@@ -443,22 +446,22 @@ fun PlayerScreen(
                                                     imageVector = Icons.Filled.Check,
                                                     contentDescription = "Subscribed",
                                                     tint = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.size(14.dp)
+                                                    modifier = Modifier.size(12.dp)
                                                 )
                                             }
                                             Text(
                                                 text = if (isSubbed) "Subscribed" else "Subscribe",
                                                 color = if (isSubbed) MaterialTheme.colorScheme.onSurface else Color.White,
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
+                                                fontSize = 11.sp
                                             )
                                         }
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
 
-                                // Mobile Portrait Action Pills Bar
+                                // Action Pills Row: Like | I Don't Like 👎 | ✨ AI Chat | Watch Later | Organize | Share
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -466,48 +469,10 @@ fun PlayerScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // 1. ✨ AI Chat & Summary (Prominent gradient pill)
+                                    // 1. Like Button
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .clickable { showAiSummaryModal = true },
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = Color.Transparent
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .background(
-                                                    brush = Brush.horizontalGradient(
-                                                        listOf(Color(0xFF8E24AA), Color(0xFF5E35B1), Color(0xFF1E88E5))
-                                                    )
-                                                )
-                                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.AutoAwesome,
-                                                    contentDescription = "AI Chat & Summary",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                                Text(
-                                                    text = "✨ AI Chat & Summary",
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // 2. Like / Favorite Toggle Pill
-                                    Surface(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(18.dp))
                                             .clickable {
                                                 localIsFavorite = !localIsFavorite
                                                 if (localIsFavorite) localIsDisliked = false
@@ -515,83 +480,106 @@ fun PlayerScreen(
                                                 val msg = if (localIsFavorite) "Liked 👍" else "Unliked"
                                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                             },
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(18.dp),
                                         color = if (localIsFavorite) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                                         border = if (localIsFavorite) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Icon(
                                                 imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                                 contentDescription = "Like",
                                                 tint = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                             Text(
                                                 text = if (localIsFavorite) "Liked" else "Like",
                                                 color = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = if (localIsFavorite) FontWeight.Bold else FontWeight.Medium,
+                                                fontWeight = FontWeight.SemiBold,
                                                 fontSize = 12.sp
                                             )
                                         }
                                     }
 
-                                    // 3. Dislike / Lower in Algorithm Pill (Vibrant Orange Accent)
+                                    // 2. "I don't like" Button (Immediately downvotes and moves to next video!)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
-                                            .clickable {
-                                                localIsDisliked = !localIsDisliked
-                                                if (localIsDisliked) localIsFavorite = false
-                                                onDislikeToggle(video)
-                                                val msg = if (localIsDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed"
-                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                                            },
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = if (localIsDisliked) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .clickable { handleDislikeAndNext() },
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = if (localIsDisliked) YouTubeRed.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                                         border = if (localIsDisliked) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Icon(
                                                 imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                                                contentDescription = "Dislike",
+                                                contentDescription = "I don't like",
                                                 tint = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                             Text(
-                                                text = if (localIsDisliked) "Disliked" else "Dislike",
+                                                text = "I don't like",
                                                 color = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = if (localIsDisliked) FontWeight.Bold else FontWeight.Medium,
+                                                fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp
                                             )
                                         }
                                     }
 
-                                    // 3. Watch Later Pill
+                                    // 3. ✨ AI Chat Button ("tiny little AI button" that opens the tight chat window!)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .clickable { showAiSummaryModal = true },
+                                        shape = RoundedCornerShape(18.dp),
+                                        color = YouTubeRed.copy(alpha = 0.18f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.5f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.AutoAwesome,
+                                                contentDescription = "AI Chat",
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                            Text(
+                                                text = "AI Chat",
+                                                color = YouTubeRed,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp
+                                            )
+                                        }
+                                    }
+
+                                    // 4. Watch Later Pill
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(18.dp))
                                             .clickable { onWatchLaterToggle(video) },
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(18.dp),
                                         color = if (video.isWatchLater) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Icon(
                                                 imageVector = if (video.isWatchLater) Icons.Filled.Bookmark else Icons.Outlined.WatchLater,
                                                 contentDescription = "Watch Later",
                                                 tint = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                             Text(
                                                 text = if (video.isWatchLater) "Saved" else "Save",
@@ -602,24 +590,24 @@ fun PlayerScreen(
                                         }
                                     }
 
-                                    // 4. Organize / Subject Pill
+                                    // 5. Organize Pill
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(18.dp))
                                             .clickable { showSaveToSubjectDialog = true },
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(18.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.PlaylistAdd,
                                                 contentDescription = "Organize",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                             Text(
                                                 text = "Organize",
@@ -630,10 +618,10 @@ fun PlayerScreen(
                                         }
                                     }
 
-                                    // 5. Share Pill
+                                    // 6. Share Pill
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(20.dp))
+                                            .clip(RoundedCornerShape(18.dp))
                                             .clickable {
                                                 val sendIntent = android.content.Intent().apply {
                                                     action = android.content.Intent.ACTION_SEND
@@ -643,19 +631,19 @@ fun PlayerScreen(
                                                 val shareIntent = android.content.Intent.createChooser(sendIntent, null)
                                                 context.startActivity(shareIntent)
                                             },
-                                        shape = RoundedCornerShape(20.dp),
+                                        shape = RoundedCornerShape(18.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.Share,
                                                 contentDescription = "Share",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                             Text(
                                                 text = "Share",
@@ -666,155 +654,38 @@ fun PlayerScreen(
                                         }
                                     }
                                 }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-                            }
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-                            )
-                        }
-
-                    // Saved Notes & AI Summaries Section
-                    if (notes.isNotEmpty()) {
-                        item {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.AutoAwesome,
-                                                contentDescription = null,
-                                                tint = Color(0xFFAB47BC),
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Text(
-                                                text = "Saved Notes & AI Summaries (${notes.size})",
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    notes.forEach { note ->
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 4.dp),
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = MaterialTheme.colorScheme.surface
-                                        ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    if (note.timestampFormatted.isNotBlank() && note.timestampFormatted != "00:00") {
-                                                        Surface(
-                                                            shape = RoundedCornerShape(4.dp),
-                                                            color = YouTubeRed.copy(alpha = 0.15f)
-                                                        ) {
-                                                            Text(
-                                                                text = note.timestampFormatted,
-                                                                color = YouTubeRed,
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                            )
-                                                        }
-                                                    } else {
-                                                        Text(
-                                                            text = "📝 AI Summary",
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                            color = Color(0xFFAB47BC),
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                    Row {
-                                                        IconButton(
-                                                            onClick = {
-                                                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                                                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Video Note", note.noteText))
-                                                                android.widget.Toast.makeText(context, "Copied note to clipboard 📋", android.widget.Toast.LENGTH_SHORT).show()
-                                                            },
-                                                            modifier = Modifier.size(24.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Filled.ContentCopy,
-                                                                contentDescription = "Copy",
-                                                                modifier = Modifier.size(16.dp)
-                                                            )
-                                                        }
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        IconButton(
-                                                            onClick = {
-                                                                onDeleteNote(note.id)
-                                                                android.widget.Toast.makeText(context, "Deleted note", android.widget.Toast.LENGTH_SHORT).show()
-                                                            },
-                                                            modifier = Modifier.size(24.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Filled.DeleteOutline,
-                                                                contentDescription = "Delete",
-                                                                tint = Color.Gray,
-                                                                modifier = Modifier.size(16.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = note.noteText,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    lineHeight = 20.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
-                    }
 
-                    // Up Next
-                    if (otherVideos.isNotEmpty()) {
-                        item {
-                            Text(
-                                text = "Up Next",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                            )
-                        }
-                        items(otherVideos, key = { "q_${it.youtubeId}" }) { other ->
-                            PlaylistQueueItem(
-                                video = other,
-                                onClick = { onSelectOtherVideo(other) },
-                                onDeleteClick = { onNotInterested(other) },
-                                onNotInterested = { onNotInterested(other) },
-                                onSelectChannel = { onSelectChannel(other.channelName) },
-                                modifier = Modifier.animateItem()
-                            )
+                        // Up Next Queue
+                        if (otherVideos.isNotEmpty()) {
+                            item {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
+                                )
+                                Text(
+                                    text = "Up Next",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                )
+                            }
+                            items(otherVideos, key = { "q_${it.youtubeId}" }) { other ->
+                                PlaylistQueueItem(
+                                    video = other,
+                                    onClick = { onSelectOtherVideo(other) },
+                                    onDeleteClick = { onNotInterested(other) },
+                                    onNotInterested = { onNotInterested(other) },
+                                    onSelectChannel = { onSelectChannel(other.channelName) }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 
     if (showAiSummaryModal) {
         com.example.ui.components.AiSummaryModal(

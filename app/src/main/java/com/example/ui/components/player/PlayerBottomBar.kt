@@ -1,18 +1,18 @@
 package com.example.ui.components.player
 
 import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,24 +21,34 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.exoplayer.ExoPlayer
+import com.example.data.remote.StreamExtractionResult
 import com.example.ui.theme.GoldStar
 import com.example.ui.theme.YouTubeRed
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlayerBottomBar(
-    visible: Boolean,
-    isTablet: Boolean,
-    isLiveStream: Boolean,
-    currentPosMs: Long,
+    shouldShowControls: Boolean,
+    exoPlayer: ExoPlayer,
+    context: Context,
+    videoId: String,
+    videoTitle: String,
     totalDurationMs: Long,
+    currentPosMs: Long,
     isDraggingScrubber: Boolean,
     dragFraction: Float,
-    onScrubberDrag: (Float) -> Unit,
-    onScrubberRelease: (Float) -> Unit,
+    onScrubberDragChange: (Float) -> Unit,
+    onScrubberDragFinished: (Long) -> Unit,
+    isPlayingState: Boolean,
+    onPlayPauseClick: () -> Unit,
     isFavorite: Boolean,
     onFavoriteToggle: () -> Unit,
     onSaveToSubject: () -> Unit,
@@ -46,7 +56,7 @@ fun PlayerBottomBar(
     onWatchLaterToggle: () -> Unit,
     selectedSpeed: Float,
     onSpeedChange: (Float) -> Unit,
-    onSpeedFeedback: (String) -> Unit,
+    onSpeedFeedback: (String?) -> Unit,
     onTakeScreenshot: () -> Unit,
     onOpenScreenshotFolder: () -> Unit,
     isAutoplayEnabled: Boolean,
@@ -56,54 +66,38 @@ fun PlayerBottomBar(
     onSleepTimerClick: () -> Unit,
     captionsEnabled: Boolean,
     onToggleCaptions: () -> Unit,
-    videoId: String,
-    videoTitle: String,
+    streamResult: StreamExtractionResult?,
     availableQualities: List<String>,
     selectedQuality: String,
-    onSelectQuality: (String) -> Unit,
+    onQualitySelected: (String) -> Unit,
+    onEnterPip: () -> Unit,
+    onRotate180: () -> Unit,
     onToggleDebugConsole: () -> Unit,
-    onBackClick: () -> Unit,
-    onEnterPip: () -> Unit = {},
+    onSwitchStreamUrl: (targetUrl: String, quality: String) -> Unit,
+    isFullscreen: Boolean,
+    onToggleFullscreen: () -> Unit,
+    coroutineScope: CoroutineScope,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val bottomBtnSize = if (isTablet) 38.dp else 32.dp
-    val bottomIconSize = if (isTablet) 20.dp else 17.dp
-    val timeFontSize = if (isTablet) 12.sp else 10.sp
-
     var showSettingsMenu by remember { mutableStateOf(false) }
-    var showQualitySubMenu by remember { mutableStateOf(false) }
-
-    fun formatMs(ms: Long): String {
-        val totalSec = (ms / 1000).coerceAtLeast(0)
-        val hours = totalSec / 3600
-        val minutes = (totalSec % 3600) / 60
-        val seconds = totalSec % 60
-        return if (hours > 0) {
-            String.format("%d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            String.format("%02d:%02d", minutes, seconds)
-        }
-    }
 
     AnimatedVisibility(
-        visible = visible,
+        visible = shouldShowControls,
         enter = fadeIn(animationSpec = tween(200)),
         exit = fadeOut(animationSpec = tween(300)),
         modifier = modifier
     ) {
+        val isLiveStream = exoPlayer.isCurrentMediaItemLive
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
                     )
                 )
-                .padding(
-                    horizontal = if (isTablet) 18.dp else 10.dp,
-                    vertical = if (isTablet) 8.dp else 3.dp
-                )
+                .padding(horizontal = 8.dp, vertical = 1.dp)
         ) {
             // 1. YouTube Red Scrubber Slider
             if (!isLiveStream && totalDurationMs > 0) {
@@ -115,11 +109,10 @@ fun PlayerBottomBar(
 
                 Slider(
                     value = activeSliderValue,
-                    onValueChange = { fraction ->
-                        onScrubberDrag(fraction)
-                    },
+                    onValueChange = onScrubberDragChange,
                     onValueChangeFinished = {
-                        onScrubberRelease(dragFraction)
+                        val targetMs = (dragFraction * totalDurationMs).toLong()
+                        onScrubberDragFinished(targetMs)
                     },
                     colors = SliderDefaults.colors(
                         thumbColor = YouTubeRed,
@@ -140,44 +133,60 @@ fun PlayerBottomBar(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left side: Favorites + Subject + Watch Later + Timestamp
+                // Left side: Play/Pause + Favorites + Subject + Watch Later + Timestamp
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Quick Play / Pause Button
+                    IconButton(
+                        onClick = onPlayPauseClick,
+                        modifier = Modifier.size(32.dp).testTag("bottom_bar_play_pause_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isPlayingState) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = if (isPlayingState) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    // Direct Star (Favorite) Button
                     IconButton(
                         onClick = onFavoriteToggle,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
                             contentDescription = "Favorite",
                             tint = if (isFavorite) GoldStar else Color.White,
-                            modifier = Modifier.size(bottomIconSize)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
+                    // Direct Save to Subject Button
                     IconButton(
                         onClick = onSaveToSubject,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Folder,
                             contentDescription = "Save to Subject",
                             tint = Color.White,
-                            modifier = Modifier.size(bottomIconSize)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
+                    // Direct Watch Later Button
                     IconButton(
                         onClick = onWatchLaterToggle,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = if (isWatchLater) Icons.Filled.WatchLater else Icons.Filled.AccessTime,
                             contentDescription = "Watch Later",
                             tint = if (isWatchLater) YouTubeRed else Color.White,
-                            modifier = Modifier.size(bottomIconSize)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
@@ -205,13 +214,13 @@ fun PlayerBottomBar(
                         Text(
                             text = "${formatMs(currentPosMs)} / ${formatMs(totalDurationMs)}",
                             color = Color.White,
-                            fontSize = timeFontSize,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
 
-                // Right side: Speed Pill + Screenshot + Folder + Autoplay + Sleep Timer + CC + Settings Gear + Rotate Screen
+                // Right side: Speed Pill + Screenshot + Folder + Autoplay + Sleep Timer + CC + Share + Settings + PiP + Fullscreen
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -220,7 +229,10 @@ fun PlayerBottomBar(
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = Color.Black.copy(alpha = 0.65f),
-                        border = BorderStroke(1.dp, if (selectedSpeed != 1.0f) YouTubeRed.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.25f))
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (selectedSpeed != 1.0f) YouTubeRed.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.25f)
+                        )
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -236,7 +248,12 @@ fun PlayerBottomBar(
                                         val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
                                         if (prev != selectedSpeed) {
                                             onSpeedChange(prev)
+                                            exoPlayer.playbackParameters = PlaybackParameters(prev)
                                             onSpeedFeedback("🐢 ${prev}x Speed")
+                                            coroutineScope.launch {
+                                                delay(750)
+                                                onSpeedFeedback(null)
+                                            }
                                         }
                                     },
                                 contentAlignment = Alignment.Center
@@ -256,7 +273,12 @@ fun PlayerBottomBar(
                                     .clickable {
                                         if (selectedSpeed != 1.0f) {
                                             onSpeedChange(1.0f)
+                                            exoPlayer.playbackParameters = PlaybackParameters(1.0f)
                                             onSpeedFeedback("⚡ 1.0x Speed (Normal)")
+                                            coroutineScope.launch {
+                                                delay(750)
+                                                onSpeedFeedback(null)
+                                            }
                                         }
                                     }
                             )
@@ -271,7 +293,12 @@ fun PlayerBottomBar(
                                         val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
                                         if (next != selectedSpeed) {
                                             onSpeedChange(next)
+                                            exoPlayer.playbackParameters = PlaybackParameters(next)
                                             onSpeedFeedback("⚡ ${next}x Speed")
+                                            coroutineScope.launch {
+                                                delay(750)
+                                                onSpeedFeedback(null)
+                                            }
                                         }
                                     },
                                 contentAlignment = Alignment.Center
@@ -281,23 +308,23 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 1. Screenshot Button [📸]
+                    // Screenshot Button [📸]
                     IconButton(
                         onClick = onTakeScreenshot,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.CameraAlt,
                             contentDescription = "Screenshot",
                             tint = Color.White,
-                            modifier = Modifier.size(bottomIconSize)
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
-                    // 2. Screenshot Folder Switcher [📁]
+                    // Screenshot Folder Switcher [📁]
                     IconButton(
                         onClick = onOpenScreenshotFolder,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(26.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.FolderOpen,
@@ -307,10 +334,10 @@ fun PlayerBottomBar(
                         )
                     }
 
-                    // 3. Autoplay Toggle [▶️ / ⏸️]
+                    // Autoplay Toggle [▶️ / ⏸️]
                     IconButton(
                         onClick = onToggleAutoplay,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(
@@ -338,17 +365,17 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 4. Sleep Timer [🌙]
+                    // Sleep Timer [🌙]
                     IconButton(
                         onClick = onSleepTimerClick,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 imageVector = Icons.Filled.Bedtime,
                                 contentDescription = "Sleep Timer",
                                 tint = if (isSleepTimerActive || wasPausedBySleepTimer) GoldStar else Color.White,
-                                modifier = Modifier.size(bottomIconSize)
+                                modifier = Modifier.size(19.dp)
                             )
                             if (isSleepTimerActive || wasPausedBySleepTimer) {
                                 Box(
@@ -361,17 +388,17 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 5. Subtitles [CC]
+                    // Subtitles [CC]
                     IconButton(
                         onClick = onToggleCaptions,
-                        modifier = Modifier.size(bottomBtnSize)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 imageVector = Icons.Filled.ClosedCaption,
                                 contentDescription = "Subtitles",
                                 tint = if (captionsEnabled) YouTubeRed else Color.White,
-                                modifier = Modifier.size(bottomIconSize)
+                                modifier = Modifier.size(19.dp)
                             )
                             if (captionsEnabled) {
                                 Box(
@@ -384,100 +411,96 @@ fun PlayerBottomBar(
                         }
                     }
 
-                    // 6. Settings Gear [⚙️]
+                    // Share Button [↗️]
+                    IconButton(
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, videoTitle)
+                                putExtra(Intent.EXTRA_TEXT, "$videoTitle\nhttps://youtu.be/$videoId")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Video"))
+                        },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    // Settings Gear [⚙️]
                     Box {
                         IconButton(
                             onClick = { showSettingsMenu = true },
-                            modifier = Modifier.size(bottomBtnSize)
+                            modifier = Modifier.size(30.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Settings,
                                 contentDescription = "Settings",
                                 tint = Color.White,
-                                modifier = Modifier.size(bottomIconSize)
+                                modifier = Modifier.size(19.dp)
                             )
                         }
 
-                        DropdownMenu(
+                        PlayerSettingsDropdown(
                             expanded = showSettingsMenu,
-                            onDismissRequest = {
-                                showSettingsMenu = false
-                                showQualitySubMenu = false
-                            }
-                        ) {
-                            if (!showQualitySubMenu) {
-                                DropdownMenuItem(
-                                    text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
-                                    leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
-                                    onClick = { showQualitySubMenu = true }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Stats & Debug Console", fontSize = 13.sp) },
-                                    leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
-                                    onClick = {
-                                        showSettingsMenu = false
-                                        onToggleDebugConsole()
-                                    }
-                                )
-                            } else {
-                                DropdownMenuItem(
-                                    text = { Text("⬅ Back", fontWeight = FontWeight.Bold, fontSize = 13.sp) },
-                                    onClick = { showQualitySubMenu = false }
-                                )
-                                val qualities = if (availableQualities.isNotEmpty()) availableQualities else listOf("Auto", "1080p", "720p", "480p", "360p")
-                                qualities.forEach { q ->
-                                    val isCurrent = q == selectedQuality
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = if (isCurrent) "✓ $q" else q,
-                                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontSize = 13.sp
-                                            )
-                                        },
-                                        onClick = {
-                                            onSelectQuality(q)
-                                            showQualitySubMenu = false
-                                            showSettingsMenu = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 7. Pop-Out / PiP Floating Window [⧉]
-                    IconButton(
-                        onClick = onEnterPip,
-                        modifier = Modifier
-                            .size(if (isTablet) 42.dp else 34.dp)
-                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PictureInPictureAlt,
-                            contentDescription = "Pop-Out Floating Player",
-                            tint = Color.White,
-                            modifier = Modifier.size(if (isTablet) 22.dp else 18.dp)
+                            onDismissRequest = { showSettingsMenu = false },
+                            context = context,
+                            videoId = videoId,
+                            videoTitle = videoTitle,
+                            exoPlayer = exoPlayer,
+                            streamResult = streamResult,
+                            availableQualities = availableQualities,
+                            selectedQuality = selectedQuality,
+                            onQualitySelected = onQualitySelected,
+                            selectedSpeed = selectedSpeed,
+                            onSpeedSelected = onSpeedChange,
+                            onEnterPip = onEnterPip,
+                            onRotate180 = onRotate180,
+                            onToggleDebugConsole = onToggleDebugConsole,
+                            onSwitchStreamUrl = onSwitchStreamUrl,
+                            coroutineScope = coroutineScope
                         )
                     }
 
-                    // 8. Back Navigation Button [⬅️]
+                    // Pop-Out / PiP Floating Window Button
                     IconButton(
-                        onClick = onBackClick,
-                        modifier = Modifier
-                            .size(if (isTablet) 42.dp else 34.dp)
-                            .background(Color.White.copy(alpha = 0.12f), CircleShape)
+                        onClick = onEnterPip,
+                        modifier = Modifier.size(30.dp).testTag("pip_popout_btn")
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back / Exit Player",
+                            imageVector = Icons.Filled.PictureInPictureAlt,
+                            contentDescription = "Pop-Out Floating Player (PiP)",
                             tint = Color.White,
-                            modifier = Modifier.size(if (isTablet) 22.dp else 18.dp)
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
+                    IconButton(
+                        onClick = onToggleFullscreen,
+                        modifier = Modifier.size(30.dp).testTag("fullscreen_toggle_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            contentDescription = if (isFullscreen) "Exit Fullscreen" else "Maximize / Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
         }
     }
+}
+
+private fun formatMs(ms: Long): String {
+    if (ms <= 0) return "00:00"
+    val totalSec = ms / 1000
+    val mins = totalSec / 60
+    val secs = totalSec % 60
+    return String.format("%02d:%02d", mins, secs)
 }

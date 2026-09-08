@@ -51,7 +51,8 @@ fun AiSummaryModal(
     video: VideoEntity,
     onDismiss: () -> Unit,
     onSeekTo: (Int) -> Unit,
-    onSaveToNotes: (text: String) -> Unit
+    onSaveToNotes: (text: String) -> Unit,
+    initialRequested: Boolean = true
 ) {
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -67,9 +68,9 @@ fun AiSummaryModal(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(0.90f)
+                    .fillMaxHeight(0.72f)
                     .clickable(enabled = false) {}, // prevent closing when clicking inside
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp
             ) {
@@ -77,7 +78,8 @@ fun AiSummaryModal(
                     video = video,
                     onDismiss = onDismiss,
                     onSeekTo = onSeekTo,
-                    onSaveToNotes = onSaveToNotes
+                    onSaveToNotes = onSaveToNotes,
+                    initialRequested = initialRequested
                 )
             }
         }
@@ -85,16 +87,18 @@ fun AiSummaryModal(
 }
 
 @Composable
-private fun AiSummaryContentBody(
+fun AiSummaryContentBody(
     video: VideoEntity,
-    onDismiss: () -> Unit,
+    onDismiss: (() -> Unit)? = null,
     onSeekTo: (Int) -> Unit,
-    onSaveToNotes: (text: String) -> Unit
+    onSaveToNotes: (text: String) -> Unit,
+    modifier: Modifier = Modifier,
+    initialRequested: Boolean = true
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var transcript by remember(video.youtubeId) { mutableStateOf<VideoAiTranscript?>(null) }
-    var isLoading by remember(video.youtubeId) { mutableStateOf(true) }
+    var isLoadingTranscript by remember(video.youtubeId) { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Chatbot, 1 = Summary, 2 = Timeline
     var showApiKeyCard by remember { mutableStateOf(!com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
@@ -104,6 +108,23 @@ private fun AiSummaryContentBody(
     var isBotThinking by remember { mutableStateOf(false) }
     val chatListState = rememberLazyListState()
 
+    var selectedProvider by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getAiProvider(context)) }
+    var geminiKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGeminiApiKey(context)) }
+    var groqKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGroqApiKey(context)) }
+
+    // Start background extraction of transcript
+    LaunchedEffect(video.youtubeId, refreshTrigger) {
+        isLoadingTranscript = true
+        try {
+            val result = YouTubeCaptionService.getAuthenticSummary(video, context)
+            transcript = result
+        } catch (e: Exception) {
+            // Fallback
+        } finally {
+            isLoadingTranscript = false
+        }
+    }
+
     fun sendMessage(queryText: String) {
         if (queryText.isBlank() || isBotThinking) return
         val userMsg = ChatMessage(isUser = true, text = queryText)
@@ -112,6 +133,13 @@ private fun AiSummaryContentBody(
         coroutineScope.launch {
             try {
                 chatListState.animateScrollToItem((chatMessages.size - 1).coerceAtLeast(0))
+                if (transcript == null && isLoadingTranscript) {
+                    var waitCount = 0
+                    while (transcript == null && isLoadingTranscript && waitCount < 25) {
+                        kotlinx.coroutines.delay(200)
+                        waitCount++
+                    }
+                }
                 val rawText = transcript?.segments?.joinToString(" ") { it.text } ?: transcript?.executiveSummary.orEmpty()
                 val reply = AiSummarizerClient.askChatbot(
                     context = context,
@@ -132,70 +160,71 @@ private fun AiSummaryContentBody(
         }
     }
 
-    var selectedProvider by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getAiProvider(context)) }
-    var geminiKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGeminiApiKey(context)) }
-    var groqKeyInput by remember { mutableStateOf(com.example.data.remote.AiSummarizerClient.getGroqApiKey(context)) }
-
-    LaunchedEffect(video.youtubeId, refreshTrigger) {
-        isLoading = true
-        try {
-            val result = YouTubeCaptionService.getAuthenticSummary(video, context)
-            transcript = result
-        } catch (e: Exception) {
-            // Fallback
-        } finally {
-            isLoading = false
-        }
-    }
-
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-            // Header: Sparkle Badge + Title + Copy / Close
+        // Drag handle indicator
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(2.dp))
+            )
+        }
+
+        // Header: Sparkle Badge + Title + Copy / Close
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(Color(0xFF8E24AA), Color(0xFFE91E63), YouTubeRed)
-                                ),
-                                CircleShape
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(Color(0xFF8E24AA), Color(0xFFE91E63), YouTubeRed)
                             ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "AI Video Summary",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        val provider = com.example.data.remote.AiSummarizerClient.getAiProvider(context)
-                        val hasKey = com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)
-                        Text(
-                            text = if (isLoading) "Generating AI summary..." else if (hasKey) "✨ Powered by ${if (provider == "groq") "Groq Llama 3" else "Google Gemini"}" else "Real Caption & Spoken Content AI",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                            CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
+                Column {
+                    Text(
+                        text = "AI Video Chat",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val provider = com.example.data.remote.AiSummarizerClient.getAiProvider(context)
+                    val hasKey = com.example.data.remote.AiSummarizerClient.hasApiKeyConfigured(context)
+                    Text(
+                        text = if (isLoadingTranscript) "Analyzing video dialogue..." else if (hasKey) "✨ Powered by ${if (provider == "groq") "Groq Llama 3" else "Google Gemini"}" else "Real Caption & Dialogue AI",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+            }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { showApiKeyCard = !showApiKeyCard }) {
@@ -225,8 +254,10 @@ private fun AiSummaryContentBody(
                             Icon(imageVector = Icons.Outlined.ContentCopy, contentDescription = "Copy", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
-                    IconButton(onClick = onDismiss) {
-                        Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (onDismiss != null) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -382,63 +413,42 @@ private fun AiSummaryContentBody(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(260.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        CircularProgressIndicator(color = YouTubeRed, strokeWidth = 3.dp)
-                        Text(
-                            text = "Extracting video subtitles & analyzing speech...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else if (transcript != null) {
-                val t = transcript!!
+        // Tab Selector (Always visible)
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = Color.Transparent,
+            contentColor = YouTubeRed,
+            indicator = { tabPositions ->
+                TabRowDefaults.SecondaryIndicator(
+                    Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                    color = YouTubeRed
+                )
+            }
+        ) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text("💬 Chat", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text("📝 Summary", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            )
+            val segCount = transcript?.segments?.size ?: 0
+            Tab(
+                selected = selectedTab == 2,
+                onClick = { selectedTab = 2 },
+                text = { Text(if (segCount > 0) "⏱️ Timeline ($segCount)" else "⏱️ Timeline", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+            )
+        }
 
-                // Tab Selector
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = Color.Transparent,
-                    contentColor = YouTubeRed,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = YouTubeRed
-                        )
-                    }
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("💬 Chatbot", fontWeight = FontWeight.Bold) }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("📝 Summary", fontWeight = FontWeight.Bold) }
-                    )
-                    Tab(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        text = { Text("⏱️ Timeline (${t.segments.size})", fontWeight = FontWeight.Bold) }
-                    )
-                }
+        Spacer(modifier = Modifier.height(6.dp))
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Tab Content
-                when (selectedTab) {
+        // Tab Content
+        when (selectedTab) {
                     0 -> {
                         // ==========================================
                         // TAB 0: 💬 AI Chatbot with Video Knowledge
@@ -599,21 +609,23 @@ private fun AiSummaryContentBody(
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                }
-                            }
                         }
                     }
-                    1 -> {
-                        // ==========================================
-                        // TAB 1: 📝 Full Structured AI Summary
-                        // ==========================================
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)
-                        ) {
+                }
+            }
+            1 -> {
+                // ==========================================
+                // TAB 1: 📝 Full Structured AI Summary
+                // ==========================================
+                if (transcript != null) {
+                    val t = transcript!!
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         // 1. Host / Creator Info Card
                         item {
                             Card(
@@ -798,80 +810,137 @@ private fun AiSummaryContentBody(
                             }
                         }
                     }
-                    }
-                    else -> {
-                        // ==========================================
-                        // TAB 2: ⏱️ Timeline Chapters
-                        // ==========================================
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)
+                } else if (isLoadingTranscript) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(t.segments, key = { it.id }) { seg ->
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            onSeekTo(seg.timestampSeconds)
-                                            Toast.makeText(context, "Jumped to ${seg.timestampFormatted} ⏩", Toast.LENGTH_SHORT).show()
-                                            onDismiss()
-                                        },
-                                    color = if (seg.isKeyPoint) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Surface(
-                                            color = YouTubeRed,
-                                            shape = RoundedCornerShape(6.dp)
-                                        ) {
-                                            Text(
-                                                text = seg.timestampFormatted,
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Text(
-                                            text = seg.text,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            lineHeight = 18.sp,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Filled.PlayArrow,
-                                            contentDescription = "Play",
-                                            tint = YouTubeRed,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
+                            CircularProgressIndicator(color = YouTubeRed, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                            Text("Extracting video captions & compiling summary...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(20.dp)
+                        ) {
+                            Text("Summary not generated yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(
+                                onClick = { refreshTrigger++ },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Analyze & Summarize Video", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Unable to generate summary for this video.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            else -> {
+                // ==========================================
+                // TAB 2: ⏱️ Timeline Chapters
+                // ==========================================
+                if (transcript != null && transcript!!.segments.isNotEmpty()) {
+                    val t = transcript!!
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(t.segments, key = { it.id }) { seg ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        onSeekTo(seg.timestampSeconds)
+                                        Toast.makeText(context, "Jumped to ${seg.timestampFormatted} ⏩", Toast.LENGTH_SHORT).show()
+                                        onDismiss?.invoke()
+                                    },
+                                color = if (seg.isKeyPoint) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        color = YouTubeRed,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = seg.timestampFormatted,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = seg.text,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 18.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = "Play",
+                                        tint = YouTubeRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (isLoadingTranscript) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(color = YouTubeRed, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                            Text("Extracting video timestamps...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No timeline chapters found for this video.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
+    }
 }
 
 @Composable

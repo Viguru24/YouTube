@@ -35,6 +35,7 @@ namespace VixzDesktop.Services
         public string PreferredQuality { get; set; } = "hd1080";
         public UserAccount UserAccount { get; set; } = new UserAccount();
         public string? GeminiApiKey { get; set; } = null;
+        public double AiFontSize { get; set; } = 14.0;
         public bool IsAmbientGlowEnabled { get; set; } = true;
         public bool IsSidebarCollapsed { get; set; } = false;
         public List<string> SearchHistory { get; set; } = new List<string>
@@ -44,6 +45,10 @@ namespace VixzDesktop.Services
             "NVIDIA RTX 5080",
             "Space Exploration"
         };
+        public string? VpsServerUrl { get; set; } = null;
+        public string? VpsApiKey { get; set; } = null;
+        public bool IsVpsSyncEnabled { get; set; } = true;
+        public DateTime? LastVpsSyncTime { get; set; } = null;
         public Dictionary<string, List<string>> SubscriptionFolders { get; set; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
         {
             { "All", new List<string>() },
@@ -82,6 +87,49 @@ namespace VixzDesktop.Services
                         Settings = settings;
                     }
                 }
+
+                if (string.IsNullOrWhiteSpace(Settings.VpsServerUrl))
+                {
+                    try
+                    {
+                        var candidates = new[]
+                        {
+                            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "local.properties"),
+                            Path.Combine(Environment.CurrentDirectory, "local.properties"),
+                            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "local.properties"),
+                            @"E:\Documents\GitHub\Youtube\local.properties"
+                        };
+
+                        foreach (var propPath in candidates)
+                        {
+                            var fullPath = Path.GetFullPath(propPath);
+                            if (File.Exists(fullPath))
+                            {
+                                foreach (var line in File.ReadAllLines(fullPath))
+                                {
+                                    var trimmed = line.Trim();
+                                    if (trimmed.StartsWith("VPS_SERVER_URL=", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        var val = trimmed.Substring("VPS_SERVER_URL=".Length).Trim().Trim('"').Trim('\'');
+                                        if (!string.IsNullOrWhiteSpace(val)) Settings.VpsServerUrl = val;
+                                    }
+                                    else if (trimmed.StartsWith("VPS_API_KEY=", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        var val = trimmed.Substring("VPS_API_KEY=".Length).Trim().Trim('"').Trim('\'');
+                                        if (!string.IsNullOrWhiteSpace(val)) Settings.VpsApiKey = val;
+                                    }
+                                }
+                                if (!string.IsNullOrWhiteSpace(Settings.VpsServerUrl))
+                                {
+                                    Settings.IsVpsSyncEnabled = true;
+                                    Save();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
             }
             catch (Exception ex)
             {
@@ -116,6 +164,8 @@ namespace VixzDesktop.Services
                 Settings.WatchHistory.RemoveAt(Settings.WatchHistory.Count - 1);
             }
             Save();
+
+            _ = VpsSyncService.NotifyWatchedAsync(video);
         }
 
         public static void ToggleFavorite(VideoItem video)
@@ -265,6 +315,12 @@ namespace VixzDesktop.Services
             {
                 Settings.WatchPositions[videoId] = positionSeconds;
                 Save();
+
+                var item = Settings.WatchHistory.FirstOrDefault(v => v.Id == videoId);
+                if (item != null)
+                {
+                    _ = VpsSyncService.NotifyWatchedAsync(item, positionSeconds);
+                }
             }
         }
 

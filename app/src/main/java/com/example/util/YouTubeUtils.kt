@@ -11,17 +11,33 @@ object YouTubeUtils {
     )
 
     /**
+     * Checks if input contains an explicit YouTube URL (youtube.com or youtu.be).
+     */
+    fun isExplicitYouTubeUrl(input: String): Boolean {
+        val trimmed = input.trim()
+        return trimmed.contains("youtu.be", ignoreCase = true) ||
+               trimmed.contains("youtube.com", ignoreCase = true)
+    }
+
+    /**
      * Extracts YouTube 11-char Video ID from URL or raw ID string.
+     * Plain English words (such as "windsurfing") are strictly excluded.
      */
     fun extractVideoId(input: String): String? {
         val trimmed = input.trim()
-        if (trimmed.length == 11 && trimmed.matches(Regex("[a-zA-Z0-9_-]{11}"))) {
-            return trimmed
-        }
         val matcher = YOUTUBE_ID_PATTERN.matcher(trimmed)
-        return if (matcher.find()) {
-            matcher.group(1)
-        } else null
+        if (matcher.find()) {
+            return matcher.group(1)
+        }
+        // Only accept raw 11-char ID if it contains digits or symbols (YouTube IDs are base64-like, not plain words)
+        if (trimmed.length == 11 && trimmed.matches(Regex("[a-zA-Z0-9_-]{11}"))) {
+            val hasDigitsOrSymbols = trimmed.any { it.isDigit() || it == '-' || it == '_' }
+            val isNotAllAlpha = !trimmed.all { it.isLetter() }
+            if (hasDigitsOrSymbols && isNotAllAlpha) {
+                return trimmed
+            }
+        }
+        return null
     }
 
     /**
@@ -32,13 +48,16 @@ object YouTubeUtils {
     fun isShortVideo(video: VideoEntity): Boolean {
         if (video.category.equals("Shorts", ignoreCase = true)) return true
 
-        val durationSec = parseFormattedTimeToSeconds(video.durationText)
         val titleLower = video.title.lowercase()
         val hasShortsTag = titleLower.contains("#shorts") ||
                            titleLower.contains("#short") ||
                            titleLower.contains("/shorts/")
+        if (hasShortsTag) return true
 
-        return hasShortsTag
+        val durationSec = parseFormattedTimeToSeconds(video.durationText)
+        if (durationSec in 1..65) return true
+
+        return false
     }
 
     /**
@@ -236,6 +255,35 @@ object YouTubeUtils {
     }
 
     /**
+     * Parses view count text like "1.2M views", "45K views", "1,200 views" into a numeric Long.
+     */
+    fun parseViewCount(viewText: String): Long {
+        if (viewText.isBlank()) return 0L
+        val clean = viewText.lowercase().replace("views", "").replace("view", "").trim()
+        return try {
+            when {
+                clean.endsWith("b") -> {
+                    val num = clean.removeSuffix("b").trim().toDoubleOrNull() ?: 0.0
+                    (num * 1_000_000_000L).toLong()
+                }
+                clean.endsWith("m") -> {
+                    val num = clean.removeSuffix("m").trim().toDoubleOrNull() ?: 0.0
+                    (num * 1_000_000L).toLong()
+                }
+                clean.endsWith("k") -> {
+                    val num = clean.removeSuffix("k").trim().toDoubleOrNull() ?: 0.0
+                    (num * 1_000L).toLong()
+                }
+                else -> {
+                    clean.replace(",", "").replace(".", "").trim().toLongOrNull() ?: 0L
+                }
+            }
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    /**
      * Converts epoch milliseconds to a human-readable relative time string.
      * e.g. "2 hours ago", "3 days ago", "5 months ago", "1 year ago"
      */
@@ -309,10 +357,6 @@ object YouTubeUtils {
         if (publishedText.isBlank()) return Long.MAX_VALUE / 2 // Neutral middle value if date missing
         val lower = publishedText.lowercase().trim()
 
-        if (lower.contains("just now") || lower.contains("moments ago")) {
-            return 0L
-        }
-
         val match = Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""").find(lower)
         if (match != null) {
             val num = match.groupValues[1].toLongOrNull() ?: 1L
@@ -328,6 +372,11 @@ object YouTubeUtils {
                 else -> Long.MAX_VALUE / 2
             }
         }
+
+        if (lower.contains("live now") || lower.contains("just now") || lower.contains("moments ago") || (lower.contains("live") && !lower.contains("ago"))) {
+            return 0L
+        }
+
         return Long.MAX_VALUE / 2
     }
 }

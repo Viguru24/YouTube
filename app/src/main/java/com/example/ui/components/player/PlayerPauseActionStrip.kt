@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -22,14 +21,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.YouTubeRed
 
+/**
+ * Premium white options pill displayed when the player is paused:
+ * [ 👍 Like ] | [ 👎 Dislike ] | [ ↗️ Share ] | [ ✨ AI Summary ] | [ ⬇️ Download ]
+ */
 @Composable
 fun PlayerPauseActionStrip(
     visible: Boolean,
-    isTablet: Boolean,
+    isFullscreen: Boolean,
+    context: Context,
     videoId: String,
     videoTitle: String,
     isFavorite: Boolean,
@@ -41,90 +44,65 @@ fun PlayerPauseActionStrip(
     onAiSummaryClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onDeleteDownloadClick: () -> Unit,
-    onPreviousVideo: (() -> Unit)? = null,
-    onNextVideo: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val actionBtnSize = if (isTablet) 28.dp else 24.dp
-    val actionIconSize = if (isTablet) 15.dp else 13.dp
-
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn() + scaleIn(initialScale = 0.92f),
         exit = fadeOut() + scaleOut(targetScale = 0.92f),
-        modifier = modifier
+        modifier = modifier.padding(bottom = if (isFullscreen) 56.dp else 48.dp)
     ) {
         Surface(
             shape = RoundedCornerShape(50.dp),
-            color = Color.Black.copy(alpha = 0.65f),
+            color = Color.White.copy(alpha = 0.93f),
             shadowElevation = 6.dp,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f))
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, Color(0xFFE0E0E0))
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                modifier = Modifier.padding(
-                    horizontal = if (isTablet) 5.dp else 4.dp,
-                    vertical = if (isTablet) 2.dp else 1.dp
-                )
+                horizontalArrangement = Arrangement.spacedBy(0.dp),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
-                // 0. ⏮️ Previous Video
-                if (onPreviousVideo != null) {
-                    IconButton(
-                        onClick = { onPreviousVideo() },
-                        modifier = Modifier.size(actionBtnSize)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipPrevious,
-                            contentDescription = "Previous Video",
-                            tint = Color.White,
-                            modifier = Modifier.size(actionIconSize)
-                        )
-                    }
-                    Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
-                }
-
                 // 1. 👍 Like
                 IconButton(
                     onClick = {
                         onFavoriteToggle()
                         Toast.makeText(context, if (!isFavorite) "Liked 👍" else "Unliked", Toast.LENGTH_SHORT).show()
                     },
-                    modifier = Modifier.size(actionBtnSize)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = if (isFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                         contentDescription = "Like",
-                        tint = if (isFavorite) YouTubeRed else Color.White,
-                        modifier = Modifier.size(actionIconSize)
+                        tint = if (isFavorite) YouTubeRed else Color(0xFF444444),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
 
-                // 2. 👎 Dislike & Lower in Algorithm (Vibrant Orange Accent)
+                // 2. 👎 I Don't Like (Lower in Algorithm & Skip to Next)
                 IconButton(
                     onClick = {
                         onDislikeToggle()
-                        Toast.makeText(context, if (!isDisliked) "Downvoted 👎 • Lowered in algorithm" else "Dislike removed", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "👎 I don't like • Next video", Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier
-                        .size(actionBtnSize)
+                        .size(36.dp)
                         .background(
-                            if (isDisliked) YouTubeRed.copy(alpha = 0.28f) else Color.Transparent,
+                            if (isDisliked) YouTubeRed.copy(alpha = 0.20f) else Color.Transparent,
                             CircleShape
                         )
                 ) {
                     Icon(
                         imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = "Dislike",
-                        tint = if (isDisliked) YouTubeRed else Color.White,
-                        modifier = Modifier.size(actionIconSize)
+                        contentDescription = "I don't like",
+                        tint = if (isDisliked) YouTubeRed else Color(0xFF444444),
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
 
                 // 3. ↗️ Share
                 IconButton(
@@ -136,78 +114,60 @@ fun PlayerPauseActionStrip(
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share Video"))
                     },
-                    modifier = Modifier.size(actionBtnSize)
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Share,
                         contentDescription = "Share",
-                        tint = Color.White,
-                        modifier = Modifier.size(actionIconSize)
+                        tint = Color(0xFF444444),
+                        modifier = Modifier.size(17.dp)
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
 
                 // 4. ✨ AI Summary
                 IconButton(
-                    onClick = { onAiSummaryClick() },
+                    onClick = onAiSummaryClick,
                     modifier = Modifier
-                        .size(actionBtnSize)
-                        .background(Color(0xFF8E24AA).copy(alpha = 0.35f), shape = CircleShape)
+                        .size(36.dp)
+                        .background(Color(0xFF8E24AA).copy(alpha = 0.10f), shape = CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.AutoAwesome,
                         contentDescription = "AI Summary",
-                        tint = Color(0xFFCE93D8),
-                        modifier = Modifier.size(actionIconSize)
+                        tint = Color(0xFF8E24AA),
+                        modifier = Modifier.size(17.dp)
                     )
                 }
 
-                Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
+                Box(modifier = Modifier.width(0.5.dp).height(16.dp).background(Color(0xFFDDDDDD)))
 
                 // 5. ⬇️ Download
                 IconButton(
-                    onClick = {
-                        if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
-                    },
-                    modifier = Modifier.size(actionBtnSize)
+                    onClick = { if (isDownloaded) onDeleteDownloadClick() else onDownloadClick() },
+                    modifier = Modifier.size(36.dp)
                 ) {
                     if (isDownloaded) {
                         Icon(
                             imageVector = Icons.Filled.CheckCircle,
                             contentDescription = "Downloaded",
                             tint = Color(0xFF4CAF50),
-                            modifier = Modifier.size(actionIconSize)
+                            modifier = Modifier.size(18.dp)
                         )
                     } else if (downloadProgress in 1..99) {
                         CircularProgressIndicator(
                             progress = { downloadProgress / 100f },
-                            modifier = Modifier.size(actionIconSize),
+                            modifier = Modifier.size(18.dp),
                             color = YouTubeRed,
-                            strokeWidth = 2.5.dp
+                            strokeWidth = 2.dp
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Filled.Download,
-                            contentDescription = "Download Video",
-                            tint = Color.White,
-                            modifier = Modifier.size(actionIconSize)
-                        )
-                    }
-                }
-
-                // 6. ⏭️ Next Video
-                if (onNextVideo != null) {
-                    Box(modifier = Modifier.width(0.75.dp).height(if (isTablet) 12.dp else 10.dp).background(Color.White.copy(alpha = 0.25f)))
-                    IconButton(
-                        onClick = { onNextVideo() },
-                        modifier = Modifier.size(actionBtnSize)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.SkipNext,
-                            contentDescription = "Next Video",
-                            tint = Color.White,
-                            modifier = Modifier.size(actionIconSize)
+                            contentDescription = "Download",
+                            tint = Color(0xFF444444),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }

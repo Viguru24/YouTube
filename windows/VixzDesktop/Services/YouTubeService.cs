@@ -18,6 +18,43 @@ namespace VixzDesktop.Services
     {
         private static readonly YoutubeClient _client = new YoutubeClient();
         private static readonly HttpClient _httpClient = new HttpClient();
+        private static string? _lastContinuationToken;
+        private static string _innerTubeApiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
+        private static string? FindContinuationToken(JToken? token)
+        {
+            if (token == null) return null;
+            if (token is JObject obj)
+            {
+                if (obj["continuationCommand"]?["token"] != null)
+                {
+                    return obj["continuationCommand"]?["token"]?.ToString();
+                }
+                foreach (var prop in obj.Properties())
+                {
+                    var found = FindContinuationToken(prop.Value);
+                    if (!string.IsNullOrEmpty(found)) return found;
+                }
+            }
+            else if (token is JArray arr)
+            {
+                foreach (var item in arr)
+                {
+                    var found = FindContinuationToken(item);
+                    if (!string.IsNullOrEmpty(found)) return found;
+                }
+            }
+            return null;
+        }
+
+        private static string FormatViews(long views)
+        {
+            if (views < 0) return "";
+            if (views >= 1_000_000_000) return $"{views / 1_000_000_000.0:0.#}B views";
+            if (views >= 1_000_000) return $"{views / 1_000_000.0:0.#}M views";
+            if (views >= 1_000) return $"{views / 1_000.0:0.#}K views";
+            return $"{views} views";
+        }
 
         static YouTubeService()
         {
@@ -57,10 +94,17 @@ namespace VixzDesktop.Services
                 var html = await response.Content.ReadAsStringAsync();
 
                 var match = Regex.Match(html, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                var keyMatch = Regex.Match(html, @"""INNERTUBE_API_KEY"":\s*""([^""]+)""");
+                if (keyMatch.Success)
+                {
+                    _innerTubeApiKey = keyMatch.Groups[1].Value;
+                }
+
                 if (match.Success)
                 {
                     var jsonStr = match.Groups[1].Value;
                     var jObj = JObject.Parse(jsonStr);
+                    _lastContinuationToken = FindContinuationToken(jObj);
                     WalkJsonTree(jObj, results, seenIds, maxResults);
                 }
             }
@@ -69,7 +113,21 @@ namespace VixzDesktop.Services
                 System.Diagnostics.Debug.WriteLine($"ytInitialData parse error: {ex.Message}");
             }
 
-            // 2. YoutubeExplode stream pagination to fill up to maxResults
+            // 2. High-fidelity continuation to fill up to maxResults if needed
+            if (results.Count < maxResults && !string.IsNullOrEmpty(_lastContinuationToken))
+            {
+                try
+                {
+                    var continuationResults = await FetchContinuationBatchAsync(_lastContinuationToken, seenIds, maxResults - results.Count);
+                    results.AddRange(continuationResults);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Continuation search error: {ex.Message}");
+                }
+            }
+
+            // 3. YoutubeExplode stream pagination fallback to fill up to maxResults
             if (results.Count < maxResults)
             {
                 try
@@ -89,7 +147,8 @@ namespace VixzDesktop.Services
                                 ThumbnailUrl = video.Thumbnails.OrderByDescending(t => t.Resolution.Area).FirstOrDefault()?.Url ?? $"https://i.ytimg.com/vi/{video.Id.Value}/hqdefault.jpg",
                                 Duration = video.Duration,
                                 DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
-                                UploadDateText = ""
+                                UploadDateText = "",
+                                ViewCountText = ""
                             });
                         }
 
@@ -102,41 +161,144 @@ namespace VixzDesktop.Services
                 }
             }
 
+            // 4. Background enrichment for any videos lacking upload date or views
+            var missingMeta = results.Where(v => string.IsNullOrEmpty(v.UploadDateText)).Take(15).ToList();
+            if (missingMeta.Count > 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    foreach (var v in missingMeta)
+                    {
+                        try
+                        {
+                            var details = await GetVideoDetailsAsync(v.Id);
+                            if (details != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(details.UploadDateText)) v.UploadDateText = details.UploadDateText;
+                                if (!string.IsNullOrWhiteSpace(details.ViewCountText)) v.ViewCountText = details.ViewCountText;
+                            }
+                        }
+                        catch { }
+                    }
+                });
+            }
+
             return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
         }
 
         public static async Task<List<VideoItem>> FetchNextSearchBatchAsync(string query, HashSet<string> existingIds, int takeCount = 35)
         {
             var results = new List<VideoItem>();
+
+            // 1. Try high-fidelity InnerTube continuation (contains publishedTimeText and shortViewCountText)
+            if (!string.IsNullOrEmpty(_lastContinuationToken))
+            {
+                var contResults = await FetchContinuationBatchAsync(_lastContinuationToken, existingIds, takeCount);
+                if (contResults.Count > 0)
+                {
+                    results.AddRange(contResults);
+                }
+            }
+
+            // 2. Fallback to YoutubeExplode if continuation was not available or didn't return enough
+            if (results.Count < takeCount)
+            {
+                try
+                {
+                    var searchResults = _client.Search.GetVideosAsync(query);
+                    await foreach (var video in searchResults)
+                    {
+                        if (!existingIds.Contains(video.Id.Value))
+                        {
+                            existingIds.Add(video.Id.Value);
+                            results.Add(new VideoItem
+                            {
+                                Id = video.Id.Value,
+                                Title = video.Title,
+                                ChannelTitle = video.Author.ChannelTitle,
+                                ChannelId = video.Author.ChannelId.Value,
+                                ThumbnailUrl = video.Thumbnails.OrderByDescending(t => t.Resolution.Area).FirstOrDefault()?.Url ?? $"https://i.ytimg.com/vi/{video.Id.Value}/hqdefault.jpg",
+                                Duration = video.Duration,
+                                DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
+                                UploadDateText = "",
+                                ViewCountText = ""
+                            });
+
+                            if (results.Count >= takeCount) break;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error fetching next search batch: {ex.Message}");
+                }
+            }
+
+            // 3. Background enrichment for any videos lacking upload date or views
+            var missing = results.Where(v => string.IsNullOrEmpty(v.UploadDateText)).Take(15).ToList();
+            if (missing.Count > 0)
+            {
+                _ = Task.Run(async () =>
+                {
+                    foreach (var v in missing)
+                    {
+                        try
+                        {
+                            var details = await GetVideoDetailsAsync(v.Id);
+                            if (details != null)
+                            {
+                                if (!string.IsNullOrWhiteSpace(details.UploadDateText)) v.UploadDateText = details.UploadDateText;
+                                if (!string.IsNullOrWhiteSpace(details.ViewCountText)) v.ViewCountText = details.ViewCountText;
+                            }
+                        }
+                        catch { }
+                    }
+                });
+            }
+
+            return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
+        }
+
+        private static async Task<List<VideoItem>> FetchContinuationBatchAsync(string continuationToken, HashSet<string> existingIds, int takeCount = 35)
+        {
+            var results = new List<VideoItem>();
             try
             {
-                var searchResults = _client.Search.GetVideosAsync(query);
-                await foreach (var video in searchResults)
+                var url = $"https://www.youtube.com/youtubei/v1/search?key={_innerTubeApiKey}&prettyPrint=false";
+                var bodyObj = new
                 {
-                    if (!existingIds.Contains(video.Id.Value))
+                    context = new
                     {
-                        existingIds.Add(video.Id.Value);
-                        results.Add(new VideoItem
+                        client = new
                         {
-                            Id = video.Id.Value,
-                            Title = video.Title,
-                            ChannelTitle = video.Author.ChannelTitle,
-                            ChannelId = video.Author.ChannelId.Value,
-                            ThumbnailUrl = video.Thumbnails.OrderByDescending(t => t.Resolution.Area).FirstOrDefault()?.Url ?? $"https://i.ytimg.com/vi/{video.Id.Value}/hqdefault.jpg",
-                            Duration = video.Duration,
-                            DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
-                            UploadDateText = ""
-                        });
+                            clientName = "WEB",
+                            clientVersion = "2.20240901.01.00",
+                            hl = "en",
+                            gl = "US"
+                        }
+                    },
+                    continuation = continuationToken
+                };
+                var jsonBody = Newtonsoft.Json.JsonConvert.SerializeObject(bodyObj);
+                var content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json");
+                var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                request.Headers.Add("X-YouTube-Client-Name", "1");
+                request.Headers.Add("X-YouTube-Client-Version", "2.20240901.01.00");
 
-                        if (results.Count >= takeCount) break;
-                    }
+                var response = await _httpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    var cObj = JObject.Parse(responseString);
+                    _lastContinuationToken = FindContinuationToken(cObj);
+                    WalkJsonTree(cObj, results, existingIds, takeCount);
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error fetching next search batch: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Error fetching continuation batch: {ex.Message}");
             }
-            return results.Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id)).ToList();
+            return results;
         }
 
         private static void WalkJsonTree(JToken token, List<VideoItem> results, HashSet<string> seenIds, int maxResults)
@@ -559,7 +721,8 @@ namespace VixzDesktop.Services
                     Duration = video.Duration,
                     DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Live",
                     Description = video.Description,
-                    UploadDateText = video.UploadDate.ToString("MMM dd, yyyy")
+                    UploadDateText = video.UploadDate.ToString("MMM dd, yyyy"),
+                    ViewCountText = FormatViews(video.Engagement.ViewCount)
                 };
             }
             catch
