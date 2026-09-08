@@ -31,7 +31,13 @@ All notable changes, fixes, and improvements across the Android client and Windo
 ### 📱 4. Multi-Device Simultaneous Installer (`YouTube_Install_On_Phone.bat`)
 - **Parallel Multi-Device Push:** Batch installer detects all connected Android devices (phones, tablets, car units) via ADB and installs/updates the latest APK across all of them in parallel.
 
-### 📦 5. Updated Release Binaries
+### ⚙️ 5. Settings Dialog 3D Streamline & Obsidian Theme Overhaul
+- **Pure Dark Obsidian Glassmorphism:** Completely replaced Material You dynamic surface tinting (which generated muddy brown tones on Samsung One UI) with a hardcoded deep obsidian background gradient (`#171524` -> `#0F0E18` -> `#0A0A10`), neon bevel border, and frosted glass cards (`#14131E`, 85% opacity).
+- **Top Spotlight Cosmo Software Suite:** Elevated the Cosmo Whisper and Cosmo Symphony showcase to Spotlight Position #1 right at the top of Settings with compact 3D cards, live GitHub links, and official portal button (`viguru24.github.io`).
+- **Compact, Neat & Professional Typography:** All card titles streamlined to 12sp bold, descriptions to 10sp with high contrast, and chip/control sizes scaled down to prevent clipping or unnecessary scrolling.
+- **Streamlined Algorithm, AdBlock & VPS Cloud Cards:** Unified styling across Feed Algorithm, AdBlock, Gemini/Groq AI Keys, App Language, Blocked Keywords, and VPS Cross-Device Cloud Sync with 3D gradient buttons and polished switches.
+
+### 📦 6. Updated Release Binaries
 - **Android APK:** [`release/Vixz-YouTube-Player-latest.apk`](release/Vixz-YouTube-Player-latest.apk) (and `v1.9.7.apk`) compiled and verified.
 - **Windows Desktop Executable:** [`release/VixzDesktop-latest.exe`](release/VixzDesktop-latest.exe) built via .NET 9 single-file publish with WPF & WebView2 runtime.
 
