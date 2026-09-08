@@ -14,7 +14,8 @@
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
-  <a href="#-whats-new-in-v197">🆕 <b>What's New (v1.9.7)</b></a> •
+  <a href="#-whats-new-in-v198">🆕 <b>What's New (v1.9.8)</b></a> •
+  <a href="UPDATE_LOG.md">📋 <b>Update Log</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows PC Version</b></a> •
   <a href="#-key-features">✨ <b>Features</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -25,15 +26,13 @@
 
 ---
 
-## 🆕 What's New in v1.9.7
+## 🆕 What's New in v1.9.8
 
-- 🎮 **Dedicated Paused Action Strip:** Sleek new pause overlay featuring Prev/Next buttons, 1-tap PiP pop-out, and Thumbs Down with immediate auto-skip to the next video.
-- ⧉ **Dual Visible PiP Triggers:** Pop-Out Picture-in-Picture buttons available on both the top bar and the bottom utility deck.
-- 🔄 **180° Hardware Reverse Rotation Flip:** Instant display flip button that overrides Android system orientation locks.
-- 🎙️ **Voice Search Support:** Speak naturally with in-app microphone voice recognition for instant video searching.
-- 🔍 **Pinch-to-Zoom up to 5x:** Fluid multi-touch video zooming paired with precision outer-border brightness & volume gestures.
-- ⚡ **Dominant Recency Feed Sync:** Parallel background channel fetching (30 uploads each) with heavy recency boosting (+1200 pts) for ultra-fresh uploads.
-- 🔗 **Full Link Interception:** Tapping creator channels or video links inside player cards stays strictly within Vixz.
+- 🔍 **Overhauled Pinch-to-Zoom Engine (1.0x – 5.0x):** Zero jitter, fluid multi-touch scaling, intelligent pointer tracking, and 1-finger 2D panning with edge bounds.
+- ⚡ **Floating Real-Time Zoom HUD:** Dynamic glassmorphic badge showing instant magnification levels.
+- 🤖 **On-Demand AI Summarization & Tight Chat:** Video summaries now only run when requested, paired with a compact, non-blocking AI chat modal.
+- 📱 **Multi-Device ADB Auto-Updater:** Simultaneous multi-phone/tablet APK installer script (`YouTube_Install_On_Phone.bat`).
+- 📦 **Latest Companion Binaries:** Updated Android APK and Windows Desktop EXE. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
 
 ---
 

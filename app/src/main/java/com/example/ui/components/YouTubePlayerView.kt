@@ -709,6 +709,12 @@ fun YouTubePlayerView(
                 },
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer(
+                        scaleX = zoomScale,
+                        scaleY = zoomScale,
+                        translationX = panOffsetX,
+                        translationY = panOffsetY
+                    )
                     .testTag("fallback_webview_player")
             )
         }
@@ -932,14 +938,20 @@ fun YouTubePlayerView(
             modifier = Modifier.align(Alignment.BottomEnd)
         )
 
-        // 11. Left Side Brightness HUD
+        // 11. Zoom Level Badge HUD (Top-Center)
+        PlayerZoomFeedbackHUD(
+            zoomScale = zoomScale,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+
+        // 12. Left Side Brightness HUD
         PlayerBrightnessHUD(
             isAdjustingBrightness = isAdjustingBrightness,
             brightnessFraction = gestureBrightness,
             modifier = Modifier.align(Alignment.CenterStart)
         )
 
-        // 12. Right Side Volume HUD
+        // 13. Right Side Volume HUD
         PlayerVolumeHUD(
             isAdjustingVolume = isAdjustingVolume,
             volumeFraction = gestureVolumeFraction,

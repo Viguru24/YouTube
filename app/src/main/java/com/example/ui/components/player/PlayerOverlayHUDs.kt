@@ -338,3 +338,45 @@ fun PlayerZoomResetButton(
         }
     }
 }
+
+/**
+ * Top-center zoom level badge (e.g., "2.3x") shown when zoomed in.
+ */
+@Composable
+fun PlayerZoomFeedbackHUD(
+    zoomScale: Float,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = zoomScale > 1.05f,
+        enter = fadeIn() + scaleIn(),
+        exit = fadeOut() + scaleOut(),
+        modifier = modifier.padding(top = 16.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color.Black.copy(alpha = 0.75f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ZoomIn,
+                    contentDescription = null,
+                    tint = YouTubeRed,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = String.format(java.util.Locale.US, "%.1fx", zoomScale),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+

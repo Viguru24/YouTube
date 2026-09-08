@@ -39,5 +39,6 @@ WebView2Profile/
 
 windows/Package/Payload/
 windows/Publish/
+windows/PublishSingle/
 windows/VixzDesktop/bin/
 windows/VixzDesktop/obj/
