@@ -38,12 +38,15 @@ for /f "skip=1 tokens=1,2" %%A in ('adb devices') do (
 if %DEVICE_COUNT% EQU 0 (
     color 0C
     echo.
-    echo [!] No authorized phone or tablet detected!
+    echo [ERROR] No authorized phone or tablet detected!
     echo.
-    echo Please make sure:
-    echo   1. Your devices are plugged into your PC via USB.
-    echo   2. USB Debugging is turned ON in Developer Options on each device.
-    echo   3. You tapped "Allow" on the USB debugging prompt on your device screens.
+    echo If you are trying to run Vixz on this PC:
+    echo   Use "Launch Vixz Desktop (Update & Run).bat" instead!
+    echo.
+    echo If you are trying to install on your Android phone/tablet:
+    echo   1. Plug your phone into this PC using a USB cable.
+    echo   2. On your phone: Go to Settings - Developer Options - Enable "USB Debugging".
+    echo   3. Look at your phone screen: Tap "Allow USB Debugging" (check "Always allow").
     echo.
     pause
     exit /b 1
