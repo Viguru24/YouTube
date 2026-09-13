@@ -1,34 +1,34 @@
 @echo off
-setlocal enabledelayedexpansion
-title Vixz Desktop - Auto Updater & Launcher
+title Vixz Desktop Auto-Updater and Launcher
 color 0B
 
 echo ========================================================
-echo        Vixz Desktop - Auto-Updater & Launcher
+echo        Vixz Desktop - Auto-Updater and Launcher
 echo ========================================================
 echo.
 
-cd /d "%~dp0"
+set "REPO_DIR=e:\Documents\GitHub\Youtube"
+cd /d "%REPO_DIR%"
 
 REM 1. Stop any currently running instance of Vixz
-echo [*] Checking for running Vixz Desktop instances...
+echo [*] Closing running Vixz Desktop instances...
 taskkill /f /im VixzDesktop.exe >nul 2>&1
 
 REM 2. Pull latest version from GitHub
 echo [*] Pulling latest updates from GitHub (origin/main)...
 git pull origin main
-if errorlevel 1 (
-    echo [!] Notice: Git pull encountered a warning or offline state. Continuing with local build...
-) else (
-    echo [OK] Synced with latest GitHub version!
-)
 echo.
 
-REM 3. Ensure latest binary is compiled and published
-set "APP_EXE=%~dp0release\app_bin\VixzDesktop.exe"
+REM 3. Always ensure release executable exists
+set "APP_EXE=%REPO_DIR%\windows\VixzDesktop\bin\Release\net9.0-windows\VixzDesktop.exe"
 if not exist "%APP_EXE%" (
-    echo [*] Compiling latest release binaries...
-    dotnet publish "%~dp0windows\VixzDesktop\VixzDesktop.csproj" -c Release -r win-x64 --self-contained false -o "%~dp0release\app_bin"
+    set "APP_EXE=%REPO_DIR%\release\app_bin\VixzDesktop.exe"
+)
+
+if not exist "%APP_EXE%" (
+    echo [*] Compiling release binaries...
+    dotnet build "%REPO_DIR%\windows\VixzDesktop\VixzDesktop.csproj" -c Release
+    set "APP_EXE=%REPO_DIR%\windows\VixzDesktop\bin\Release\net9.0-windows\VixzDesktop.exe"
 )
 
 if not exist "%APP_EXE%" (
@@ -47,6 +47,6 @@ REM 5. Launch the latest Vixz Desktop
 echo [*] Launching latest Vixz Desktop...
 start "" "%APP_EXE%"
 
-echo [OK] Vixz Desktop launched!
-timeout /t 3 >nul
+echo [OK] Vixz Desktop launched successfully!
+timeout /t 2 >nul 2>&1
 exit /b 0
