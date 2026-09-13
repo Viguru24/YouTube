@@ -241,7 +241,6 @@
                                 ToolTip="Sign in with Google / YouTube Account"
                                 Click="AccountBtn_Click"/>
 
-
                         <!-- ✨ Vixz AI Button -->
                         <Button x:Name="AiCopilotBtn"
                                 Content="✨ Vixz AI"
@@ -401,8 +400,6 @@
                                 <TextBlock x:Name="FeedTitleText" Text="Recommended Feed" Foreground="White" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                     <ProgressBar x:Name="LoadingSpinner" IsIndeterminate="True" Width="120" Height="4" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed"/>
-                                    <Button x:Name="FeedRefreshBtn" Content="🔄 Refresh" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,8,0" ToolTip="Refresh current view / sync downloads (F5)" Click="FeedRefreshBtn_Click"/>
-                                    <Button x:Name="OpenFolderHeaderBtn" Content="📁 Open Folder" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,8,0" Visibility="Collapsed" ToolTip="Open Downloads Folder in File Explorer" Click="OpenDownloadsFolder_Click"/>
                                     <Button x:Name="ResetAlgorithmBtn" Content="🤖 Reset Algorithm" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="11" Padding="10,4" ToolTip="Reset recommendation algorithm, watch history affinity, and dislikes back to factory defaults" Click="ResetAlgorithmBtn_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -497,10 +494,7 @@
 
                                                     <!-- Thumbnail Image -->
                                                     <Border Grid.Row="0" CornerRadius="12,12,0,0" ClipToBounds="True">
-                                                        <Grid Background="#12121A">
-                                                            <Border Background="#1A1A24" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                                                                <TextBlock Text="🎬" FontSize="30" Opacity="0.3" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                            </Border>
+                                                        <Grid>
                                                             <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
                                                             <!-- Duration Badge -->
                                                             <Border Background="#CC000000" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
@@ -806,10 +800,13 @@
                                     <!-- 12. 📺 Quality Selector (1080p HD Default) -->
                                     <Button x:Name="QualityBtn" Content="HD 1080p" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="Bold" Padding="8,4" Margin="0,0,5,0" ToolTip="Select Video Quality (1080p / 720p / Auto)" Click="QualityBtn_Click"/>
 
-                                    <!-- 15. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
+                                    <!-- 13. ✨ AI Summarize & Copilot -->
+                                    <Button x:Name="PlayerAiBtn" Content="✨" Style="{StaticResource IconActionButton}" ToolTip="AI Video Summarizer &amp; Assistant" Margin="0,0,5,0" Click="AiCopilotBtn_Click"/>
+
+                                    <!-- 14. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
                                     <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
 
-                                    <!-- 16. ⧉ POP-OUT FLOATING PLAYER -->
+                                    <!-- 15. ⧉ POP-OUT FLOATING PLAYER -->
                                     <Button x:Name="PopOutBtn" Content="⧉" Style="{StaticResource IconActionButton}" ToolTip="Pop-out Floating Mini Player (Always on Top)" Margin="0,0,5,0" Click="PopOutPlayer_Click"/>
 
                                     <!-- 16. 🛠️ F12 DevTools -->
@@ -1232,14 +1229,13 @@
                                 </Border>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button x:Name="AiSettingsBtn" Content="⚙️" Style="{StaticResource GlassButton}" Width="28" Height="28" Margin="0,0,6,0" ToolTip="AI Brain Settings (Connect Free Gemini / Groq / OpenAI Key)" Click="AiSettingsBtn_Click"/>
-                                <Button Content="✕" Style="{StaticResource GlassButton}" Width="28" Height="28" Click="CloseAiCopilot_Click"/>
+                                <Button x:Name="AiSettingsBtn" Content="⚙️" Style="{StaticResource IconActionButton}" Width="26" Height="26" Margin="0,0,4,0" ToolTip="AI Brain Settings (Connect Free Gemini / Groq / OpenAI Key)" Click="AiSettingsBtn_Click"/>
+                                <Button Content="✕" Style="{StaticResource IconActionButton}" Width="26" Height="26" Click="CloseAiCopilot_Click"/>
                             </StackPanel>
                         </Grid>
 
                         <!-- Quick Action Suggestion Chips -->
                         <WrapPanel Grid.Row="1" Margin="0,0,0,10">
-                            <Button Content="⚙️ AI Key / Brain" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="11" Padding="8,4" Margin="0,0,4,4" ToolTip="Configure your free Gemini, Groq, or OpenAI API key" Click="AiSettingsBtn_Click"/>
                             <Button Content="✨ Summarise Video" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipSummarize_Click"/>
                             <Button Content="▶️ Latest Benny Johnson" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipBenny_Click"/>
                             <Button Content="🌙 30m Sleep Timer" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipTimer_Click"/>
@@ -1341,7 +1337,6 @@
                         </Border>
                     </Grid>
                 </Border>
-
             </Grid>
             <!-- Background Sync WebView2 (Permanently isolated off-screen so it never intercepts clicks or bleeds into player) -->
             <Canvas Width="0" Height="0" ClipToBounds="True" IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Top">

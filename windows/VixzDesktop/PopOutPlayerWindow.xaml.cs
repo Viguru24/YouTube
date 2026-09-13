@@ -144,16 +144,6 @@ namespace VixzDesktop
                                 headers
                             );
                         }
-                        else if (uri.Contains("youtube.com") || uri.Contains("youtube-nocookie.com") || uri.Contains("googlevideo.com"))
-                        {
-                            // Spoof Referer & Origin to bypass owner embed restrictions (Error 150/152)
-                            try
-                            {
-                                args.Request.Headers.SetHeader("Referer", "https://www.youtube.com/");
-                                args.Request.Headers.SetHeader("Origin", "https://www.youtube.com");
-                            }
-                            catch { }
-                        }
                     }
                     catch { }
                 };
