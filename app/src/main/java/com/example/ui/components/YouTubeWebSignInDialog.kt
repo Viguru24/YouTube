@@ -21,7 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
+import android.content.Intent
+import android.net.Uri
+import android.webkit.WebSettings
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,6 +66,8 @@ fun YouTubeWebSignInDialog(
     var detectedEmail by remember { mutableStateOf(initialEmail) }
     var detectedAvatarUrl by remember { mutableStateOf("") }
     var hasAuthSession by remember { mutableStateOf(false) }
+    var showPasteCookiesDialog by remember { mutableStateOf(false) }
+    var cookiesInput by remember { mutableStateOf("") }
 
     fun deriveName(rawName: String, rawEmail: String): String {
         val trimmed = rawName.trim()
@@ -198,6 +206,19 @@ fun YouTubeWebSignInDialog(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { showPasteCookiesDialog = true }) {
+                            Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = "Paste Cookies")
+                        }
+                        IconButton(onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl.ifBlank { "https://m.youtube.com/signin" }))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open external browser", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(imageVector = Icons.Filled.OpenInBrowser, contentDescription = "Open in Browser")
+                        }
                         IconButton(onClick = { webViewRef?.reload() }) {
                             Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Reload")
                         }
@@ -206,6 +227,77 @@ fun YouTubeWebSignInDialog(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
                 )
+
+                // Dialog for manual Cookie import fallback
+                if (showPasteCookiesDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPasteCookiesDialog = false },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, tint = YouTubeRed)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Paste YouTube Cookies", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "If Google restricts in-app sign-in, you can copy your cookies from your mobile/desktop browser (e.g., via DevTools or cookie exporter) and paste them here:",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = cookiesInput,
+                                    onValueChange = { cookiesInput = it },
+                                    label = { Text("Cookie String") },
+                                    placeholder = { Text("LOGIN_INFO=...; SID=...; SAPISID=...") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(130.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val raw = cookiesInput.trim()
+                                    if (raw.isNotBlank()) {
+                                        val cookieManager = CookieManager.getInstance()
+                                        cookieManager.setAcceptCookie(true)
+                                        raw.split(";").forEach { part ->
+                                            val cookie = part.trim()
+                                            if (cookie.isNotEmpty()) {
+                                                cookieManager.setCookie("https://www.youtube.com", cookie)
+                                                cookieManager.setCookie("https://accounts.google.com", cookie)
+                                            }
+                                        }
+                                        cookieManager.flush()
+
+                                        val prefs = context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
+                                        prefs.edit().putString("youtube_cookies", raw).apply()
+
+                                        hasAuthSession = raw.contains("LOGIN_INFO") || raw.contains("SID") || raw.contains("SAPISID")
+                                        webViewRef?.loadUrl("https://m.youtube.com")
+
+                                        Toast.makeText(context, "Cookies imported successfully! 🟢", Toast.LENGTH_SHORT).show()
+                                        showPasteCookiesDialog = false
+                                    } else {
+                                        Toast.makeText(context, "Please enter cookie data", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                            ) {
+                                Text("Apply Cookies")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPasteCookiesDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
 
                 if (isLoading) {
                     LinearProgressIndicator(
@@ -222,19 +314,60 @@ fun YouTubeWebSignInDialog(
                     factory = { ctx ->
                         WebView(ctx).apply {
                             webViewRef = this
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.databaseEnabled = true
-                            settings.setSupportZoom(true)
-                            settings.builtInZoomControls = true
-                            settings.displayZoomControls = false
-                            settings.useWideViewPort = true
-                            settings.loadWithOverviewMode = true
-                            settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+                            // 1. Strip X-Requested-With header to prevent Google from detecting embedded Android app
+                            try {
+                                if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+                                    WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
+                                }
+                            } catch (e: Throwable) {}
+
+                            // 2. Configure robust webview settings for modern authentication
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                setSupportZoom(true)
+                                builtInZoomControls = true
+                                displayZoomControls = false
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                                javaScriptCanOpenWindowsAutomatically = true
+                                setSupportMultipleWindows(false)
+                                cacheMode = WebSettings.LOAD_DEFAULT
+                                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+
+                                // 3. Clean Mobile Chrome User-Agent: strip '; wv' and 'Version/X.X'
+                                // Using a desktop Windows User-Agent on Android fails Google's platform fingerprint checks!
+                                val defaultUa = userAgentString
+                                val cleanUa = if (defaultUa.contains("; wv") || defaultUa.contains("Version/")) {
+                                    defaultUa.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
+                                } else if (defaultUa.contains("Windows NT")) {
+                                    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
+                                } else {
+                                    defaultUa
+                                }
+                                userAgentString = cleanUa
+                            }
 
                             val cookieManager = CookieManager.getInstance()
                             cookieManager.setAcceptCookie(true)
                             cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                            val stealthJs = """
+                                (function() {
+                                    try {
+                                        Object.defineProperty(navigator, 'webdriver', { get: () => false, configurable: true });
+                                        if (!window.chrome) {
+                                            window.chrome = {
+                                                app: { isInstalled: false },
+                                                loadTimes: function() {},
+                                                csi: function() {}
+                                            };
+                                        }
+                                    } catch(e) {}
+                                })();
+                            """.trimIndent()
 
                             webChromeClient = object : WebChromeClient() {
                                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -246,10 +379,12 @@ fun YouTubeWebSignInDialog(
                                 override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                     isLoading = true
                                     url?.let { currentUrl = it }
+                                    view?.evaluateJavascript(stealthJs, null)
                                 }
 
                                 override fun onPageFinished(view: WebView?, url: String?) {
                                     isLoading = false
+                                    view?.evaluateJavascript(stealthJs, null)
                                     val checkedUrl = url ?: return
                                     currentUrl = checkedUrl
 

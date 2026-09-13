@@ -1,27 +1,37 @@
 <div align="center">
 
-# 🎬 Vixz - Premium Ad-Free YouTube Client for Android
+# 🎬 Vixz — Sovereign Ad-Free YouTube Experience
+### Android Client & Windows Desktop Companion
 
 **Zero Commercial Ads • SponsorBlock Auto-Skip • Hardware Audio Muxing • 3-Zone Gestures • 0ms SWR Startup**
 
 <br/>
 
-[![Download APK](https://img.shields.io/badge/📥%20Download%20Latest%20APK-v1.9.7-E50914?style=for-the-badge&logo=android&logoColor=white)](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk)
+[![Stars](https://img.shields.io/github/stars/Viguru24/YouTube?style=for-the-badge&color=FFD700&logo=github)](https://github.com/Viguru24/YouTube/stargazers)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&logo=open-source-initiative&logoColor=white)](LICENSE)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
+[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
 [![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
-[![Cosmo Whisper](https://img.shields.io/badge/🎙️%20AI%20Voice%20Dictation-Cosmo%20Whisper-FF6F00?style=for-the-badge&logo=openai&logoColor=white)](https://github.com/Viguru24/CosmoWhisper-Native)
-[![Cosmo Symphony](https://img.shields.io/badge/🌌%20Video%20%26%204K%20Studio-Cosmo%20Symphony-673AB7?style=for-the-badge&logo=rust&logoColor=white)](https://github.com/Viguru24/Video)
-[![Windows PC App](https://img.shields.io/badge/🖥️%20Windows%20PC%20App-Vixz%20Desktop-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
-[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
+
+<br/>
+
+### 🚀 Direct Fast Downloads
+
+| Platform | Format | Architecture | Direct Link |
+| :--- | :--- | :--- | :--- |
+| 📱 **Android** | `APK (v1.9.7)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk) |
+| 🖥️ **Windows (Modern App)** | `MSIX Installer` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/VixzDesktop/releases/download/v1.0.0/VixzDesktop-v1.0.0.msix) |
+| 🖥️ **Windows (Standalone)** | `Portable EXE` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
+
+<br/>
 
 <p align="center">
-  <a href="#-quick-install-guide">📥 <b>Download & Install</b></a> •
-  <a href="#-whats-new-in-v198">🆕 <b>What's New (v1.9.8)</b></a> •
+  <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
+  <a href="#-whats-new-in-v198">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
-  <a href="UPDATE_LOG.md">📋 <b>Update Log</b></a> •
-  <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows PC Version</b></a> •
-  <a href="#-key-features">✨ <b>Features</b></a> •
+  <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
-  <a href="#-tech-stack">🛠️ <b>Tech Stack</b></a>
+  <a href="UPDATE_LOG.md">📋 <b>Update Log</b></a>
 </p>
 
 </div>

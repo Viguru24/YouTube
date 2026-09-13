@@ -70,6 +70,12 @@ namespace VixzDesktop
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            // Background sync of local downloads list to prune any missing/moved files immediately
+            _ = Task.Run(() =>
+            {
+                try { SyncLocalDownloadsFeed(); } catch { }
+            });
+
             UpdateFolderUi();
             UpdateAutoplayUi();
             UpdateAccountUi();
@@ -242,7 +248,8 @@ namespace VixzDesktop
                         'modestbranding': 1,
                         'iv_load_policy': 3,
                         'enablejsapi': 1,
-                        'origin': window.location.origin || 'https://vixz.app',
+                        'origin': 'https://www.youtube.com',
+                        'widget_referrer': 'https://www.youtube.com',
                         'start': Math.floor(startSec),
                         'vq': preferredQuality,
                         'hd': 1
@@ -259,6 +266,22 @@ namespace VixzDesktop
                             setTimeout(function() { try { e.target.unMute(); applyHighQuality(); if (e.target.getPlayerState() !== 1) e.target.playVideo(); } catch(err) {} }, 750);
                             setTimeout(applyHighQuality, 1500);
                             setTimeout(applyHighQuality, 3000);
+
+                            // Watchdog: If the video owner disabled embeds, YouTube displays the error screen inside iframe
+                            // and getPlayerState() remains -1 (unstarted) or cued (5) without ever reaching playing (1) or buffering (3).
+                            setTimeout(function() {
+                                try {
+                                    if (!isLocalMode && player && typeof player.getPlayerState === 'function') {
+                                        var state = player.getPlayerState();
+                                        if (state === -1 || state === 5) {
+                                            console.warn('[Vixz Player] Playback failed to start (state ' + state + ') - auto-triggering stream fallback');
+                                            if (window.chrome && window.chrome.webview) {
+                                                window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
+                                            }
+                                        }
+                                    }
+                                } catch(err) {}
+                            }, 1200);
                         },
                         'onStateChange': onPlayerStateChange,
                         'onPlaybackQualityChange': function(e) {
@@ -271,7 +294,8 @@ namespace VixzDesktop
                             if (window.chrome && window.chrome.webview) {
                                 window.chrome.webview.postMessage('PLAYER_ERROR:' + e.data);
                             }
-                            if (e.data === 101 || e.data === 150 || e.data === 2) {
+                            // 150/101 = Embedding disabled by owner, 100 = video not found/private, 2/5 = invalid params
+                            if (e.data === 101 || e.data === 150 || e.data === 100 || e.data === 2 || e.data === 5) {
                                 if (window.chrome && window.chrome.webview) {
                                     window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
                                 }
@@ -291,8 +315,7 @@ namespace VixzDesktop
             var pdiv = document.getElementById('player');
             if (!pdiv) return;
             var startParam = sec > 0 ? '&start=' + Math.floor(sec) : '';
-            var originParam = '&origin=' + encodeURIComponent(window.location.origin || 'https://vixz.app');
-            pdiv.innerHTML = '<iframe id=""fallback-yt-frame"" src=""https://www.youtube.com/embed/' + vid + '?autoplay=1&playsinline=1&controls=1&rel=0&enablejsapi=1' + originParam + startParam + '"" style=""width:100%;height:100%;border:none;position:absolute;top:0;left:0;"" allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" allowfullscreen></iframe>';
+            pdiv.innerHTML = '<iframe id=""fallback-yt-frame"" src=""https://www.youtube.com/embed/' + vid + '?autoplay=1&playsinline=1&controls=1&rel=0&enablejsapi=1&widget_referrer=https%3A%2F%2Fwww.youtube.com' + startParam + '"" style=""width:100%;height:100%;border:none;position:absolute;top:0;left:0;"" allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" allowfullscreen></iframe>';
         }
 
         // F12 key listener to open DevTools from within player iframe/page
@@ -425,6 +448,21 @@ namespace VixzDesktop
                     applyHighQuality();
                     setTimeout(applyHighQuality, 400);
                     setTimeout(applyHighQuality, 1200);
+
+                    // Watchdog: If the loaded video has embedding disabled, trigger stream fallback
+                    setTimeout(function() {
+                        try {
+                            if (!isLocalMode && currentVideoId === vid && player && typeof player.getPlayerState === 'function') {
+                                var state = player.getPlayerState();
+                                if (state === -1 || state === 5) {
+                                    console.warn('[Vixz Player] loadVideo failed to play (state ' + state + ') - auto-triggering stream fallback');
+                                    if (window.chrome && window.chrome.webview) {
+                                        window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + vid);
+                                    }
+                                }
+                            }
+                        } catch(err) {}
+                    }, 1200);
                 } catch(e) {
                     fallbackToDirectIframe(vid, targetSec);
                 }
@@ -436,7 +474,24 @@ namespace VixzDesktop
         function setQuality(quality) {
             preferredQuality = quality || 'hd1080';
             applyHighQuality();
+            if (player && typeof player.loadVideoById === 'function') {
+                try {
+                    var curSec = (typeof player.getCurrentTime === 'function') ? (player.getCurrentTime() || 0) : 0;
+                    var isPlaying = (typeof player.getPlayerState === 'function') ? (player.getPlayerState() === 1) : true;
+                    player.loadVideoById({
+                        videoId: currentVideoId,
+                        startSeconds: Math.max(0, curSec - 0.2),
+                        suggestedQuality: preferredQuality
+                    });
+                    if (!isPlaying && typeof player.pauseVideo === 'function') {
+                        setTimeout(function() { try { player.pauseVideo(); } catch(e) {} }, 350);
+                    }
+                } catch(e) {
+                    console.warn('[Vixz Player] setQuality stream reload error:', e);
+                }
+            }
             setTimeout(applyHighQuality, 300);
+            setTimeout(applyHighQuality, 800);
             if (window.chrome && window.chrome.webview) {
                 window.chrome.webview.postMessage('QUALITY:' + preferredQuality);
             }
@@ -730,7 +785,7 @@ namespace VixzDesktop
                     try
                     {
                         var uri = args.Request.Uri.ToLowerInvariant();
-                        // Only intercept external tracking ad domains, never tamper with youtube.com internal integrity/pagead scripts
+                        // Intercept external tracking ad domains, never tamper with youtube.com internal integrity/pagead scripts
                         if (!uri.Contains("youtube.com") && (uri.Contains("doubleclick") || uri.Contains("googleads") || uri.Contains("viewthroughconversion") || uri.Contains("ad_status") || uri.Contains("favicon.ico")))
                         {
                             string origin = "*";
@@ -772,6 +827,16 @@ namespace VixzDesktop
                                 headers
                             );
                         }
+                        else if (uri.Contains("youtube.com") || uri.Contains("youtube-nocookie.com") || uri.Contains("googlevideo.com"))
+                        {
+                            // Spoof Referer & Origin to bypass owner embed restrictions (Error 150/152)
+                            try
+                            {
+                                args.Request.Headers.SetHeader("Referer", "https://www.youtube.com/");
+                                args.Request.Headers.SetHeader("Origin", "https://www.youtube.com");
+                            }
+                            catch { }
+                        }
                     }
                     catch { }
                 };
@@ -800,6 +865,13 @@ namespace VixzDesktop
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
+                        // If user clicked 'Watch on YouTube' from an embed-restricted video screen, directly engage Bypass Stream Engine
+                        if (PlayerView.Visibility == Visibility.Visible && _currentVideo != null && _currentVideo.Id == vid)
+                        {
+                            await Dispatcher.InvokeAsync(async () => await TriggerStreamBypassAsync(vid));
+                            return;
+                        }
+
                         var video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
                             Id = vid,
@@ -816,6 +888,27 @@ namespace VixzDesktop
                 {
                     if (args.Uri.StartsWith("https://vixz.app", StringComparison.OrdinalIgnoreCase))
                     {
+                        return;
+                    }
+
+                    // Allow direct YouTube watch playback & consent pages when bypassing embed restrictions
+                    if (args.Uri.Contains("youtube.com") || args.Uri.Contains("consent.google.com") || args.Uri.Contains("google.com/sorry"))
+                    {
+                        var newVid = ExtractYouTubeVideoId(args.Uri);
+                        // If user clicked a DIFFERENT video recommendation inside YouTube web player, intercept and play in Vixz
+                        if (!string.IsNullOrEmpty(newVid) && _currentVideo != null && newVid != _currentVideo.Id)
+                        {
+                            args.Cancel = true;
+                            var video = await YouTubeService.GetVideoDetailsAsync(newVid) ?? new VideoItem
+                            {
+                                Id = newVid,
+                                Title = "YouTube Video",
+                                ChannelTitle = "YouTube",
+                                ThumbnailUrl = $"https://i.ytimg.com/vi/{newVid}/hqdefault.jpg"
+                            };
+                            await PlayVideoAsync(video);
+                            return;
+                        }
                         return;
                     }
 
@@ -837,6 +930,13 @@ namespace VixzDesktop
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
+                        // If navigation was triggered from inside the player (such as clicking 'Watch on YouTube'), bypass restrictions directly
+                        if (PlayerView.Visibility == Visibility.Visible && _currentVideo != null && _currentVideo.Id == vid)
+                        {
+                            await Dispatcher.InvokeAsync(async () => await TriggerStreamBypassAsync(vid));
+                            return;
+                        }
+
                         var video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
                             Id = vid,
@@ -847,6 +947,62 @@ namespace VixzDesktop
                         await PlayVideoAsync(video);
                     }
                     // All other navigations are cancelled (args.Cancel = true above)
+                };
+
+                VideoWebView.CoreWebView2.DOMContentLoaded += async (s, args) =>
+                {
+                    try
+                    {
+                        var curUrl = VideoWebView.Source?.ToString() ?? "";
+                        if (curUrl.Contains("youtube.com/watch"))
+                        {
+                            // Maximize video element and hide headers, sidebars, comments, and clutter
+                            var cleanCss = @"
+                                ytd-masthead, #masthead-container, #secondary, #below, #comments, 
+                                ytd-merch-shelf-renderer, #chat, ytd-live-chat-frame,
+                                #related, #ticket-shelf, #clarify-box, ytd-engagement-panel-section-list-renderer,
+                                tp-yt-paper-dialog, ytd-popup-container:has(tp-yt-paper-dialog) { 
+                                    display: none !important; 
+                                }
+                                #page-manager { margin-top: 0 !important; }
+                                #columns { max-width: 100% !important; padding: 0 !important; }
+                                #primary { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+                                #primary-inner { max-width: 100% !important; padding: 0 !important; }
+                                #player-container-outer, #player-container, #ytd-player, .html5-video-player {
+                                    position: fixed !important;
+                                    top: 0 !important;
+                                    left: 0 !important;
+                                    width: 100vw !important;
+                                    height: 100vh !important;
+                                    z-index: 999999 !important;
+                                    background: #000 !important;
+                                }
+                                body, html { overflow: hidden !important; background: #000 !important; }
+                            ";
+                            var script = "(function() { " +
+                                "var st = document.getElementById('vixz-clean-yt-style'); " +
+                                "if (!st) { " +
+                                "  st = document.createElement('style'); " +
+                                "  st.id = 'vixz-clean-yt-style'; " +
+                                "  st.textContent = '" + cleanCss.Replace("\r", "").Replace("\n", " ").Replace("'", "\\'") + "'; " +
+                                "  document.head.appendChild(st); " +
+                                "} " +
+                                "var c = 0; " +
+                                "var t = setInterval(function() { " +
+                                "  c++; " +
+                                "  var s = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-overlay-close-button'); " +
+                                "  if (s) s.click(); " +
+                                "  var b = document.querySelector('button[aria-label*=\"Accept\"], button[aria-label*=\"agree\"], form[action*=\"consent\"] button, ytd-button-renderer#agree-button button'); " +
+                                "  if (b) b.click(); " +
+                                "  var v = document.querySelector('video'); " +
+                                "  if (v && v.paused && !document.querySelector('.ad-showing')) { v.play().catch(function(){}); } " +
+                                "  if (c > 30) clearInterval(t); " +
+                                "}, 400); " +
+                                "})();";
+                            await VideoWebView.ExecuteScriptAsync(script);
+                        }
+                    }
+                    catch { }
                 };
             }
             catch (Exception ex)
@@ -877,24 +1033,7 @@ namespace VixzDesktop
                     var vid = msg.Substring("PLAYER_STREAM_FALLBACK:".Length);
                     if (!string.IsNullOrEmpty(vid))
                     {
-                        _ = Dispatcher.InvokeAsync(async () =>
-                        {
-                            try
-                            {
-                                var streamUrl = await YouTubeService.GetStreamUrlAsync(vid);
-                                if (!string.IsNullOrEmpty(streamUrl))
-                                {
-                                    var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
-                                    double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
-                                    await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{vid}')");
-                                    ShowToast("🛡️ Fallback: Playing via stream engine");
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"[Vixz] Stream fallback failed: {ex.Message}");
-                            }
-                        });
+                        Dispatcher.Invoke(() => _ = TriggerStreamBypassAsync(vid));
                     }
                 }
                 else if (msg == "VIDEO_ENDED")
@@ -1019,6 +1158,7 @@ namespace VixzDesktop
         private async Task LoadFeedAsync(string title, Func<Task<List<VideoItem>>> fetcher)
         {
             FeedTitleText.Text = title;
+            UpdateHeaderViewControls();
             LoadingSpinner.Visibility = Visibility.Visible;
             VideoItemsControl.ItemsSource = null;
 
@@ -1581,6 +1721,7 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "⭐ Favorite Videos";
+            UpdateHeaderViewControls();
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
             ApplyCurrentFilters();
         }
@@ -1590,6 +1731,7 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "🕒 Watch Later Queue";
+            UpdateHeaderViewControls();
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
             ApplyCurrentFilters();
         }
@@ -1599,17 +1741,115 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "📜 Watch History";
+            UpdateHeaderViewControls();
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
             ApplyCurrentFilters();
         }
 
         private void NavDownloads_Click(object sender, RoutedEventArgs e)
         {
+            RefreshDownloadsView(showToast: false);
+        }
+
+        private void FeedRefreshBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var title = FeedTitleText?.Text ?? "";
+            if (title == "💾 Downloaded Videos & Audio")
+            {
+                RefreshDownloadsView(showToast: true);
+            }
+            else if (title == "⭐ Favorite Videos")
+            {
+                _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
+                ApplyCurrentFilters();
+                ShowToast($"⭐ Favorites refreshed ({_rawUnfilteredFeed.Count} items)");
+            }
+            else if (title == "🕒 Watch Later Queue")
+            {
+                _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
+                ApplyCurrentFilters();
+                ShowToast($"🕒 Watch Later refreshed ({_rawUnfilteredFeed.Count} items)");
+            }
+            else if (title == "📜 Watch History")
+            {
+                _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
+                ApplyCurrentFilters();
+                ShowToast($"📜 History refreshed ({_rawUnfilteredFeed.Count} items)");
+            }
+            else if (title.StartsWith("🔔") || title.StartsWith("👤"))
+            {
+                NavSubscriptions_Click(sender, e);
+            }
+            else
+            {
+                NavHome_Click(sender, e);
+            }
+        }
+
+        private void RefreshDownloadsView(bool showToast = false)
+        {
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "💾 Downloaded Videos & Audio";
+            UpdateHeaderViewControls();
+
             _rawUnfilteredFeed = SyncLocalDownloadsFeed();
+            VideoItemsControl.ItemsSource = null;
             ApplyCurrentFilters();
+
+            if (showToast)
+            {
+                if (_rawUnfilteredFeed.Count > 0)
+                {
+                    ShowToast($"💾 Downloads refreshed: {_rawUnfilteredFeed.Count} file{(_rawUnfilteredFeed.Count == 1 ? "" : "s")} found");
+                }
+                else
+                {
+                    ShowToast("💾 Downloads folder is empty — all moved/deleted items cleared");
+                }
+            }
+        }
+
+        private void UpdateHeaderViewControls()
+        {
+            bool isDownloads = FeedTitleText?.Text == "💾 Downloaded Videos & Audio";
+            if (FeedRefreshBtn != null)
+            {
+                FeedRefreshBtn.Content = isDownloads ? "🔄 Refresh Downloads" : "🔄 Refresh";
+                FeedRefreshBtn.ToolTip = isDownloads ? "Scan & sync downloads folder with disk (F5)" : "Refresh current feed (F5)";
+            }
+            if (OpenFolderHeaderBtn != null)
+            {
+                OpenFolderHeaderBtn.Visibility = isDownloads ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private static string ExtractVideoIdFromFileName(string fileNameNoExt)
+        {
+            if (string.IsNullOrWhiteSpace(fileNameNoExt)) return "";
+            // 1. Bracketed [id] (yt-dlp standard)
+            var m = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"\[([a-zA-Z0-9_-]{11})\]");
+            if (m.Success) return m.Groups[1].Value;
+
+            // 2. Parenthesized (id)
+            m = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"\(([a-zA-Z0-9_-]{11})\)");
+            if (m.Success) return m.Groups[1].Value;
+
+            // 3. Underscore _id at end or before .temp (YoutubeExplode / Innertube format)
+            m = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"_([a-zA-Z0-9_-]{11})(\.temp)?$");
+            if (m.Success) return m.Groups[1].Value;
+
+            // 4. Standalone 11 characters
+            if (System.Text.RegularExpressions.Regex.IsMatch(fileNameNoExt, @"^[a-zA-Z0-9_-]{11}$")) return fileNameNoExt;
+
+            // 5. Separated by dash, underscore, or space at end, containing numbers/symbols
+            m = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"[-_\s]+([a-zA-Z0-9_-]{11})(\.temp)?$");
+            if (m.Success && System.Text.RegularExpressions.Regex.IsMatch(m.Groups[1].Value, @"[0-9_-]"))
+            {
+                return m.Groups[1].Value;
+            }
+
+            return "";
         }
 
         private List<VideoItem> SyncLocalDownloadsFeed()
@@ -1636,58 +1876,135 @@ namespace VixzDesktop
                     {
                         var fileNameNoExt = System.IO.Path.GetFileNameWithoutExtension(file);
                         var ext = System.IO.Path.GetExtension(file).ToUpperInvariant().TrimStart('.');
-                        var match = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"([a-zA-Z0-9_-]{11})$");
-                        var videoId = match.Success ? match.Groups[1].Value : fileNameNoExt;
 
-                        // Check if we have rich metadata stored
+                        string videoId = ExtractVideoIdFromFileName(fileNameNoExt);
+
+                        // Determine clean title without the video ID or brackets
+                        string cleanTitle = fileNameNoExt;
+                        if (!string.IsNullOrEmpty(videoId))
+                        {
+                            cleanTitle = System.Text.RegularExpressions.Regex.Replace(
+                                cleanTitle,
+                                @"[\(\[]?" + System.Text.RegularExpressions.Regex.Escape(videoId) + @"[\)\]]?(\.temp)?",
+                                "",
+                                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                            cleanTitle = System.Text.RegularExpressions.Regex.Replace(cleanTitle, @"[-_–—\s]+$", "").Trim();
+                        }
+                        if (string.IsNullOrWhiteSpace(cleanTitle)) cleanTitle = fileNameNoExt;
+
+                        // Check if we have rich metadata stored for this file or video ID
                         var existing = savedDownloads.FirstOrDefault(d =>
-                            d.Id.Equals(videoId, StringComparison.OrdinalIgnoreCase) ||
+                            (!string.IsNullOrEmpty(videoId) && d.Id.Equals(videoId, StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrEmpty(d.LocalFilePath) && d.LocalFilePath.Equals(file, StringComparison.OrdinalIgnoreCase)) ||
                             fileNameNoExt.Contains(d.Id, StringComparison.OrdinalIgnoreCase));
+
+                        // Find best thumbnail:
+                        // 1. Local image file in downloads folder (.jpg, .webp, .png, or *videoId*.jpg)
+                        string localThumb = "";
+                        var sameNameJpg = System.IO.Path.ChangeExtension(file, ".jpg");
+                        var sameNameWebp = System.IO.Path.ChangeExtension(file, ".webp");
+                        var sameNamePng = System.IO.Path.ChangeExtension(file, ".png");
+
+                        if (System.IO.File.Exists(sameNameJpg)) localThumb = sameNameJpg;
+                        else if (System.IO.File.Exists(sameNameWebp)) localThumb = sameNameWebp;
+                        else if (System.IO.File.Exists(sameNamePng)) localThumb = sameNamePng;
+                        else if (!string.IsNullOrEmpty(videoId))
+                        {
+                            try
+                            {
+                                var cand = System.IO.Directory.GetFiles(folder, $"*{videoId}*.*")
+                                    .FirstOrDefault(f => f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                                         f.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+                                                         f.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
+                                if (!string.IsNullOrEmpty(cand) && System.IO.File.Exists(cand))
+                                {
+                                    localThumb = cand;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        string thumbUrl = "";
+                        if (!string.IsNullOrEmpty(localThumb))
+                        {
+                            thumbUrl = localThumb;
+                        }
+                        else if (existing != null && !string.IsNullOrWhiteSpace(existing.ThumbnailUrl) && !existing.ThumbnailUrl.Contains(".temp"))
+                        {
+                            thumbUrl = existing.ThumbnailUrl;
+                        }
+                        else if (!string.IsNullOrEmpty(videoId))
+                        {
+                            thumbUrl = $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg";
+                        }
+
+                        // Background offline cache of thumbnail if using remote URL
+                        if (!string.IsNullOrEmpty(videoId) && string.IsNullOrEmpty(localThumb) && thumbUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    var targetJpg = System.IO.Path.ChangeExtension(file, ".jpg");
+                                    if (!System.IO.File.Exists(targetJpg))
+                                    {
+                                        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                                        var bytes = await http.GetByteArrayAsync($"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg");
+                                        if (bytes != null && bytes.Length > 0)
+                                        {
+                                            await System.IO.File.WriteAllBytesAsync(targetJpg, bytes);
+                                        }
+                                    }
+                                }
+                                catch { }
+                            });
+                        }
+
+                        var fi = new System.IO.FileInfo(file);
+                        var sizeMb = (fi.Length / (1024.0 * 1024.0)).ToString("0.1") + " MB";
 
                         if (existing != null)
                         {
                             existing.LocalFilePath = file;
                             existing.IsDownloaded = true;
+                            if (!string.IsNullOrEmpty(videoId)) existing.Id = videoId;
+                            if (string.IsNullOrWhiteSpace(existing.Title) || existing.Title.EndsWith(".temp") || existing.Title == fileNameNoExt)
+                            {
+                                existing.Title = cleanTitle;
+                            }
+                            if (!string.IsNullOrEmpty(thumbUrl))
+                            {
+                                existing.ThumbnailUrl = thumbUrl;
+                            }
+                            existing.ViewCountText = sizeMb;
                             result.Add(existing);
                         }
                         else
                         {
-                            var cleanTitle = match.Success
-                                ? fileNameNoExt.Substring(0, match.Index).Trim('_', ' ', '-')
-                                : fileNameNoExt;
-                            if (string.IsNullOrWhiteSpace(cleanTitle)) cleanTitle = fileNameNoExt;
-
-                            var fi = new System.IO.FileInfo(file);
-                            var sizeMb = (fi.Length / (1024.0 * 1024.0)).ToString("0.1") + " MB";
-
                             result.Add(new VideoItem
                             {
-                                Id = videoId,
+                                Id = !string.IsNullOrEmpty(videoId) ? videoId : fileNameNoExt,
                                 Title = cleanTitle,
                                 ChannelTitle = $"💾 Local {ext}",
                                 UploadDateText = fi.LastWriteTime.ToString("yyyy-MM-dd"),
                                 ViewCountText = sizeMb,
                                 DurationText = ext,
-                                ThumbnailUrl = match.Success ? $"https://i.ytimg.com/vi/{videoId}/hqdefault.jpg" : "",
+                                ThumbnailUrl = thumbUrl,
                                 LocalFilePath = file,
                                 IsDownloaded = true
                             });
                         }
                     }
                 }
+
+                // SYNCHRONIZE & PRUNE: Keep ONLY downloads that currently exist on disk!
+                // If files were moved or deleted out of the downloads folder, they are purged from settings.
+                StorageService.Settings.Downloads = result.ToList();
+                StorageService.Save();
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[Downloads] Error loading local files: {ex.Message}");
-            }
-
-            // Also include any other stored downloads not matched above
-            foreach (var d in StorageService.Settings.Downloads)
-            {
-                if (!result.Any(r => r.Id.Equals(d.Id, StringComparison.OrdinalIgnoreCase)))
-                {
-                    result.Add(d);
-                }
             }
 
             return result;
@@ -1698,6 +2015,7 @@ namespace VixzDesktop
             PlayerView.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Visible;
             _sponsorBlockTimer?.Stop();
+            UpdateHeaderViewControls();
 
             // When returning to the feed, ensure the watched video is removed from the visible list
             if (_currentVideo != null && FeedTitleText?.Text != "📜 Watch History" && FeedTitleText?.Text != "💾 Downloaded Videos & Audio")
@@ -2264,6 +2582,90 @@ namespace VixzDesktop
         {
             await VideoWebView.ExecuteScriptAsync("seek(10);");
             ShowToast("⏩ +10s");
+        }
+
+        private async void BypassRestrictionBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentVideo != null)
+            {
+                await TriggerStreamBypassAsync(_currentVideo.Id);
+            }
+            else
+            {
+                ShowToast("No video currently loaded");
+            }
+        }
+
+        public async Task TriggerStreamBypassAsync(string videoId)
+        {
+            if (string.IsNullOrWhiteSpace(videoId)) return;
+
+            ShowToast("🛡️ Restriction Bypassed - Loading Stream...");
+            await Task.Run(async () =>
+            {
+                try
+                {
+                    // Add YouTube consent cookie to prevent any cookie banner
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            var cookieManager = VideoWebView.CoreWebView2?.CookieManager;
+                            if (cookieManager != null)
+                            {
+                                var consentCookie = cookieManager.CreateCookie("SOCS", "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJlbioAYhIICgZjb25zZW50", ".youtube.com", "/");
+                                consentCookie.IsSecure = true;
+                                cookieManager.AddOrUpdateCookie(consentCookie);
+                            }
+                        }
+                        catch { }
+                    });
+
+                    // Quick probe for direct stream (with 1.5s timeout)
+                    var streamTask = YouTubeService.GetStreamUrlAsync(videoId);
+                    var completed = await Task.WhenAny(streamTask, Task.Delay(1500));
+                    string? streamUrl = null;
+                    if (completed == streamTask)
+                    {
+                        streamUrl = await streamTask;
+                    }
+
+                    if (!string.IsNullOrEmpty(streamUrl))
+                    {
+                        await Dispatcher.InvokeAsync(async () =>
+                        {
+                            var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
+                            double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
+                            await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{videoId}')");
+                            ShowToast("⚡ Playing via Direct Stream Engine");
+                        });
+                    }
+                    else
+                    {
+                        // Direct stream unavailable (e.g. video owner completely disabled embeds or Innertube public signature required)
+                        // Fall back to clean watch mode in WebView2
+                        await Dispatcher.InvokeAsync(async () =>
+                        {
+                            var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
+                            double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
+                            var startSec = Math.Max(0, (int)curSec);
+                            var watchUrl = $"https://www.youtube.com/watch?v={videoId}&t={startSec}";
+                            ShowToast("⚡ Bypassing via Clean Web Player...");
+                            VideoWebView.CoreWebView2?.Navigate(watchUrl);
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Vixz] TriggerStreamBypassAsync error: {ex.Message}");
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        var watchUrl = $"https://www.youtube.com/watch?v={videoId}";
+                        ShowToast("⚡ Playing via Web Player...");
+                        VideoWebView.CoreWebView2?.Navigate(watchUrl);
+                    });
+                }
+            });
         }
 
         private async void PopOutPlayer_Click(object sender, RoutedEventArgs e)
@@ -2953,6 +3355,24 @@ namespace VixzDesktop
 
                 _currentVideo.LocalFilePath = filePath;
                 _currentVideo.IsDownloaded = true;
+
+                // Cache thumbnail locally alongside video file for offline availability
+                try
+                {
+                    var localJpg = System.IO.Path.ChangeExtension(filePath, ".jpg");
+                    if (!System.IO.File.Exists(localJpg) && !string.IsNullOrWhiteSpace(_currentVideo.ThumbnailUrl) && _currentVideo.ThumbnailUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                        var thumbBytes = await http.GetByteArrayAsync(_currentVideo.ThumbnailUrl);
+                        if (thumbBytes != null && thumbBytes.Length > 0)
+                        {
+                            await System.IO.File.WriteAllBytesAsync(localJpg, thumbBytes);
+                            _currentVideo.ThumbnailUrl = localJpg;
+                        }
+                    }
+                }
+                catch { }
+
                 StorageService.AddDownload(_currentVideo);
 
                 ShowToast(isVideo ? "✅ Downloaded! ⚡ Switched to local offline playback" : "✅ Audio Download Complete!");
@@ -3231,8 +3651,8 @@ namespace VixzDesktop
                     if (retention.Equals("Watched", StringComparison.OrdinalIgnoreCase))
                     {
                         var fileNameNoExt = System.IO.Path.GetFileNameWithoutExtension(file);
-                        var match = System.Text.RegularExpressions.Regex.Match(fileNameNoExt, @"([a-zA-Z0-9_-]{11})$");
-                        var videoId = match.Success ? match.Groups[1].Value : fileNameNoExt;
+                        var videoId = ExtractVideoIdFromFileName(fileNameNoExt);
+                        if (string.IsNullOrEmpty(videoId)) videoId = fileNameNoExt;
                         if (watchedIds.Contains(videoId))
                         {
                             shouldDelete = true;
@@ -3516,6 +3936,10 @@ namespace VixzDesktop
 
             switch (e.Key)
             {
+                case Key.F5:
+                    e.Handled = true;
+                    FeedRefreshBtn_Click(this, new RoutedEventArgs());
+                    break;
                 case Key.Space:
                     e.Handled = true;
                     await VideoWebView.ExecuteScriptAsync("togglePlay();");
@@ -4135,93 +4559,106 @@ namespace VixzDesktop
 
         private void AiSettingsBtn_Click(object sender, RoutedEventArgs e)
         {
-            var currentKey = StorageService.Settings.GeminiApiKey ?? "";
-            var prompt = new Window
+            try
             {
-                Title = "⚙️ Vixz AI Brain Settings",
-                Width = 470,
-                Height = 280,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = this,
-                Background = (System.Windows.Media.Brush)FindResource("BgDarkPrimary"),
-                Foreground = System.Windows.Media.Brushes.White,
-                WindowStyle = WindowStyle.ToolWindow,
-                ResizeMode = ResizeMode.NoResize
-            };
+                var currentKey = StorageService.Settings.GeminiApiKey ?? "";
+                var prompt = new Window
+                {
+                    Title = "⚙️ Vixz AI Brain Settings",
+                    Width = 480,
+                    Height = 300,
+                    WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(15, 15, 26)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    ResizeMode = ResizeMode.NoResize,
+                    Topmost = true
+                };
 
-            var sp = new StackPanel { Margin = new Thickness(18) };
-            var heading = new TextBlock
-            {
-                Text = "⚡ Connect Real AI (Gemini / Groq / OpenAI)",
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
-                Margin = new Thickness(0, 0, 0, 8)
-            };
-            var desc = new TextBlock
-            {
-                Text = "Paste your free API key from Google AI Studio (Gemini 2.0 / 1.5 Flash), Groq, or OpenAI to enable full conversational ChatGPT-level intelligence and video reasoning:",
-                FontSize = 11.5,
-                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 12)
-            };
+                try { prompt.Owner = this; } catch { }
 
-            var txtBox = new TextBox
-            {
-                Text = currentKey,
-                Background = (System.Windows.Media.Brush)FindResource("BgDarkTertiary"),
-                Foreground = System.Windows.Media.Brushes.White,
-                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle"),
-                FontSize = 12,
-                Padding = new Thickness(8, 6, 8, 6),
-                Margin = new Thickness(0, 0, 0, 14)
-            };
+                var sp = new StackPanel { Margin = new Thickness(20) };
+                var heading = new TextBlock
+                {
+                    Text = "⚡ Connect Real AI (Groq / Gemini / OpenAI)",
+                    FontSize = 15,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 215, 0)),
+                    Margin = new Thickness(0, 0, 0, 8)
+                };
+                var desc = new TextBlock
+                {
+                    Text = "Paste your free API key from Groq (gsk_...), Google AI Studio (Gemini), or OpenAI (sk-...) to unlock full ChatGPT-grade video summaries, takeaways, and questions:",
+                    FontSize = 11.5,
+                    Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(170, 170, 190)),
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 0, 0, 12)
+                };
 
-            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            var clearBtn = new Button
-            {
-                Content = "Clear Key",
-                Style = (Style)FindResource("GlassButton"),
-                Padding = new Thickness(12, 6, 12, 6),
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            clearBtn.Click += (s, ev) =>
-            {
-                StorageService.Settings.GeminiApiKey = null;
-                StorageService.Save();
-                ShowToast("Cleared AI API Key");
-                prompt.Close();
-            };
+                var txtBox = new TextBox
+                {
+                    Text = currentKey,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(25, 25, 40)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(50, 50, 75)),
+                    FontSize = 12,
+                    Padding = new Thickness(8, 8, 8, 8),
+                    Margin = new Thickness(0, 0, 0, 16)
+                };
 
-            var saveBtn = new Button
+                var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+                var clearBtn = new Button
+                {
+                    Content = "Clear Key",
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 55)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(14, 6, 14, 6),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Cursor = System.Windows.Input.Cursors.Hand
+                };
+                clearBtn.Click += (s, ev) =>
+                {
+                    StorageService.Settings.GeminiApiKey = null;
+                    StorageService.Save();
+                    ShowToast("Cleared AI API Key");
+                    prompt.Close();
+                };
+
+                var saveBtn = new Button
+                {
+                    Content = "Save & Activate",
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 215, 0)),
+                    Foreground = System.Windows.Media.Brushes.Black,
+                    FontWeight = FontWeights.Bold,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(16, 6, 16, 6),
+                    Cursor = System.Windows.Input.Cursors.Hand
+                };
+                saveBtn.Click += (s, ev) =>
+                {
+                    var val = txtBox.Text.Trim();
+                    StorageService.Settings.GeminiApiKey = string.IsNullOrWhiteSpace(val) ? null : val;
+                    StorageService.Save();
+                    ShowToast("✨ AI Brain Connected Successfully!");
+                    prompt.Close();
+                };
+
+                btnRow.Children.Add(clearBtn);
+                btnRow.Children.Add(saveBtn);
+
+                sp.Children.Add(heading);
+                sp.Children.Add(desc);
+                sp.Children.Add(txtBox);
+                sp.Children.Add(btnRow);
+
+                prompt.Content = sp;
+                prompt.ShowDialog();
+            }
+            catch (Exception ex)
             {
-                Content = "Save & Activate",
-                Style = (Style)FindResource("GlassButton"),
-                Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
-                Foreground = System.Windows.Media.Brushes.Black,
-                FontWeight = FontWeights.Bold,
-                Padding = new Thickness(14, 6, 14, 6)
-            };
-            saveBtn.Click += (s, ev) =>
-            {
-                var val = txtBox.Text.Trim();
-                StorageService.Settings.GeminiApiKey = string.IsNullOrWhiteSpace(val) ? null : val;
-                StorageService.Save();
-                ShowToast("✨ AI Brain Connected Successfully!");
-                prompt.Close();
-            };
-
-            btnRow.Children.Add(clearBtn);
-            btnRow.Children.Add(saveBtn);
-
-            sp.Children.Add(heading);
-            sp.Children.Add(desc);
-            sp.Children.Add(txtBox);
-            sp.Children.Add(btnRow);
-
-            prompt.Content = sp;
-            prompt.ShowDialog();
+                MessageBox.Show($"Unable to open AI Settings: {ex.Message}", "AI Settings Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
         }
 
         private void VpsSyncSettings_Click(object sender, RoutedEventArgs e)

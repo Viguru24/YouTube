@@ -146,6 +146,7 @@ dependencies {
   implementation("org.mozilla:rhino:1.7.15")
   implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:13.0.0")
   implementation("androidx.documentfile:documentfile:1.0.1")
+  implementation(libs.androidx.webkit)
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

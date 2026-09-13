@@ -74,6 +74,41 @@
             <!-- 3. WEBVIEW2 AUTH CONTAINER -->
             <Grid Grid.Row="2" Background="#111116">
                 <wv2:WebView2 x:Name="AuthWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+                <!-- Cookie Paste Modal Overlay -->
+                <Grid x:Name="PasteCookiesOverlay" Visibility="Collapsed" Background="#E60B0B0E">
+                    <Border Background="{StaticResource BgDarkSecondary}"
+                            BorderBrush="{StaticResource AccentGold}"
+                            BorderThickness="1.5"
+                            CornerRadius="12"
+                            Width="420"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Padding="18">
+                        <StackPanel>
+                            <TextBlock Text="📋 Paste YouTube Cookies" Foreground="White" FontSize="14" FontWeight="Bold" Margin="0,0,0,8"/>
+                            <TextBlock Text="If Google restricts in-app sign-in on this PC, copy your cookies from a browser (DevTools or cookie exporter) and paste them below:"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       FontSize="11.5"
+                                       TextWrapping="Wrap"
+                                       Margin="0,0,0,10"/>
+                            <TextBox x:Name="CookiesInputBox"
+                                     Height="110"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Background="#181824"
+                                     Foreground="White"
+                                     BorderBrush="{StaticResource BorderSubtle}"
+                                     FontSize="11"
+                                     Padding="6"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                                <Button Content="Cancel" Style="{StaticResource GlassButton}" FontSize="11" Padding="12,5" Margin="0,0,8,0" Click="CancelPasteCookies_Click"/>
+                                <Button Content="✅ Apply &amp; Sync" Style="{StaticResource RedAccentButton}" FontSize="11" FontWeight="Bold" Padding="14,5" Click="ApplyCookies_Click"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Grid>
 
             <!-- 4. BOTTOM ACTION FOOTER -->
@@ -85,10 +120,13 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Reload / System Browser Fallback -->
+                    <!-- Reload / System Browser / Auto-Import / Manual Paste Fallback -->
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <Button Content="🔄 Reload" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,6,0" Click="ReloadBtn_Click"/>
-                        <Button Content="🌐 Browser" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="OpenInBrowserBtn_Click" ToolTip="Open YouTube sign-in in your system browser if Google restricts embedded views"/>
+                        <Button Content="🌐 Browser" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,6,0" Click="OpenInBrowserBtn_Click" ToolTip="Open YouTube sign-in in your system browser"/>
+                        <Button x:Name="ImportChromeBtn" Content="🟠 Import Chrome" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,6,0" Click="ImportChrome_Click" ToolTip="Auto-import YouTube cookies from your Chrome browser"/>
+                        <Button x:Name="ImportEdgeBtn"   Content="🔵 Import Edge"   Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Margin="0,0,6,0" Click="ImportEdge_Click"   ToolTip="Auto-import YouTube cookies from your Edge browser"/>
+                        <Button Content="📋 Paste" Style="{StaticResource GlassButton}" FontSize="11" Padding="10,4" Click="OpenPasteCookies_Click" ToolTip="Paste YouTube session cookies manually"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal">

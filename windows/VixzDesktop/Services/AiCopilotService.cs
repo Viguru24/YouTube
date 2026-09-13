@@ -168,16 +168,9 @@ namespace VixzDesktop.Services
                 };
             }
 
-            // 3. Video Q&A ("Chat with Video")
-            bool isVideoQuestion = currentPlayingVideo != null && (
-                lower.Contains("in this video") || lower.Contains("this video") || 
-                lower.Contains("he say") || lower.Contains("she say") || lower.Contains("they say") || 
-                lower.Contains("did he") || lower.Contains("did she") || lower.Contains("speaker") ||
-                lower.Contains("mention") || lower.Contains("timestamp") || lower.Contains("where does") ||
-                lower.StartsWith("what does") || lower.StartsWith("why does") || lower.StartsWith("how does")
-            );
-
-            if (isVideoQuestion && currentPlayingVideo != null)
+            // 3. Current Video Q&A ("Chat with Video")
+            // If a video is playing, ALWAYS prioritize checking the video first before the web!
+            if (currentPlayingVideo != null)
             {
                 var videoQna = await AnswerVideoQuestionAsync(cleanPrompt, currentPlayingVideo, webViewTranscriptFetcher);
                 if (videoQna != null)
@@ -267,7 +260,7 @@ namespace VixzDesktop.Services
                 var titleMatches = Regex.Matches(html, @"<a class=""result__url[^>]*>(.*?)</a>", RegexOptions.Singleline);
 
                 var cleanSnippets = new List<string>();
-                for (int i = 0; i < snippetMatches.Count && cleanSnippets.Count < 5; i++)
+                for (int i = 0; i < snippetMatches.Count && cleanSnippets.Count < 6; i++)
                 {
                     var raw = snippetMatches[i].Groups[1].Value;
                     var clean = Regex.Replace(raw, @"<[^>]+>", " ");
@@ -276,6 +269,11 @@ namespace VixzDesktop.Services
                     clean = Regex.Replace(clean, @"&#(?:34|x22);", "\"", RegexOptions.IgnoreCase);
                     clean = Regex.Replace(clean, @"&#(?:38|x26);", "&", RegexOptions.IgnoreCase);
                     clean = Regex.Replace(clean, @"\s+", " ").Trim();
+
+                    // Filter out e-commerce, shopping ads, shipping promos, cookie disclaimers
+                    bool isAdOrShopping = Regex.IsMatch(clean, @"(?i)\b(free delivery|delivery over|free shipping|online health|wholefood store|reviews\.co\.uk|star reviews|would buy again|buy now|add to cart|discount code|shop now|in stock|subscribe to save|cookie policy)\b");
+                    if (isAdOrShopping) continue;
+
                     if (clean.Length > 25 && !cleanSnippets.Contains(clean))
                     {
                         cleanSnippets.Add(clean);
@@ -317,10 +315,18 @@ namespace VixzDesktop.Services
         {
             try
             {
-                string rawTranscript = "";
-                if (webViewTranscriptFetcher != null)
+                // Fetch full transcript from best available source
+                string rawTranscript = await GetOrFetchTranscriptAsync(video, webViewTranscriptFetcher);
+
+                // Fallback to description if transcript is not available
+                if (string.IsNullOrWhiteSpace(rawTranscript))
                 {
-                    try { rawTranscript = await webViewTranscriptFetcher(video.Id); } catch { }
+                    try
+                    {
+                        var details = await _client.Videos.GetAsync(video.Id);
+                        rawTranscript = details.Description ?? "";
+                    }
+                    catch { }
                 }
 
                 if (string.IsNullOrWhiteSpace(rawTranscript))
@@ -328,18 +334,52 @@ namespace VixzDesktop.Services
                     return null;
                 }
 
-                // Extract keywords from question
-                var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "what", "where", "when", "why", "how", "who", "does", "did", "say", "about", "the", "in", "this", "video", "mention", "is", "a", "an", "and", "or", "of", "to" };
-                var keywords = question.Split(new[] { ' ', '?', '!', ',', '.' }, StringSplitOptions.RemoveEmptyEntries)
-                                       .Where(w => w.Length > 2 && !stopWords.Contains(w))
+                // If user configured an LLM key (Groq, Gemini, OpenAI), use LLM for human-level grounded Q&A!
+                var apiKey = StorageService.Settings.GeminiApiKey;
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    var promptWithTranscript = 
+                        $"You are Vixz AI inside a YouTube video player app. Answer the user's question directly and concisely based ONLY on the video content and transcript below.\n\n" +
+                        $"Video: \"{video.Title}\" by {video.ChannelTitle}\n\n" +
+                        $"TRANSCRIPT / CONTENT:\n{(rawTranscript.Length > 25000 ? rawTranscript.Substring(0, 25000) : rawTranscript)}\n\n" +
+                        $"User Question: {question}\n\n" +
+                        $"Answer directly in 2-4 sentences with key facts from the video. If the video does not contain the answer, say so clearly.";
+
+                    var llmResult = await QueryLlmBrainAsync(promptWithTranscript, video, apiKey);
+                    if (llmResult != null && !string.IsNullOrWhiteSpace(llmResult.ResponseMessage))
+                    {
+                        llmResult.Type = AiCommandType.VideoQna;
+                        llmResult.TargetVideo = video;
+                        llmResult.SourceCitation = $"Video Q&A ({video.ChannelTitle})";
+                        return llmResult;
+                    }
+                }
+
+                // High-precision local heuristic transcript search
+                var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { 
+                    "what", "where", "when", "why", "how", "who", "which", "does", "did", "say", 
+                    "about", "the", "in", "this", "video", "mention", "is", "are", "a", "an", "and", 
+                    "or", "of", "to", "best", "good", "bad", "for", "can", "you", "tell", "me" 
+                };
+
+                var keywords = question.Split(new[] { ' ', '?', '!', ',', '.', ':', ';', '"', '\'' }, StringSplitOptions.RemoveEmptyEntries)
+                                       .Where(w => w.Length >= 3 && !stopWords.Contains(w))
                                        .ToList();
+
+                // If no specific keywords survived, retain words longer than 2 letters
+                if (keywords.Count == 0)
+                {
+                    keywords = question.Split(new[] { ' ', '?', '!' }, StringSplitOptions.RemoveEmptyEntries)
+                                       .Where(w => w.Length > 2)
+                                       .ToList();
+                }
 
                 if (keywords.Count == 0) return null;
 
-                // Scan transcript sentences
+                // Split transcript into clean sentences
                 var sentences = rawTranscript.Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
-                                             .Select(s => s.Trim())
-                                             .Where(s => s.Length > 20)
+                                             .Select(s => Regex.Replace(s, @"\s+", " ").Trim())
+                                             .Where(s => s.Length > 20 && !s.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                                              .ToList();
 
                 var matchingSentences = new List<(string Sentence, int Score)>();
@@ -348,7 +388,10 @@ namespace VixzDesktop.Services
                     int score = 0;
                     foreach (var kw in keywords)
                     {
-                        if (s.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0) score++;
+                        if (s.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            score += 2;
+                        }
                     }
                     if (score > 0)
                     {
@@ -356,16 +399,18 @@ namespace VixzDesktop.Services
                     }
                 }
 
+                // If nothing in the transcript matched the user's question, let it fall through
                 if (matchingSentences.Count == 0) return null;
 
                 var topMatches = matchingSentences.OrderByDescending(m => m.Score).Take(3).Select(m => m.Sentence).ToList();
-                var answerText = $"Regarding your question about **{string.Join(", ", keywords)}** in *{video.Title}*:\n\n" + string.Join(". ", topMatches) + ".";
+                var answerText = $"From **{video.Title}** ({video.ChannelTitle}):\n\n" + string.Join(". ", topMatches) + ".";
 
                 return new AiCommandResult
                 {
                     Type = AiCommandType.VideoQna,
                     ResponseMessage = answerText,
-                    TargetVideo = video
+                    TargetVideo = video,
+                    SourceCitation = "Video Transcript"
                 };
             }
             catch
@@ -404,7 +449,7 @@ namespace VixzDesktop.Services
 
                     messages.Add(new { role = "user", content = prompt });
 
-                    foreach (var groqModel in new[] { "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
+                    foreach (var groqModel in new[] { "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "groq/compound-mini", "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
                     {
                         using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
                         req.Headers.Add("Authorization", "Bearer " + apiKey);
@@ -548,6 +593,68 @@ namespace VixzDesktop.Services
             return null;
         }
 
+        public static async Task<string> GetOrFetchTranscriptAsync(
+            VideoItem video, 
+            Func<string, Task<string>>? webViewTranscriptFetcher = null)
+        {
+            // 1. Primary: Direct In-Browser Transcript via WebView2
+            if (webViewTranscriptFetcher != null)
+            {
+                try
+                {
+                    var webText = await webViewTranscriptFetcher(video.Id);
+                    if (!string.IsNullOrWhiteSpace(webText) && webText.Trim().Length > 50)
+                    {
+                        return webText.Trim();
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Secondary: Direct YouTube Innertube / TimedText API Extraction (Zero API Key Needed)
+            try
+            {
+                var innertubeCaptions = await FetchInnertubeCaptionsAsync(video.Id);
+                if (!string.IsNullOrWhiteSpace(innertubeCaptions) && innertubeCaptions.Trim().Length > 50)
+                {
+                    return innertubeCaptions.Trim();
+                }
+            }
+            catch { }
+
+            // 3. Tertiary: YoutubeExplode Closed Captions API
+            try
+            {
+                var trackManifest = await _client.Videos.ClosedCaptions.GetManifestAsync(video.Id);
+                var trackInfo = trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("en", StringComparison.OrdinalIgnoreCase)) ??
+                                trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Contains("en", StringComparison.OrdinalIgnoreCase)) ??
+                                trackManifest.Tracks.FirstOrDefault(t => t.Language.Name.Contains("English", StringComparison.OrdinalIgnoreCase)) ??
+                                trackManifest.Tracks.FirstOrDefault();
+
+                if (trackInfo != null)
+                {
+                    var track = await _client.Videos.ClosedCaptions.GetAsync(trackInfo);
+                    if (track != null && track.Captions.Count > 0)
+                    {
+                        var sb = new StringBuilder();
+                        foreach (var cap in track.Captions)
+                        {
+                            var text = cap.Text?.Replace("\n", " ").Trim() ?? "";
+                            if (!string.IsNullOrWhiteSpace(text))
+                            {
+                                sb.Append(text).Append(" ");
+                            }
+                        }
+                        var res = sb.ToString().Trim();
+                        if (res.Length > 50) return res;
+                    }
+                }
+            }
+            catch { }
+
+            return "";
+        }
+
         public static async Task<VideoSummaryResult> GenerateSummaryAsync(
             VideoItem video, 
             Func<string, Task<string>>? webViewTranscriptFetcher = null)
@@ -563,83 +670,39 @@ namespace VixzDesktop.Services
                 ChannelTitle = video.ChannelTitle
             };
 
-            string rawTranscript = "";
-
-            // 1. Primary: Direct In-Browser Transcript via WebView2
-            if (webViewTranscriptFetcher != null)
+            string rawTranscript = await GetOrFetchTranscriptAsync(video, webViewTranscriptFetcher);
+            if (!string.IsNullOrWhiteSpace(rawTranscript))
             {
-                try
-                {
-                    var webText = await webViewTranscriptFetcher(video.Id);
-                    if (!string.IsNullOrWhiteSpace(webText) && webText.Trim().Length > 50)
-                    {
-                        rawTranscript = webText.Trim();
-                        summary.HasTranscript = true;
-                    }
-                }
-                catch { }
-            }
+                summary.HasTranscript = true;
 
-            // 2. Secondary: Direct YouTube Innertube / TimedText API Extraction (Zero API Key Needed)
-            if (string.IsNullOrWhiteSpace(rawTranscript))
-            {
-                try
+                // Estimate chapters from transcript milestones
+                var sentences = rawTranscript.Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries)
+                                             .Select(s => s.Trim())
+                                             .Where(s => s.Length > 25)
+                                             .ToList();
+                if (sentences.Count >= 6)
                 {
-                    var innertubeCaptions = await FetchInnertubeCaptionsAsync(video.Id);
-                    if (!string.IsNullOrWhiteSpace(innertubeCaptions))
+                    int step = Math.Max(1, sentences.Count / 5);
+                    for (int i = 0; i < sentences.Count && summary.Chapters.Count < 5; i += step)
                     {
-                        rawTranscript = innertubeCaptions;
-                        summary.HasTranscript = true;
-                    }
-                }
-                catch { }
-            }
+                        var s = sentences[i];
+                        // Strip auto-caption markers like >>, [snorts], [music], etc.
+                        s = Regex.Replace(s, @">>+\s*", "");
+                        s = Regex.Replace(s, @"\[[^\]]+\]\s*", "");
+                        s = Regex.Replace(s, @"^(?:and|so|but|plus|well|now|also)\s+", "", RegexOptions.IgnoreCase);
+                        s = Regex.Replace(s, @"\s+", " ").Trim();
+                        if (string.IsNullOrWhiteSpace(s) || s.Length < 10) continue;
+                        if (char.IsLower(s[0])) s = char.ToUpper(s[0]) + s.Substring(1);
 
-            // 3. Tertiary: YoutubeExplode Closed Captions API
-            if (string.IsNullOrWhiteSpace(rawTranscript))
-            {
-                try
-                {
-                    var trackManifest = await _client.Videos.ClosedCaptions.GetManifestAsync(video.Id);
-                    var trackInfo = trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("en", StringComparison.OrdinalIgnoreCase)) ??
-                                    trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Contains("en", StringComparison.OrdinalIgnoreCase)) ??
-                                    trackManifest.Tracks.FirstOrDefault(t => t.Language.Name.Contains("English", StringComparison.OrdinalIgnoreCase)) ??
-                                    trackManifest.Tracks.FirstOrDefault();
-
-                    if (trackInfo != null)
-                    {
-                        var track = await _client.Videos.ClosedCaptions.GetAsync(trackInfo);
-                        if (track != null && track.Captions.Count > 0)
+                        var snippet = s.Length > 45 ? s.Substring(0, 42) + "..." : s;
+                        summary.Chapters.Add(new TimestampChapter
                         {
-                            summary.HasTranscript = true;
-                            var sb = new StringBuilder();
-                            var chapterInterval = Math.Max(60.0, (track.Captions.Last().Offset.TotalSeconds) / 6.0);
-                            double nextChapterMark = 0;
-
-                            foreach (var cap in track.Captions)
-                            {
-                                var text = cap.Text?.Replace("\n", " ").Trim() ?? "";
-                                if (string.IsNullOrWhiteSpace(text)) continue;
-
-                                sb.Append(text).Append(" ");
-
-                                if (cap.Offset.TotalSeconds >= nextChapterMark && summary.Chapters.Count < 6)
-                                {
-                                    var cleanSnippet = text.Length > 45 ? text.Substring(0, 42) + "..." : text;
-                                    summary.Chapters.Add(new TimestampChapter
-                                    {
-                                        Seconds = cap.Offset.TotalSeconds,
-                                        TimeFormatted = FormatTime(cap.Offset),
-                                        Title = cleanSnippet
-                                    });
-                                    nextChapterMark += chapterInterval;
-                                }
-                            }
-                            rawTranscript = sb.ToString();
-                        }
+                            Seconds = i * 20.0,
+                            TimeFormatted = FormatTime(TimeSpan.FromSeconds(i * 20.0)),
+                            Title = snippet
+                        });
                     }
                 }
-                catch { }
             }
 
             // 4. Fallback: Creator description
@@ -783,7 +846,7 @@ namespace VixzDesktop.Services
 
                     if (apiKey.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
                     {
-                        foreach (var groqModel in new[] { "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
+                        foreach (var groqModel in new[] { "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "groq/compound-mini", "llama-3.3-70b-versatile", "llama-3.1-8b-instant" })
                         {
                             using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
                             req.Headers.Add("Authorization", "Bearer " + apiKey);
@@ -952,14 +1015,15 @@ namespace VixzDesktop.Services
             // Strip filler sounds and transcript artifacts
             text = Regex.Replace(text, @"\b(uh|um|uh-huh|hmm|ugh|ahh?|ohh?|laughter|applause|inaudible|crosstalk)\b", " ", RegexOptions.IgnoreCase);
 
-            // Blacklist: ads, promos, copyright boilerplate, social plugs
+            // Blacklist: ads, promos, copyright boilerplate, social plugs, app promotions
             var blacklistRegex = new Regex(
                 @"(?i)\b(cashapp|\$|venmo|paypal|donate|donations|patreon|gofundme|crypto|bitcoin|btc|eth|wallet|zelle|" +
                 @"copyright disclaimer|section 107|copyright act|fair use|criticism|commentary|news reporting|scholarship|research|" +
                 @"non-profit|personal use|no copyright infringement|all rights belong|all rights reserved|respective owners|disclaimer:|the views and opinions|" +
                 @"support the channel|road to|subscribers?|sub count|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
                 @"see you next time|follow me on|follow us on|social media|instagram|twitter|tiktok|facebook|discord|telegram|discount code|promo code|sponsored by|" +
-                @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp)\b"
+                @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp|" +
+                @"our (?:new )?app|download (?:the|our) app|link in (?:the )?description|check out the link|sign up (?:today|now)|free trial|day one)\b"
             );
 
             // Filler openers that make for useless takeaways
@@ -967,7 +1031,7 @@ namespace VixzDesktop.Services
                 @"^(all right|alright|okay so|so yeah|yeah so|you know|i mean|right so|well so|now back|back to|" +
                 @"and so|but so|so basically|basically|i think|i feel|kind of|sort of|like i said|as i said|" +
                 @"and then|and now|and we|so we|so i|so it|so this|so that|so there|so here|" +
-                @"now i|now we|now this|now that)\b",
+                @"now i|now we|now this|now that|and there|and also|and then|and so|and it)\b",
                 RegexOptions.IgnoreCase
             );
 
@@ -986,16 +1050,20 @@ namespace VixzDesktop.Services
 
                 var cleaned = Regex.Replace(s, @"\s+", " ").Trim();
 
-                // Trim leading conjunctions like "and ", "or ", "why ", "how " if needed
-                cleaned = Regex.Replace(cleaned, @"^(?:and|or|plus|also)\s+", "", RegexOptions.IgnoreCase).Trim();
+                // Strip repeated duplicate words/stutters (e.g. "these two these two", "that that", "we we")
+                cleaned = Regex.Replace(cleaned, @"\b(\w+(?:\s+\w+)?)\s+\1\b", "$1", RegexOptions.IgnoreCase);
+                cleaned = Regex.Replace(cleaned, @"\b(\w+)\s+\1\b", "$1", RegexOptions.IgnoreCase);
 
-                // Must be at least 6 words
-                var wordCount = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-                if (wordCount < 6) continue;
+                // Trim leading conjunctions like "and ", "or ", "why ", "how ", "so "
+                cleaned = Regex.Replace(cleaned, @"^(?:and,?\s*|or,?\s*|plus,?\s*|also,?\s*|so,?\s*)", "", RegexOptions.IgnoreCase).Trim();
 
-                // Skip if > 40% of words are single characters
-                var singleCharWords = cleaned.Split(' ').Count(w => w.Length == 1);
-                if (singleCharWords > wordCount * 0.4) continue;
+                // Must be at least 7 words to form a coherent takeaway
+                var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (words.Length < 7 || words.Length > 45) continue;
+
+                // Skip if > 35% of words are single characters
+                var singleCharWords = words.Count(w => w.Length == 1);
+                if (singleCharWords > words.Length * 0.35) continue;
 
                 if (cleaned.Equals(video.Title, StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -1028,21 +1096,59 @@ namespace VixzDesktop.Services
 
         private static List<string> DistributeKeyPoints(List<string> cleanSentences, int maxCount)
         {
-            var points = new List<string>();
             if (cleanSentences.Count <= maxCount)
+                return new List<string>(cleanSentences);
+
+            // Score each sentence by informative value:
+            // Favors sentences with statistics, numbers, findings, causes, outcomes, and strong vocabulary
+            var scored = cleanSentences.Select(s =>
             {
-                points.AddRange(cleanSentences);
-            }
-            else
+                int score = 0;
+                // Contains numbers or percentages (empirical data)
+                if (Regex.IsMatch(s, @"\b\d+(?:\.\d+)?%?\b")) score += 3;
+                // High-value explanatory keywords
+                if (Regex.IsMatch(s, @"(?i)\b(because|causes?|results?|found|increase|decrease|effect|study|research|shows|leads to|associated with|important|crucial|significant|risk|benefit|evidence)\b")) score += 4;
+                // Penalize very short or overly casual phrasing
+                if (s.Split(' ').Length < 9) score -= 2;
+                // Avoid questions as takeaways
+                if (s.EndsWith("?")) score -= 3;
+                return new { Sentence = s, Score = score };
+            }).ToList();
+
+            // Slices across the duration of the video to ensure coverage from beginning, middle, and end,
+            // while picking the highest scoring candidate in each slice!
+            var points = new List<string>();
+            int sliceSize = Math.Max(1, scored.Count / maxCount);
+
+            for (int i = 0; i < maxCount; i++)
             {
-                var step = cleanSentences.Count / (double)maxCount;
-                for (int i = 0; i < maxCount; i++)
+                int start = i * sliceSize;
+                int count = (i == maxCount - 1) ? (scored.Count - start) : sliceSize;
+                if (start >= scored.Count) break;
+
+                var bestInSlice = scored.Skip(start).Take(Math.Max(1, count))
+                                       .OrderByDescending(x => x.Score)
+                                       .FirstOrDefault()?.Sentence;
+
+                if (!string.IsNullOrWhiteSpace(bestInSlice) && !points.Contains(bestInSlice))
                 {
-                    int index = Math.Min(cleanSentences.Count - 1, (int)(i * step));
-                    var pt = cleanSentences[index];
-                    if (!points.Contains(pt)) points.Add(pt);
+                    points.Add(bestInSlice);
                 }
             }
+
+            // Fill remaining if duplicates were skipped
+            if (points.Count < maxCount)
+            {
+                foreach (var item in scored.OrderByDescending(x => x.Score).Select(x => x.Sentence))
+                {
+                    if (!points.Contains(item))
+                    {
+                        points.Add(item);
+                        if (points.Count >= maxCount) break;
+                    }
+                }
+            }
+
             return points;
         }
 

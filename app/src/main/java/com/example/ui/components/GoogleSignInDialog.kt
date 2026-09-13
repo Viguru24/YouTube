@@ -73,6 +73,8 @@ fun GoogleSignInDialog(
 
     var nameInput by remember(account) { mutableStateOf(initialName) }
     var emailInput by remember(account) { mutableStateOf(if (account.email != "local@vixz.app") account.email else "") }
+    var showPasteCookiesDialog by remember { mutableStateOf(false) }
+    var cookiesInput by remember { mutableStateOf("") }
 
     if (showWebSignInDialog) {
         YouTubeWebSignInDialog(
@@ -333,6 +335,100 @@ fun GoogleSignInDialog(
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = Color.White
+                    )
+                }
+
+                // Direct Cookie Import Option
+                OutlinedButton(
+                    onClick = { showPasteCookiesDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ContentPaste,
+                        contentDescription = "Paste Cookies",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "📋 Paste YouTube Cookies Directly",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (showPasteCookiesDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showPasteCookiesDialog = false },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, tint = YouTubeRed)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Import YouTube Cookies", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            }
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "If Google restricts in-app sign-in on your device, you can paste your exported browser cookies (containing LOGIN_INFO, SID, SAPISID, etc.) below:",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = cookiesInput,
+                                    onValueChange = { cookiesInput = it },
+                                    label = { Text("Cookie String") },
+                                    placeholder = { Text("LOGIN_INFO=...; SID=...; SAPISID=...") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(130.dp),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val raw = cookiesInput.trim()
+                                    if (raw.isNotBlank()) {
+                                        com.example.data.remote.NPDownloader.savedCookies = raw
+                                        val cookieManager = android.webkit.CookieManager.getInstance()
+                                        cookieManager.setAcceptCookie(true)
+                                        raw.split(";").forEach { part ->
+                                            val cookie = part.trim()
+                                            if (cookie.isNotEmpty()) {
+                                                cookieManager.setCookie("https://www.youtube.com", cookie)
+                                                cookieManager.setCookie("https://accounts.google.com", cookie)
+                                            }
+                                        }
+                                        cookieManager.flush()
+
+                                        val prefs = context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
+                                        prefs.edit().putString("youtube_cookies", raw).apply()
+
+                                        val finalName = deriveCleanName(nameInput, emailInput).ifBlank { "YouTube User" }
+                                        val finalEmail = emailInput.ifBlank { "google.user@vixz.app" }
+
+                                        onSignIn(finalName, finalEmail, account.avatarUrl)
+                                        Toast.makeText(context, "Cookies imported! Welcome, $finalName 🟢", Toast.LENGTH_SHORT).show()
+                                        showPasteCookiesDialog = false
+                                        onDismiss()
+                                    } else {
+                                        Toast.makeText(context, "Please paste valid cookie string", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                            ) {
+                                Text("Import & Sign In")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showPasteCookiesDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
                     )
                 }
 

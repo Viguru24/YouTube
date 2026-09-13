@@ -32,9 +32,7 @@ namespace VixzDesktop.Services
             "--enable-accelerated-mjpeg-decode " +
             "--enable-accelerated-2d-canvas " +
             "--enable-features=VaapiVideoDecoder,D3D11VideoDecoder,PlatformHEVCDecoderSupport,DirectCompositionVideoOverlays,HardwareMediaKeyHandling " +
-            "--disable-features=PreloadMediaEngagementData,TrackingPrevention " +
-            "--disable-web-security " +
-            "--allow-running-insecure-content";
+            "--disable-features=PreloadMediaEngagementData,TrackingPrevention";
 
         /// <summary>
         /// Gets or creates the shared CoreWebView2Environment singleton with resilient profile fallback.
@@ -102,25 +100,36 @@ namespace VixzDesktop.Services
             var stealthScript = @"
                 (function() {
                     try {
-                        // Only mask window.chrome.webview on Google / YouTube auth pages, NEVER on vixz.app
-                        var host = window.location.hostname || '';
-                        if (host.includes('google.') || host.includes('youtube.') || host.includes('accounts.')) {
-                            if (window.chrome && window.chrome.webview) {
-                                try {
-                                    Object.defineProperty(window.chrome, 'webview', {
-                                        value: undefined,
-                                        configurable: false,
-                                        writable: false
-                                    });
-                                } catch(e) {}
-                            }
-                        }
-
                         // Ensure navigator.webdriver is false
                         Object.defineProperty(navigator, 'webdriver', {
                             get: () => false,
                             configurable: true
                         });
+
+                        // Completely sanitize window.chrome on Google and YouTube authentication domains
+                        var host = window.location.hostname || '';
+                        if (!host || host.includes('google.') || host.includes('youtube.') || host.includes('accounts.')) {
+                            try {
+                                delete window.chrome.webview;
+                            } catch(e) {}
+
+                            try {
+                                var mockChrome = {
+                                    app: {
+                                        isInstalled: false,
+                                        InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' },
+                                        RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' }
+                                    },
+                                    csi: function() {},
+                                    loadTimes: function() {}
+                                };
+                                Object.defineProperty(window, 'chrome', {
+                                    value: mockChrome,
+                                    writable: true,
+                                    configurable: true
+                                });
+                            } catch(e) {}
+                        }
                     } catch(e) {}
                 })();
             ";

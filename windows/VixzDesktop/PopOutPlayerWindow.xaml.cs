@@ -144,6 +144,16 @@ namespace VixzDesktop
                                 headers
                             );
                         }
+                        else if (uri.Contains("youtube.com") || uri.Contains("youtube-nocookie.com") || uri.Contains("googlevideo.com"))
+                        {
+                            // Spoof Referer & Origin to bypass owner embed restrictions (Error 150/152)
+                            try
+                            {
+                                args.Request.Headers.SetHeader("Referer", "https://www.youtube.com/");
+                                args.Request.Headers.SetHeader("Origin", "https://www.youtube.com");
+                            }
+                            catch { }
+                        }
                     }
                     catch { }
                 };
@@ -190,6 +200,11 @@ namespace VixzDesktop
                         return;
                     }
 
+                    if (args.Uri.Contains("youtube.com") || args.Uri.Contains("consent.google.com") || args.Uri.Contains("google.com/sorry"))
+                    {
+                        return;
+                    }
+
                     args.Cancel = true;
                     if (args.Uri.Contains("accounts.google.com") || args.Uri.Contains("/signin") || args.Uri.Contains("ServiceLogin"))
                     {
@@ -220,6 +235,59 @@ namespace VixzDesktop
                         UpdateFavoriteUi();
                         MiniWebView.CoreWebView2.Navigate($"https://vixz.app/player.html?v={vid}&t=0");
                     }
+                };
+
+                MiniWebView.CoreWebView2.DOMContentLoaded += async (s, args) =>
+                {
+                    try
+                    {
+                        var curUrl = MiniWebView.Source?.ToString() ?? "";
+                        if (curUrl.Contains("youtube.com/watch"))
+                        {
+                            var cleanCss = @"
+                                ytd-masthead, #masthead-container, #secondary, #below, #comments, 
+                                ytd-merch-shelf-renderer, #chat, ytd-live-chat-frame,
+                                #related, #ticket-shelf, #clarify-box, ytd-engagement-panel-section-list-renderer,
+                                tp-yt-paper-dialog, ytd-popup-container:has(tp-yt-paper-dialog) { 
+                                    display: none !important; 
+                                }
+                                #page-manager { margin-top: 0 !important; }
+                                #columns { max-width: 100% !important; padding: 0 !important; }
+                                #primary { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+                                #primary-inner { max-width: 100% !important; padding: 0 !important; }
+                                #player-container-outer, #player-container, #ytd-player, .html5-video-player {
+                                    position: fixed !important;
+                                    top: 0 !important;
+                                    left: 0 !important;
+                                    width: 100vw !important;
+                                    height: 100vh !important;
+                                    z-index: 999999 !important;
+                                    background: #000 !important;
+                                }
+                                body, html { overflow: hidden !important; background: #000 !important; }
+                            ";
+                            var script = "(function() { " +
+                                "var st = document.getElementById('vixz-clean-yt-style'); " +
+                                "if (!st) { " +
+                                "  st = document.createElement('style'); " +
+                                "  st.id = 'vixz-clean-yt-style'; " +
+                                "  st.textContent = '" + cleanCss.Replace("\r", "").Replace("\n", " ").Replace("'", "\\'") + "'; " +
+                                "  document.head.appendChild(st); " +
+                                "} " +
+                                "var c = 0; " +
+                                "var t = setInterval(function() { " +
+                                "  c++; " +
+                                "  var s = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-overlay-close-button'); " +
+                                "  if (s) s.click(); " +
+                                "  var v = document.querySelector('video'); " +
+                                "  if (v && v.paused && !document.querySelector('.ad-showing')) { v.play().catch(function(){}); } " +
+                                "  if (c > 30) clearInterval(t); " +
+                                "}, 400); " +
+                                "})();";
+                            await MiniWebView.ExecuteScriptAsync(script);
+                        }
+                    }
+                    catch { }
                 };
 
                 var startSec = Math.Max(0, (int)_currentPosition);
@@ -267,6 +335,18 @@ namespace VixzDesktop
                 {
                     _currentPosition = sec;
                     StorageService.SavePlaybackPosition(parts[1], sec);
+                }
+            }
+            else if (msg.StartsWith("PLAYER_STREAM_FALLBACK:"))
+            {
+                var vid = msg.Substring("PLAYER_STREAM_FALLBACK:".Length);
+                if (!string.IsNullOrEmpty(vid))
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        var watchUrl = $"https://www.youtube.com/watch?v={vid}&t={Math.Max(0, (int)_currentPosition)}";
+                        MiniWebView.CoreWebView2?.Navigate(watchUrl);
+                    });
                 }
             }
             else if (msg.StartsWith("SPONSOR_SKIPPED:"))
