@@ -265,23 +265,6 @@ namespace VixzDesktop
                             setTimeout(function() { try { e.target.unMute(); applyHighQuality(); e.target.playVideo(); } catch(err) {} }, 250);
                             setTimeout(function() { try { e.target.unMute(); applyHighQuality(); if (e.target.getPlayerState() !== 1) e.target.playVideo(); } catch(err) {} }, 750);
                             setTimeout(applyHighQuality, 1500);
-                            setTimeout(applyHighQuality, 3000);
-
-                            // Watchdog: If the video owner disabled embeds, YouTube displays the error screen inside iframe
-                            // and getPlayerState() remains -1 (unstarted) or cued (5) without ever reaching playing (1) or buffering (3).
-                            setTimeout(function() {
-                                try {
-                                    if (!isLocalMode && player && typeof player.getPlayerState === 'function') {
-                                        var state = player.getPlayerState();
-                                        if (state === -1 || state === 5) {
-                                            console.warn('[Vixz Player] Playback failed to start (state ' + state + ') - auto-triggering stream fallback');
-                                            if (window.chrome && window.chrome.webview) {
-                                                window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
-                                            }
-                                        }
-                                    }
-                                } catch(err) {}
-                            }, 1200);
                         },
                         'onStateChange': onPlayerStateChange,
                         'onPlaybackQualityChange': function(e) {
@@ -294,14 +277,7 @@ namespace VixzDesktop
                             if (window.chrome && window.chrome.webview) {
                                 window.chrome.webview.postMessage('PLAYER_ERROR:' + e.data);
                             }
-                            // 150/101 = Embedding disabled by owner, 100 = video not found/private, 2/5 = invalid params
-                            if (e.data === 101 || e.data === 150 || e.data === 100 || e.data === 2 || e.data === 5) {
-                                if (window.chrome && window.chrome.webview) {
-                                    window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
-                                }
-                            } else {
-                                fallbackToDirectIframe(currentVideoId, startSec);
-                            }
+                            fallbackToDirectIframe(currentVideoId, startSec);
                         }
                     }
                 });
@@ -448,21 +424,6 @@ namespace VixzDesktop
                     applyHighQuality();
                     setTimeout(applyHighQuality, 400);
                     setTimeout(applyHighQuality, 1200);
-
-                    // Watchdog: If the loaded video has embedding disabled, trigger stream fallback
-                    setTimeout(function() {
-                        try {
-                            if (!isLocalMode && currentVideoId === vid && player && typeof player.getPlayerState === 'function') {
-                                var state = player.getPlayerState();
-                                if (state === -1 || state === 5) {
-                                    console.warn('[Vixz Player] loadVideo failed to play (state ' + state + ') - auto-triggering stream fallback');
-                                    if (window.chrome && window.chrome.webview) {
-                                        window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + vid);
-                                    }
-                                }
-                            }
-                        } catch(err) {}
-                    }, 1200);
                 } catch(e) {
                     fallbackToDirectIframe(vid, targetSec);
                 }
@@ -865,12 +826,6 @@ namespace VixzDesktop
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
-                        // If user clicked 'Watch on YouTube' from an embed-restricted video screen, directly engage Bypass Stream Engine
-                        if (PlayerView.Visibility == Visibility.Visible && _currentVideo != null && _currentVideo.Id == vid)
-                        {
-                            await Dispatcher.InvokeAsync(async () => await TriggerStreamBypassAsync(vid));
-                            return;
-                        }
 
                         var video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
@@ -888,27 +843,6 @@ namespace VixzDesktop
                 {
                     if (args.Uri.StartsWith("https://vixz.app", StringComparison.OrdinalIgnoreCase))
                     {
-                        return;
-                    }
-
-                    // Allow direct YouTube watch playback & consent pages when bypassing embed restrictions
-                    if (args.Uri.Contains("youtube.com") || args.Uri.Contains("consent.google.com") || args.Uri.Contains("google.com/sorry"))
-                    {
-                        var newVid = ExtractYouTubeVideoId(args.Uri);
-                        // If user clicked a DIFFERENT video recommendation inside YouTube web player, intercept and play in Vixz
-                        if (!string.IsNullOrEmpty(newVid) && _currentVideo != null && newVid != _currentVideo.Id)
-                        {
-                            args.Cancel = true;
-                            var video = await YouTubeService.GetVideoDetailsAsync(newVid) ?? new VideoItem
-                            {
-                                Id = newVid,
-                                Title = "YouTube Video",
-                                ChannelTitle = "YouTube",
-                                ThumbnailUrl = $"https://i.ytimg.com/vi/{newVid}/hqdefault.jpg"
-                            };
-                            await PlayVideoAsync(video);
-                            return;
-                        }
                         return;
                     }
 
@@ -930,13 +864,6 @@ namespace VixzDesktop
                     var vid = ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
-                        // If navigation was triggered from inside the player (such as clicking 'Watch on YouTube'), bypass restrictions directly
-                        if (PlayerView.Visibility == Visibility.Visible && _currentVideo != null && _currentVideo.Id == vid)
-                        {
-                            await Dispatcher.InvokeAsync(async () => await TriggerStreamBypassAsync(vid));
-                            return;
-                        }
-
                         var video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
                             Id = vid,
@@ -947,62 +874,6 @@ namespace VixzDesktop
                         await PlayVideoAsync(video);
                     }
                     // All other navigations are cancelled (args.Cancel = true above)
-                };
-
-                VideoWebView.CoreWebView2.DOMContentLoaded += async (s, args) =>
-                {
-                    try
-                    {
-                        var curUrl = VideoWebView.Source?.ToString() ?? "";
-                        if (curUrl.Contains("youtube.com/watch"))
-                        {
-                            // Maximize video element and hide headers, sidebars, comments, and clutter
-                            var cleanCss = @"
-                                ytd-masthead, #masthead-container, #secondary, #below, #comments, 
-                                ytd-merch-shelf-renderer, #chat, ytd-live-chat-frame,
-                                #related, #ticket-shelf, #clarify-box, ytd-engagement-panel-section-list-renderer,
-                                tp-yt-paper-dialog, ytd-popup-container:has(tp-yt-paper-dialog) { 
-                                    display: none !important; 
-                                }
-                                #page-manager { margin-top: 0 !important; }
-                                #columns { max-width: 100% !important; padding: 0 !important; }
-                                #primary { max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-                                #primary-inner { max-width: 100% !important; padding: 0 !important; }
-                                #player-container-outer, #player-container, #ytd-player, .html5-video-player {
-                                    position: fixed !important;
-                                    top: 0 !important;
-                                    left: 0 !important;
-                                    width: 100vw !important;
-                                    height: 100vh !important;
-                                    z-index: 999999 !important;
-                                    background: #000 !important;
-                                }
-                                body, html { overflow: hidden !important; background: #000 !important; }
-                            ";
-                            var script = "(function() { " +
-                                "var st = document.getElementById('vixz-clean-yt-style'); " +
-                                "if (!st) { " +
-                                "  st = document.createElement('style'); " +
-                                "  st.id = 'vixz-clean-yt-style'; " +
-                                "  st.textContent = '" + cleanCss.Replace("\r", "").Replace("\n", " ").Replace("'", "\\'") + "'; " +
-                                "  document.head.appendChild(st); " +
-                                "} " +
-                                "var c = 0; " +
-                                "var t = setInterval(function() { " +
-                                "  c++; " +
-                                "  var s = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-overlay-close-button'); " +
-                                "  if (s) s.click(); " +
-                                "  var b = document.querySelector('button[aria-label*=\"Accept\"], button[aria-label*=\"agree\"], form[action*=\"consent\"] button, ytd-button-renderer#agree-button button'); " +
-                                "  if (b) b.click(); " +
-                                "  var v = document.querySelector('video'); " +
-                                "  if (v && v.paused && !document.querySelector('.ad-showing')) { v.play().catch(function(){}); } " +
-                                "  if (c > 30) clearInterval(t); " +
-                                "}, 400); " +
-                                "})();";
-                            await VideoWebView.ExecuteScriptAsync(script);
-                        }
-                    }
-                    catch { }
                 };
             }
             catch (Exception ex)
@@ -1033,7 +904,21 @@ namespace VixzDesktop
                     var vid = msg.Substring("PLAYER_STREAM_FALLBACK:".Length);
                     if (!string.IsNullOrEmpty(vid))
                     {
-                        Dispatcher.Invoke(() => _ = TriggerStreamBypassAsync(vid));
+                        _ = Dispatcher.InvokeAsync(async () =>
+                        {
+                            try
+                            {
+                                var streamUrl = await YouTubeService.GetStreamUrlAsync(vid);
+                                if (!string.IsNullOrEmpty(streamUrl))
+                                {
+                                    var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
+                                    double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
+                                    await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{vid}')");
+                                    ShowToast("🛡️ Fallback: Playing via stream engine");
+                                }
+                            }
+                            catch { }
+                        });
                     }
                 }
                 else if (msg == "VIDEO_ENDED")
@@ -2584,89 +2469,6 @@ namespace VixzDesktop
             ShowToast("⏩ +10s");
         }
 
-        private async void BypassRestrictionBtn_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentVideo != null)
-            {
-                await TriggerStreamBypassAsync(_currentVideo.Id);
-            }
-            else
-            {
-                ShowToast("No video currently loaded");
-            }
-        }
-
-        public async Task TriggerStreamBypassAsync(string videoId)
-        {
-            if (string.IsNullOrWhiteSpace(videoId)) return;
-
-            ShowToast("🛡️ Restriction Bypassed - Loading Stream...");
-            await Task.Run(async () =>
-            {
-                try
-                {
-                    // Add YouTube consent cookie to prevent any cookie banner
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        try
-                        {
-                            var cookieManager = VideoWebView.CoreWebView2?.CookieManager;
-                            if (cookieManager != null)
-                            {
-                                var consentCookie = cookieManager.CreateCookie("SOCS", "CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AwGgJlbioAYhIICgZjb25zZW50", ".youtube.com", "/");
-                                consentCookie.IsSecure = true;
-                                cookieManager.AddOrUpdateCookie(consentCookie);
-                            }
-                        }
-                        catch { }
-                    });
-
-                    // Quick probe for direct stream (with 1.5s timeout)
-                    var streamTask = YouTubeService.GetStreamUrlAsync(videoId);
-                    var completed = await Task.WhenAny(streamTask, Task.Delay(1500));
-                    string? streamUrl = null;
-                    if (completed == streamTask)
-                    {
-                        streamUrl = await streamTask;
-                    }
-
-                    if (!string.IsNullOrEmpty(streamUrl))
-                    {
-                        await Dispatcher.InvokeAsync(async () =>
-                        {
-                            var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
-                            double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
-                            await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{videoId}')");
-                            ShowToast("⚡ Playing via Direct Stream Engine");
-                        });
-                    }
-                    else
-                    {
-                        // Direct stream unavailable (e.g. video owner completely disabled embeds or Innertube public signature required)
-                        // Fall back to clean watch mode in WebView2
-                        await Dispatcher.InvokeAsync(async () =>
-                        {
-                            var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
-                            double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double curSec);
-                            var startSec = Math.Max(0, (int)curSec);
-                            var watchUrl = $"https://www.youtube.com/watch?v={videoId}&t={startSec}";
-                            ShowToast("⚡ Bypassing via Clean Web Player...");
-                            VideoWebView.CoreWebView2?.Navigate(watchUrl);
-                        });
-                    }
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Vixz] TriggerStreamBypassAsync error: {ex.Message}");
-                    await Dispatcher.InvokeAsync(() =>
-                    {
-                        var watchUrl = $"https://www.youtube.com/watch?v={videoId}";
-                        ShowToast("⚡ Playing via Web Player...");
-                        VideoWebView.CoreWebView2?.Navigate(watchUrl);
-                    });
-                }
-            });
-        }
 
         private async void PopOutPlayer_Click(object sender, RoutedEventArgs e)
         {

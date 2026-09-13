@@ -806,9 +806,6 @@
                                     <!-- 12. 📺 Quality Selector (1080p HD Default) -->
                                     <Button x:Name="QualityBtn" Content="HD 1080p" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="Bold" Padding="8,4" Margin="0,0,5,0" ToolTip="Select Video Quality (1080p / 720p / Auto)" Click="QualityBtn_Click"/>
 
-                                    <!-- 13. ⚡ Bypass Embed Restrictions / Direct Stream -->
-                                    <Button x:Name="BypassRestrictionBtn" Content="🛡️ Bypass" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="SemiBold" Padding="8,4" Margin="0,0,5,0" ToolTip="Bypass YouTube 'Playback disabled on other websites' restrictions via Direct Stream Engine" Click="BypassRestrictionBtn_Click"/>
-
                                     <!-- 15. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
                                     <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
 
