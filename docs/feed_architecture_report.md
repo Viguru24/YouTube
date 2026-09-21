@@ -14,10 +14,10 @@ The failure was not caused by a single bug, but by **four distinct friction poin
 
 ```mermaid
 graph TD
-    A["Layer 1: YouTube Handle Resolution"] -->|Wrong handles @thebennyjohnson returned 0 videos| B["Layer 2: Batch Throttling"]
-    B -->|Queried only 4 of 8 creators| C["Layer 3: YouTube Search Response Injection"]
+    A["Layer 1: YouTube Handle Resolution"] -->|Handle mismatches returned 0 videos| B["Layer 2: Batch Throttling"]
+    B -->|Queried subset of creators| C["Layer 3: YouTube Search Response Injection"]
     C -->|Parsed 5-10 day shelf recommendations| D["Layer 4: DB Cache Preemption & Coarse Scoring"]
-    D -->|Old SQLite entries overwrote live network feed| E["Result: Only 5 fresh videos, followed by 5-6 day old videos"]
+    D -->|Old SQLite entries overwrote live network feed| E["Result: Incomplete or stale videos"]
 ```
 
 ---
@@ -25,9 +25,9 @@ graph TD
 ### Bug 1: YouTube Handle Resolution & Handle Guessing
 * **What Happened:** When fetching channel uploads directly from YouTube web endpoints (`https://www.youtube.com/@handle/videos`), the code used heuristic string matching to guess channel handles.
 * **The Failure:** 
-  * For *Benny Johnson*, it guessed `@thebennyjohnson` and `@thebennyjohnsonshow` before `@bennyjohnson`. `@thebennyjohnson` returned an empty YouTube page with 0 videos, which was then cached.
-  * For *The Rubin Report*, it guessed `@therubinreport` instead of the official `@RubinReport` (case-sensitive on certain CDNs).
-* **The Impact:** The most active daily creators (uploading 4–6 videos per day) were returning **0 videos**, meaning today's videos (19m, 1h, 2h, 3h ago) never entered the feed.
+  * When resolving channels, inaccurate handle variants could return an empty YouTube page with 0 videos, which was then cached.
+  * Case-sensitivity or naming discrepancies on certain CDNs could cause handle resolution failures.
+* **The Impact:** Active daily creators were returning **0 videos**, meaning today's fresh videos never entered the feed.
 
 ---
 
@@ -61,8 +61,8 @@ graph TD
 | **Attempt 1** | PiP buttons and touch gestures removed. | Gestures were removed from the gesture coordinator, but a second inline copy existed in `YouTubePlayerView`. |
 | **Attempt 2** | Eradicated inline gesture handler & disabled PiP `autoEnterEnabled`. | Fixed PiP and swipes, but the feed still suffered from handle resolution and database overwrites. |
 | **Attempt 3** | Replaced database cache overwriting with live network priority. | Fixed DB overwriting, but YouTube's injected recommendation shelves were still inserting 5-day-old videos into the network response. |
-| **Attempt 4** | Filtered recommendation shelves & boosted recency to +1200 pts. | Scoring was fixed, but only 5 videos appeared because channel handles (`@bennyjohnson`, `@RubinReport`) were failing and batch size was capped at 4. |
-| **Final Resolution** | Built verified handle map, queried all creators in parallel (30 uploads each), and linked complete live pipeline. | **All 8+ creators now return 30 uploads each (240+ videos), completely sorted from 19 minutes ago down to today.** |
+| **Attempt 4** | Filtered recommendation shelves & boosted recency to +1200 pts. | Scoring was fixed, but only subset appeared because channel handle resolution was failing and batch size was capped at 4. |
+| **Final Resolution** | Built verified handle map, queried all creators in parallel (30 uploads each), and linked complete live pipeline. | **All subscribed creators now return 30 uploads each, completely sorted from newest down to oldest.** |
 
 ---
 
@@ -78,12 +78,12 @@ sequenceDiagram
     participant Engine as RecommendationEngine
 
     UI->>VM: App Launch / Refresh
-    VM->>Service: fetchSubscribedProfileFeed(all 8+ creators in parallel)
+    VM->>Service: fetchSubscribedProfileFeed(all creators in parallel)
     par For each creator
         Service->>YT: GET /@verifiedHandle/videos
         YT-->>Service: Returns 30 latest uploads (LockupViewModels)
     end
-    Service-->>VM: Aggregated 240+ creator uploads
+    Service-->>VM: Aggregated creator uploads
     VM->>Engine: Score & Rank with +1200pt Recency Decay
     Engine-->>VM: Sorted list (19m -> 1h -> 2h -> 4h -> 9h -> ...)
     VM->>UI: Emits fresh live feed to displayList
@@ -91,9 +91,9 @@ sequenceDiagram
 
 ### Key Technical Improvements:
 1. **Verified Direct Handle Map:**
-   * Exact channel routes mapped directly to YouTube handles (`@RubinReport`, `@bennyjohnson`, `@TuckerCarlson`, `@hubermanlab`, `@PiersMorganUncensored`, `@lexfridman`, `@veritasium`, `@cleoabram`).
+   * Exact channel routes mapped directly to YouTube handles (`@veritasium`, `@cleoabram`, `@Fireship`, `@TwoMinutePapers`).
 2. **True Parallel Dispatching:**
-   * All subscribed channels are queried simultaneously using Kotlin Coroutines `async / awaitAll`, loading 240+ fresh uploads in under 2 seconds.
+   * All subscribed channels are queried simultaneously using Kotlin Coroutines `async / awaitAll`, loading fresh uploads in under 2 seconds.
 3. **LockupViewModel Extraction:**
    * Native parsing of YouTube's latest `lockupViewModel` and `contentMetadataViewModel` schemas with strict shelf rejection.
 4. **Dominant Recency Math:**
@@ -105,14 +105,10 @@ sequenceDiagram
 
 | Creator | Verified Handle | Latest Upload Extracted | Status |
 | :--- | :--- | :--- | :---: |
-| **The Rubin Report** | `@RubinReport` | ~19 minutes ago | 🟢 Verified Live |
-| **Benny Johnson** | `@bennyjohnson` | ~1 hour ago | 🟢 Verified Live |
-| **Tucker Carlson** | `@TuckerCarlson` | ~4 hours ago | 🟢 Verified Live |
-| **Huberman Lab** | `@hubermanlab` | ~9 hours ago | 🟢 Verified Live |
-| **Piers Morgan Uncensored** | `@PiersMorganUncensored` | ~6 days ago (last upload) | 🟢 Verified Live |
-| **Lex Fridman** | `@lexfridman` | ~4 days ago (last upload) | 🟢 Verified Live |
-| **Veritasium** | `@veritasium` | ~2 weeks ago (last upload) | 🟢 Verified Live |
-| **Cleo Abram** | `@cleoabram` | ~2 days ago (last upload) | 🟢 Verified Live |
+| **Veritasium** | `@veritasium` | ~Recent | 🟢 Verified Live |
+| **Cleo Abram** | `@cleoabram` | ~Recent | 🟢 Verified Live |
+| **Fireship** | `@Fireship` | ~Recent | 🟢 Verified Live |
+| **Two Minute Papers** | `@TwoMinutePapers` | ~Recent | 🟢 Verified Live |
 
 ---
 

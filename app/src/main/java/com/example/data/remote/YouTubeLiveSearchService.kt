@@ -65,31 +65,10 @@ object YouTubeLiveSearchService {
     }
 
     private val VERIFIED_HANDLES = mapOf(
-        "benny johnson" to listOf("bennyjohnson", "thebennyjohnsonshow"),
-        "the benny johnson show" to listOf("bennyjohnson", "thebennyjohnsonshow"),
-        "the rubin report" to listOf("RubinReport", "rubinreport"),
-        "rubin report" to listOf("RubinReport", "rubinreport"),
-        "tucker carlson" to listOf("TuckerCarlson", "tuckercarlson"),
-        "piers morgan uncensored" to listOf("PiersMorganUncensored", "piersmorgan"),
-        "piers morgan" to listOf("PiersMorganUncensored", "piersmorgan"),
-        "lex fridman" to listOf("lexfridman", "LexFridman"),
         "veritasium" to listOf("veritasium", "Veritasium"),
-        "huberman lab" to listOf("hubermanlab", "HubermanLab"),
-        "andrew huberman" to listOf("hubermanlab", "HubermanLab"),
         "cleo abram" to listOf("cleoabram", "CleoAbram"),
-        "the joe rogan experience" to listOf("joerogan", "TheJoeRoganExperience"),
-        "joe rogan" to listOf("joerogan", "TheJoeRoganExperience"),
-        "matt wolfe" to listOf("maborle", "MattWolfe"),
         "fireship" to listOf("Fireship"),
-        "two minute papers" to listOf("TwoMinutePapers"),
-        "dwarkesh patel" to listOf("DwarkeshPatel"),
-        "matthew berman" to listOf("MatthewBerman"),
-        "triggernometry" to listOf("triggerpod"),
-        "timcast irl" to listOf("TimcastIRL"),
-        "liberal hivemind" to listOf("LiberalHivemind"),
-        "david ondrej" to listOf("DavidOndrej"),
-        "anastasi in tech" to listOf("AnastasiInTech"),
-        "alex ziskind" to listOf("AlexZiskind")
+        "two minute papers" to listOf("TwoMinutePapers")
     )
 
     /**
@@ -104,10 +83,14 @@ object YouTubeLiveSearchService {
     ): List<VideoEntity> = withContext(Dispatchers.IO) {
         val channels = if (subscribedChannels.isNotEmpty()) {
             subscribedChannels
-        } else if (com.example.data.model.WillRyanProfileData.subscribedChannels.isNotEmpty()) {
-            com.example.data.model.WillRyanProfileData.subscribedChannels.toList()
+        } else if (com.example.data.model.UserProfileData.subscribedChannels.isNotEmpty()) {
+            com.example.data.model.UserProfileData.subscribedChannels.toList()
         } else {
-            listOf("Benny Johnson", "The Rubin Report", "Tucker Carlson", "Piers Morgan Uncensored", "Lex Fridman", "Huberman Lab", "Veritasium", "Cleo Abram")
+            emptyList()
+        }
+
+        if (channels.isEmpty()) {
+            return@withContext emptyList()
         }
 
         val cacheKey = "feed:profile:${channels.hashCode()}:$batchIndex:$batchSize"
@@ -400,7 +383,7 @@ object YouTubeLiveSearchService {
         if (author.contains(target) || target.contains(author)) return true
         if (author.replace(" ", "") == target.replace(" ", "")) return true
 
-        // Keyword checking (e.g. "Benny Johnson Show" -> ["benny", "johnson"])
+        // Keyword checking (e.g. "Tech Discovery Show" -> ["tech", "discovery"])
         val genericWords = setOf("show", "tv", "channel", "official", "podcast", "the", "media", "news", "network", "daily", "live")
         val keywords = target.split("\\s+".toRegex()).filter { it.length > 2 && !genericWords.contains(it) }
         if (keywords.isNotEmpty() && keywords.all { author.contains(it) }) return true
@@ -506,12 +489,11 @@ object YouTubeLiveSearchService {
         }
         targetQueries.addAll(listOf(
             "AI agents breakthrough news 2026",
-            "Tucker Carlson in depth interview",
-            "Lex Fridman podcast latest episode",
-            "The Rubin Report panel discussion",
+            "Science documentary discovery",
+            "Space exploration documentary",
             "World of AI latest deep dive",
             "Veritasium scientific breakthrough",
-            "Two Bit da Vinci technology future"
+            "Technology future innovations"
         ))
 
         for (q in targetQueries.shuffled().take(4)) {
@@ -1028,11 +1010,7 @@ object YouTubeLiveSearchService {
             "Mark Rober",
             "Colin and Samir",
             "Gordon Ramsay",
-            "BBC News",
-            "The Joe Rogan Experience",
-            "Tucker Carlson",
-            "Benny Johnson",
-            "Lex Fridman"
+            "BBC News"
         )
         val needed = (6 - candidateChannels.size).coerceAtLeast(2)
         val supplemental = curatedCreators.filter { cur ->

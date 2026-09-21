@@ -1,4 +1,4 @@
-﻿package com.example
+package com.example
 
 import com.example.util.YouTubeUtils
 import org.junit.Assert.assertFalse
@@ -31,9 +31,9 @@ class YouTubeUtilsTest {
     @Test
     fun testAllowsValidEnglishCreatorVideos() {
         assertFalse(YouTubeUtils.isForeignLanguageContent("HUGE Gemini 4.0 Leaks, DeepSeek", "WorldofAI"))
-        assertFalse(YouTubeUtils.isForeignLanguageContent("Benny Johnson Breaks Down White House Press", "Benny Johnson"))
-        assertFalse(YouTubeUtils.isForeignLanguageContent("The Rubin Report: Direct Interview with Dave", "The Rubin Report"))
-        assertFalse(YouTubeUtils.isForeignLanguageContent("Tucker Carlson on the Future of Media", "Tucker Carlson"))
+        assertFalse(YouTubeUtils.isForeignLanguageContent("MKBHD: The Future of Smartphones", "MKBHD"))
+        assertFalse(YouTubeUtils.isForeignLanguageContent("BBC News: Global Weather Report", "BBC News"))
+        assertFalse(YouTubeUtils.isForeignLanguageContent("Fireship: 100 Seconds of Code", "Fireship"))
         assertFalse(YouTubeUtils.isForeignLanguageContent("Lex Fridman Podcast with Andrej Karpathy", "Lex Fridman"))
         assertFalse(YouTubeUtils.isForeignLanguageContent("Veritasium: The Problem with Quantum Physics", "Veritasium"))
     }

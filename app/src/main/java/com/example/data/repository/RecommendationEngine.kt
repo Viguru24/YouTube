@@ -45,7 +45,7 @@ object RecommendationEngine {
         if (video.isFavorite) return "⭐ Saved Favorite"
         if (video.isWatchLater) return "🔖 Saved Watch Later"
 
-        val isSubscribedProfileChannel = com.example.data.model.WillRyanProfileData.subscribedChannels.any {
+        val isSubscribedProfileChannel = com.example.data.model.UserProfileData.subscribedChannels.any {
             it.contains(video.channelName, ignoreCase = true) || video.channelName.contains(it, ignoreCase = true)
         }
         if (isSubscribedProfileChannel) return "💡 Subscribed Channel"
@@ -117,7 +117,7 @@ object RecommendationEngine {
             }
 
             // C. Creator & Subscribed Profile Channel Boost
-            val isSubscribedProfileChannel = com.example.data.model.WillRyanProfileData.subscribedChannels.any {
+            val isSubscribedProfileChannel = com.example.data.model.UserProfileData.subscribedChannels.any {
                 it.contains(video.channelName, ignoreCase = true) || video.channelName.contains(it, ignoreCase = true)
             }
             if (isSubscribedProfileChannel) {

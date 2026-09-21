@@ -20,14 +20,14 @@
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
 | 📱 **Android** | `APK (v1.9.7)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk) |
-| 🖥️ **Windows (Modern App)** | `MSIX Installer` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/VixzDesktop/releases/download/v1.0.0/VixzDesktop-v1.0.0.msix) |
-| 🖥️ **Windows (Standalone)** | `Portable EXE` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
+| 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.0.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
+| 🖥️ **Windows (Standalone)** | `Portable EXE (v2.0.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
 <br/>
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
-  <a href="#-whats-new-in-v198">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v200">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -38,14 +38,16 @@
 
 ---
 
-## 🆕 What's New in v1.9.8
+## 🆕 What's New in v2.0.0
 
+- 🔐 **Authentication & Session Rebuild:** Rewrote `SignInWindow` from ground up. Event-driven auth detection without polling loops, instant recognition of Google sign-in completions, and proper server-side session termination + cookie store clearing on sign-out.
+- 🛡️ **Zero-Loop Embed Error Handling:** Protected against repetitive YouTube Error 150 spikes with `_fallbackFired` guards. Distinct routing for session-expired sign-in prompts vs owner-disabled embedding streams.
+- ⚡ **Enhanced Sign-In Wall Detection:** 6-second proactive watchdog to catch silent YouTube unstarted embed states and offer immediate fallback.
 - 🔍 **Overhauled Pinch-to-Zoom Engine (1.0x – 5.0x):** Zero jitter, fluid multi-touch scaling, intelligent pointer tracking, and 1-finger 2D panning with edge bounds.
 - 📱 **Pure Unobstructed Viewing:** No annoying badges, HUDs, or buttons blocking video content; pinching in or squeezing automatically snaps back to original 1.0x form.
 - 🌌 **Cosmo Software Suite Integration:** In-app showcase and instant 1-tap launcher for **Cosmo Whisper** and **Cosmo Symphony**.
 - 🤖 **On-Demand AI Summarization & Tight Chat:** Video summaries now only run when requested, paired with a compact, non-blocking AI chat modal.
-- 📱 **Multi-Device ADB Auto-Updater:** Simultaneous multi-phone/tablet APK installer script (`YouTube_Install_On_Phone.bat`).
-- 📦 **Latest Companion Binaries:** Updated Android APK and Windows Desktop EXE. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
+- 📦 **Latest Companion Binaries:** Fully self-contained Windows Desktop MSIX (`v2.0.0`) and Portable EXE (`v2.0.0`). See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
 
 ---
 
@@ -75,7 +77,7 @@ Prefer watching on your laptop or desktop? Experience **[Vixz Desktop](https://g
 - ⧉ **Always-On-Top Floating PiP Mini-Player:** Keep videos floating while working in other apps.
 - 🌙 **Sleep Timer with Audio Fade-Out:** Automatically winds down playback with smooth audio attenuation.
 
-👉 **[📥 Download Vixz Desktop for Windows (.MSIX)](https://github.com/Viguru24/VixzDesktop/releases/download/v1.0.0/VixzDesktop-v1.0.0.msix)** • **[Explore the GitHub Repo](https://github.com/Viguru24/VixzDesktop)**
+👉 **[📥 Download Vixz Desktop (.MSIX)](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix)** • **[📥 Download Portable EXE](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe)** • **[Explore the GitHub Repo](https://github.com/Viguru24/VixzDesktop)**
 
 ---
 

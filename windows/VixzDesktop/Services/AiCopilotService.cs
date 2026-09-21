@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -186,7 +187,7 @@ namespace VixzDesktop.Services
                 }
             }
 
-            // 4. Play Specific Video Query (e.g. "play latest Benny Johnson", "watch Tucker Carlson")
+            // 4. Play Specific Video Query (e.g. "play latest lo-fi beats", "watch tech news")
             var playMatch = Regex.Match(lower, @"^(?:play|watch|open|start)\s*(?:the)?\s*(?:latest|newest|today's)?\s*(.+)", RegexOptions.IgnoreCase);
             if (playMatch.Success && !lower.Contains("?"))
             {
@@ -251,7 +252,7 @@ namespace VixzDesktop.Services
             return new AiCommandResult
             {
                 Type = AiCommandType.ChatAnswer,
-                ResponseMessage = $"🤖 I'm your Vixz AI Assistant! You can ask me questions about current events, search for topics, ask about the current video, or use commands like *\"Summarise this video\"* and *\"Play latest Benny Johnson\"*."
+                ResponseMessage = $"🤖 I'm your Vixz AI Assistant! You can ask me questions about current events, search for topics, ask about the current video, or use commands like *\"Summarise this video\"* and *\"Play Lofi chill music\"*."
             };
         }
 
@@ -374,6 +375,141 @@ namespace VixzDesktop.Services
             }
         }
 
+        public static string? TryDetectLocalFreeLlmApiKey()
+        {
+            try
+            {
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                var dbPath = Path.Combine(appData, "FreeLLMAPI", "freeapi.db");
+                if (File.Exists(dbPath))
+                {
+                    using var stream = new FileStream(dbPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var reader = new StreamReader(stream, Encoding.UTF8);
+                    var content = reader.ReadToEnd();
+                    var match = Regex.Match(content, @"freellmapi-[a-f0-9]{48}", RegexOptions.IgnoreCase);
+                    if (match.Success)
+                    {
+                        return match.Value;
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        public static async Task<(bool Success, string Message, string? ResolvedKey)> ValidateApiKeyAsync(string? rawKey)
+        {
+            if (string.IsNullOrWhiteSpace(rawKey))
+            {
+                // If empty, check if we can auto-detect a local FreeLLMAPI key
+                var autoKey = TryDetectLocalFreeLlmApiKey();
+                if (!string.IsNullOrWhiteSpace(autoKey))
+                {
+                    rawKey = autoKey;
+                }
+                else
+                {
+                    return (false, "Please enter an API key first.", null);
+                }
+            }
+
+            var key = rawKey.Trim();
+
+            // Auto-resolve if user pasted the npx setup command or port instead of just the key
+            if (key.Contains("freellmapi", StringComparison.OrdinalIgnoreCase) || key.Contains("31415"))
+            {
+                var detected = TryDetectLocalFreeLlmApiKey();
+                if (!string.IsNullOrWhiteSpace(detected))
+                {
+                    key = detected;
+                }
+            }
+
+            try
+            {
+                if (key.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/chat/completions");
+                    req.Headers.Add("Authorization", "Bearer " + key);
+                    var payload = new { model = "llama-3.1-8b-instant", messages = new[] { new { role = "user", content = "ping" } }, max_tokens = 2 };
+                    req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                    var resp = await _llmHttpClient.SendAsync(req);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        return (true, "✅ Connected to Groq (llama-3.1-8b) successfully!", key);
+                    }
+                    var body = await resp.Content.ReadAsStringAsync();
+                    if (resp.StatusCode == HttpStatusCode.Forbidden || resp.StatusCode == HttpStatusCode.Unauthorized)
+                    {
+                        if (body.Contains("check your network settings", StringComparison.OrdinalIgnoreCase) || body.Contains("Access denied", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return (false, "❌ Groq returned 403: Network/region is blocked by Groq Cloudflare. Please switch to Google Gemini (free) or disable VPN.", key);
+                        }
+                        return (false, $"❌ Groq rejected key: HTTP {(int)resp.StatusCode} {resp.StatusCode}.", key);
+                    }
+                    return (false, $"❌ Groq returned HTTP {(int)resp.StatusCode}.", key);
+                }
+                else if (key.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions");
+                    req.Headers.Add("Authorization", "Bearer " + key);
+                    var payload = new { model = "gpt-4o-mini", messages = new[] { new { role = "user", content = "ping" } }, max_tokens = 2 };
+                    req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                    var resp = await _llmHttpClient.SendAsync(req);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        return (true, "✅ Connected to OpenAI (GPT-4o-mini) successfully!", key);
+                    }
+                    return (false, $"❌ OpenAI returned HTTP {(int)resp.StatusCode}: {(resp.StatusCode == HttpStatusCode.Unauthorized ? "Invalid key" : resp.StatusCode.ToString())}.", key);
+                }
+                else if (key.StartsWith("freellma", StringComparison.OrdinalIgnoreCase))
+                {
+                    // FreeLLMAPI — OpenAI-compatible local proxy at http://127.0.0.1:31415 using 'auto' model
+                    try
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:31415/v1/chat/completions");
+                        req.Headers.Add("Authorization", "Bearer " + key);
+                        var payload = new { model = "auto", messages = new[] { new { role = "user", content = "ping" } }, max_tokens = 4 };
+                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        var resp = await _llmHttpClient.SendAsync(req);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            return (true, "✅ Connected to FreeLLMAPI (auto routing) at localhost:31415!", key);
+                        }
+                        var body = await resp.Content.ReadAsStringAsync();
+                        return (false, $"❌ FreeLLMAPI returned HTTP {(int)resp.StatusCode}. Make sure FreeLLMAPI desktop is running.", key);
+                    }
+                    catch (HttpRequestException)
+                    {
+                        return (false, "❌ FreeLLMAPI is not reachable at localhost:31415. Start FreeLLMAPI desktop app first.", key);
+                    }
+                }
+                else
+                {
+                    // Google Gemini
+                    foreach (var model in new[] { "gemini-2.0-flash", "gemini-1.5-flash" })
+                    {
+                        var endpoint = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}";
+                        var payload = new { contents = new[] { new { parts = new[] { new { text = "ping" } } } } };
+                        var resp = await _llmHttpClient.PostAsync(endpoint, new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json"));
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            return (true, $"✅ Connected to Google Gemini ({model}) successfully!", key);
+                        }
+                        if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            return (false, $"❌ Google Gemini returned HTTP {(int)resp.StatusCode}: Key is invalid or API is not enabled.", key);
+                        }
+                    }
+                    return (false, "❌ Could not validate key with any known provider.", key);
+                }
+            }
+            catch (Exception ex)
+            {
+                return (false, $"❌ Network error: {ex.Message}", null);
+            }
+        }
+
         private static readonly List<(string Role, string Content)> _conversationHistory = new List<(string Role, string Content)>();
 
         public static async Task<AiCommandResult?> QueryLlmBrainAsync(string prompt, VideoItem? currentVideo, string apiKey)
@@ -441,8 +577,18 @@ namespace VixzDesktop.Services
                         }
                         else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                         {
-                            // Invalid or blocked Groq key
-                            break;
+                            var errBody = "";
+                            try { errBody = await resp.Content.ReadAsStringAsync(); } catch { }
+                            string detail = "Invalid or restricted API key.";
+                            if (errBody.Contains("check your network settings", StringComparison.OrdinalIgnoreCase) || errBody.Contains("Access denied", StringComparison.OrdinalIgnoreCase))
+                            {
+                                detail = "Groq Cloudflare blocked this network/region (403 Forbidden). We recommend switching to a free Google Gemini key in AI Settings (⚙️).";
+                            }
+                            return new AiCommandResult
+                            {
+                                Type = AiCommandType.ChatAnswer,
+                                ResponseMessage = $"⚠️ **Groq Notice**: {detail}\n\nFalling back to built-in web intelligence..."
+                            };
                         }
                     }
                 }
@@ -494,7 +640,52 @@ namespace VixzDesktop.Services
                         }
                     }
                 }
-                // 3. Google Gemini Provider (Gemini 3.7 Flash with Gemini 2.0 Flash Fallback)
+                // 3. FreeLLMAPI Provider (OpenAI-compatible local proxy at localhost:31415)
+                else if (apiKey.StartsWith("freellma", StringComparison.OrdinalIgnoreCase))
+                {
+                    var systemMsg = "You are Vixz AI, an intelligent, lightning-fast AI assistant integrated inside Vixz Desktop, a modern YouTube player app on Windows. Be direct, clear, highly accurate, concise, and helpful.";
+                    if (currentVideo != null)
+                    {
+                        systemMsg += $"\n[Context: The user is currently watching video \"{currentVideo.Title}\" by channel \"{currentVideo.ChannelTitle}\" (Duration: {currentVideo.DurationText})]";
+                    }
+
+                    var messages = new List<object>
+                    {
+                        new { role = "system", content = systemMsg }
+                    };
+
+                    foreach (var turn in _conversationHistory.TakeLast(6))
+                    {
+                        messages.Add(new { role = turn.Role, content = turn.Content });
+                    }
+                    messages.Add(new { role = "user", content = prompt });
+
+                    using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:31415/v1/chat/completions");
+                    req.Headers.Add("Authorization", "Bearer " + apiKey);
+                    var payload = new { model = "auto", messages = messages, temperature = 0.5, max_tokens = 600 };
+                    req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                    var resp = await _httpClient.SendAsync(req);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var json = await resp.Content.ReadAsStringAsync();
+                        var jObj = JObject.Parse(json);
+                        var aiText = (string?)jObj["choices"]?[0]?["message"]?["content"];
+                        if (!string.IsNullOrWhiteSpace(aiText))
+                        {
+                            var trimmed = aiText.Trim();
+                            _conversationHistory.Add(("user", prompt));
+                            _conversationHistory.Add(("assistant", trimmed));
+                            if (_conversationHistory.Count > 20) _conversationHistory.RemoveRange(0, 4);
+                            return new AiCommandResult
+                            {
+                                Type = AiCommandType.ChatAnswer,
+                                ResponseMessage = trimmed,
+                                SourceCitation = "FreeLLMAPI"
+                            };
+                        }
+                    }
+                }
+                // 4. Google Gemini Provider (Gemini 3.7 Flash with Gemini 2.0 Flash Fallback)
                 else
                 {
                     var geminiModels = new[] { "gemini-3.7-flash", "gemini-2.0-flash", "gemini-1.5-flash" };
@@ -552,9 +743,14 @@ namespace VixzDesktop.Services
             VideoItem video, 
             Func<string, Task<string>>? webViewTranscriptFetcher = null)
         {
-            // Return cached result if available for this video
+            // Return cached result only if it was a genuine LLM summary without auth errors
             if (_summaryCache.TryGetValue(video.Id, out var cached))
-                return cached;
+            {
+                if (string.IsNullOrWhiteSpace(cached.AuthWarning) && cached.SourceCitation != "Transcript Extraction" && cached.SourceCitation != "Video Metadata")
+                {
+                    return cached;
+                }
+            }
 
             var summary = new VideoSummaryResult
             {
@@ -749,7 +945,7 @@ namespace VixzDesktop.Services
 
         private static async Task GenerateStructuredPointsAsync(string transcriptText, string descriptionText, VideoItem video, VideoSummaryResult summary)
         {
-            var apiKey = StorageService.Settings.GeminiApiKey;
+            var apiKey = StorageService.Settings.GeminiApiKey?.Trim();
 
             // 1. LLM-powered synthesis (when API key is available) — produces a REAL summary, not raw transcript
             if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(transcriptText))
@@ -799,7 +995,16 @@ namespace VixzDesktop.Services
                             }
                             else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                             {
-                                summary.AuthWarning = "⚠️ AI API Key returned 403 Forbidden. Using smart video analysis.";
+                                var errBody = "";
+                                try { errBody = await resp.Content.ReadAsStringAsync(); } catch { }
+                                if (errBody.Contains("check your network settings", StringComparison.OrdinalIgnoreCase) || errBody.Contains("Access denied", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    summary.AuthWarning = "⚠️ Groq 403: Network/Region blocked by Groq Cloudflare. Use Google Gemini in ⚙️ AI Settings.";
+                                }
+                                else
+                                {
+                                    summary.AuthWarning = "⚠️ Groq API key returned 403 Forbidden. Please verify key or switch to Google Gemini.";
+                                }
                                 break;
                             }
                         }
@@ -820,6 +1025,32 @@ namespace VixzDesktop.Services
                         else if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                         {
                             summary.AuthWarning = "⚠️ OpenAI API Key invalid or expired. Using smart video analysis.";
+                        }
+                    }
+                    else if (apiKey.StartsWith("freellma", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // FreeLLMAPI — OpenAI-compatible local proxy at http://127.0.0.1:31415 using auto model
+                        using var req = new HttpRequestMessage(HttpMethod.Post, "http://127.0.0.1:31415/v1/chat/completions");
+                        req.Headers.Add("Authorization", "Bearer " + apiKey);
+                        var payload = new { model = "auto", messages = new[] { new { role = "user", content = llmPrompt } }, temperature = 0.3, max_tokens = 800 };
+                        req.Content = new StringContent(Newtonsoft.Json.JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                        try
+                        {
+                            var resp = await _llmHttpClient.SendAsync(req);
+                            if (resp.IsSuccessStatusCode)
+                            {
+                                var json = JObject.Parse(await resp.Content.ReadAsStringAsync());
+                                llmJson = (string?)json["choices"]?[0]?["message"]?["content"];
+                                providerCitation = "FreeLLMAPI";
+                            }
+                            else
+                            {
+                                summary.AuthWarning = $"⚠️ FreeLLMAPI returned HTTP {(int)resp.StatusCode}. Make sure FreeLLMAPI is running at localhost:31415.";
+                            }
+                        }
+                        catch (HttpRequestException)
+                        {
+                            summary.AuthWarning = "⚠️ FreeLLMAPI is not reachable at localhost:31415. Start FreeLLMAPI desktop app first.";
                         }
                     }
                     else
@@ -873,42 +1104,52 @@ namespace VixzDesktop.Services
                 catch { /* fall through to heuristic logic below */ }
             }
 
-            // 2. High-precision heuristic fallback: clean raw transcript sentences (Spoken words take top priority)
+            // 2. High-value fallback: Live web intelligence based on video title & topic
+            var topicQuery = CleanTopicQuery(video.Title);
+            var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
+            if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage) && webResult.ResponseMessage.Length > 30)
+            {
+                summary.Tldr = $"**{video.Title}** — presentation by **{video.ChannelTitle}**.\n\n{webResult.ResponseMessage}";
+                var takeaways = webResult.WebFacts
+                    .Where(f => !string.IsNullOrWhiteSpace(f) && f.Length > 25)
+                    .Take(5)
+                    .ToList();
+                if (takeaways.Count >= 2)
+                {
+                    summary.KeyTakeaways = takeaways;
+                    summary.SourceCitation = "Live Web Intelligence";
+                    return;
+                }
+            }
+
+            // 3. Substantive transcript extraction (skips all conversational banter and intro filler)
             var cleanTranscriptSentences = CleanAndExtractSentences(transcriptText, video);
             if (cleanTranscriptSentences.Count >= 3)
             {
-                summary.Tldr = string.Join(". ", cleanTranscriptSentences.Take(3)) + ".";
-                summary.KeyTakeaways = DistributeKeyPoints(cleanTranscriptSentences, 5);
-                summary.SourceCitation = "Transcript Extraction";
+                // Find informative sentences that do not repeat the intro
+                var informativeSentences = cleanTranscriptSentences
+                    .Where(s => s.Length > 35 && !s.StartsWith("We've actually", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (informativeSentences.Count < 3) informativeSentences = cleanTranscriptSentences;
+
+                summary.Tldr = $"In this video, **{video.ChannelTitle}** breaks down **{video.Title}**.\n\n" +
+                               string.Join(". ", informativeSentences.Take(2)) + ".";
+                summary.KeyTakeaways = DistributeKeyPoints(informativeSentences.Skip(1).ToList(), 5);
+                summary.SourceCitation = "Topic Synthesis";
                 return;
             }
 
-            // 3. Fallback to creator description only if transcript was absent/insufficient
-            var cleanDescSentences = CleanAndExtractSentences(descriptionText, video);
+            // 4. Creator description analysis (strictly the narrative overview before promo/gear links)
+            var descNarrative = Regex.Split(descriptionText, @"(?i)(?:\r?\n\s*\r?\n|---+|===+|links?:|my gear|gear:|camera gear|socials?:|follow me|timestamps?:|chapters?:|affiliate|discount|disclaimer)")[0];
+            var cleanDescSentences = CleanAndExtractSentences(descNarrative, video);
             if (cleanDescSentences.Count >= 2)
             {
                 summary.Tldr = string.Join(". ", cleanDescSentences.Take(Math.Min(2, cleanDescSentences.Count))) + ".";
                 summary.KeyTakeaways = DistributeKeyPoints(cleanDescSentences.Skip(1).ToList(), 5);
                 if (summary.KeyTakeaways.Count >= 2)
                 {
-                    summary.SourceCitation = "Smart Video Analysis";
-                    return;
-                }
-            }
-
-            // 4. Live web intelligence based on video title & topic
-            var topicQuery = CleanTopicQuery(video.Title);
-            var webResult = await QueryLiveWebKnowledgeAsync(topicQuery);
-            if (webResult != null && !string.IsNullOrWhiteSpace(webResult.ResponseMessage) && webResult.ResponseMessage.Length > 30)
-            {
-                summary.Tldr = $"**{video.Title}** ({video.ChannelTitle})\n\n{webResult.ResponseMessage}";
-                var takeaways = webResult.WebFacts.Take(5)
-                    .Where(f => !string.IsNullOrWhiteSpace(f) && f.Length > 25)
-                    .ToList();
-                if (takeaways.Count >= 2)
-                {
-                    summary.KeyTakeaways = takeaways;
-                    summary.SourceCitation = "Live Web Intelligence";
+                    summary.SourceCitation = "Video Overview Analysis";
                     return;
                 }
             }
@@ -938,6 +1179,14 @@ namespace VixzDesktop.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return new List<string>();
 
+            // Fix notorious YouTube speech-to-text audio corruptions
+            text = Regex.Replace(text, @"\bEnthropic\b", "Anthropic", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\bOpen\s*Eye\b", "OpenAI", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\bGBT\s*([0-9]+)\b", "GPT-$1", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\bGBT\b", "GPT", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\bLOD\s+Opus\b", "Claude Opus", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, @"\bDeep\s*Seek\b", "DeepSeek", RegexOptions.IgnoreCase);
+
             // Strip [annotations] like [music], [laughter], [applause], [inaudible]
             text = Regex.Replace(text, @"\[[^\]]{1,30}\]", " ", RegexOptions.IgnoreCase);
 
@@ -952,22 +1201,23 @@ namespace VixzDesktop.Services
             // Strip filler sounds and transcript artifacts
             text = Regex.Replace(text, @"\b(uh|um|uh-huh|hmm|ugh|ahh?|ohh?|laughter|applause|inaudible|crosstalk)\b", " ", RegexOptions.IgnoreCase);
 
-            // Blacklist: ads, promos, copyright boilerplate, social plugs
+            // Blacklist: ads, promos, copyright boilerplate, social plugs, affiliate links, and creator gear
             var blacklistRegex = new Regex(
                 @"(?i)\b(cashapp|\$|venmo|paypal|donate|donations|patreon|gofundme|crypto|bitcoin|btc|eth|wallet|zelle|" +
                 @"copyright disclaimer|section 107|copyright act|fair use|criticism|commentary|news reporting|scholarship|research|" +
                 @"non-profit|personal use|no copyright infringement|all rights belong|all rights reserved|respective owners|disclaimer:|the views and opinions|" +
-                @"support the channel|road to|subscribers?|sub count|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
-                @"see you next time|follow me on|follow us on|social media|instagram|twitter|tiktok|facebook|discord|telegram|discount code|promo code|sponsored by|" +
-                @"affiliate link|merch|store|t-shirt|expressvpn|nordvpn|betterhelp)\b"
+                @"support the channel|support my brand|road to|subscribers?|sub count|hit the bell|leave a comment|like and subscribe|thanks for watching|" +
+                @"see you next time|follow me on|follow us on|social media|instagram|twitter|tiktok|facebook|discord|telegram|discount|promo code|sponsored by|" +
+                @"affiliate|my affiliate|merch|store|t-shirt|purevpn|expressvpn|nordvpn|surfshark|betterhelp|" +
+                @"canon|sony zv|sennheiser|scarlett|rode|shure|camera|microphone|audio interface|tripod)\b"
             );
 
             // Filler openers that make for useless takeaways
             var fillerOpeners = new Regex(
-                @"^(all right|alright|okay so|so yeah|yeah so|you know|i mean|right so|well so|now back|back to|" +
+                @"^(now,?\s*obviously|obviously|all right|alright|okay so|so yeah|yeah so|you know|i mean|right so|well so|now back|back to|" +
                 @"and so|but so|so basically|basically|i think|i feel|kind of|sort of|like i said|as i said|" +
                 @"and then|and now|and we|so we|so i|so it|so this|so that|so there|so here|" +
-                @"now i|now we|now this|now that)\b",
+                @"now i|now we|now this|now that|in this video|today we|today's video|we've actually got|we have got|welcome back|hey guys|what's up guys)\b",
                 RegexOptions.IgnoreCase
             );
 
@@ -1001,6 +1251,9 @@ namespace VixzDesktop.Services
 
                 // Skip ALL CAPS spam
                 if (cleaned.Length > 15 && cleaned.ToUpperInvariant() == cleaned && !cleaned.Contains(" ")) continue;
+
+                // Skip pipe-delimited gear and spec lists (e.g. "Canon EOS R | Sony ZV-1 | Sennheiser")
+                if (cleaned.Contains("|")) continue;
 
                 // Skip filler openers
                 if (fillerOpeners.IsMatch(cleaned)) continue;

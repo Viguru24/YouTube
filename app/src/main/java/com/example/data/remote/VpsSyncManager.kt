@@ -30,17 +30,7 @@ object VpsSyncManager {
 
     fun getServerUrl(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val saved = prefs.getString(KEY_SERVER_URL, "")?.trim().orEmpty()
-        if (saved.isNotBlank()) return saved
-
-        val defaultUrl = try {
-            com.example.BuildConfig.VPS_DEFAULT_URL.trim()
-        } catch (e: Throwable) { "" }
-        if (defaultUrl.isNotBlank()) {
-            prefs.edit().putString(KEY_SERVER_URL, defaultUrl).apply()
-            return defaultUrl
-        }
-        return ""
+        return prefs.getString(KEY_SERVER_URL, "")?.trim().orEmpty()
     }
 
     fun setServerUrl(context: Context, url: String) {
@@ -50,17 +40,7 @@ object VpsSyncManager {
 
     fun getApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val saved = prefs.getString(KEY_API_KEY, "")?.trim().orEmpty()
-        if (saved.isNotBlank()) return saved
-
-        val defaultKey = try {
-            com.example.BuildConfig.VPS_DEFAULT_KEY.trim()
-        } catch (e: Throwable) { "" }
-        if (defaultKey.isNotBlank()) {
-            prefs.edit().putString(KEY_API_KEY, defaultKey).apply()
-            return defaultKey
-        }
-        return ""
+        return prefs.getString(KEY_API_KEY, "")?.trim().orEmpty()
     }
 
     fun setApiKey(context: Context, key: String) {
@@ -70,7 +50,7 @@ object VpsSyncManager {
 
     fun isSyncEnabled(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_SYNC_ENABLED, true)
+        return prefs.getBoolean(KEY_SYNC_ENABLED, false)
     }
 
     fun setSyncEnabled(context: Context, enabled: Boolean) {

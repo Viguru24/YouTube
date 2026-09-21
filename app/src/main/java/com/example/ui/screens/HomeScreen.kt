@@ -219,7 +219,7 @@ fun HomeScreen(
         }
     }
 
-    val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.WillRyanProfileData.subscribedChannels
+    val subscribedChannelsList = if (subscribedCreators.isNotEmpty()) subscribedCreators else com.example.data.model.UserProfileData.subscribedChannels
 
     // Reset scroll to top on category or channel change
     LaunchedEffect(selectedCategory, selectedSubscribedChannel) {
@@ -1647,7 +1647,7 @@ fun HomeScreen(
                         onClick = {
                             val trimmed = newChannelInput.trim()
                             if (trimmed.isNotBlank()) {
-                                com.example.data.model.WillRyanProfileData.addSubscribedChannel(trimmed)
+                                com.example.data.model.UserProfileData.addSubscribedChannel(trimmed)
                                 onSubscribedChannelSelected(trimmed)
                                 showAddChannelDialog = false
                             }

@@ -76,16 +76,7 @@ fun VideoCard(
 
     fun formatDisplayChannelName(name: String): String {
         val trimmed = name.trim()
-        return when {
-            trimmed.equals("Benny Johnson", ignoreCase = true) -> "Benny J"
-            trimmed.equals("Tal Oran - TheTraveler", ignoreCase = true) -> "Tal Oran"
-            trimmed.equals("Warren Smith - Secret Scholar", ignoreCase = true) -> "Warren Smith"
-            trimmed.equals("LARRY with Larry Elder", ignoreCase = true) -> "Larry Elder"
-            trimmed.equals("The Podcast of the Lotus Eaters", ignoreCase = true) -> "Lotus Eaters"
-            trimmed.equals("Dr. Steve Turley", ignoreCase = true) -> "Steve Turley"
-            trimmed.length > 18 -> trimmed.take(16) + "…"
-            else -> trimmed
-        }
+        return if (trimmed.length > 20) trimmed.take(18) + "…" else trimmed
     }
 
     Box(

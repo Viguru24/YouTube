@@ -74,8 +74,8 @@ namespace VixzDesktop
             UpdateAutoplayUi();
             UpdateAccountUi();
             UpdateQualityButtonText(StorageService.Settings.PreferredQuality);
-            SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
-            SubscribersHeader.Text = $"👤 Subscriptions ({WillRyanProfileData.SubscribedChannels.Count})";
+            SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
+            SubscribersHeader.Text = $"👤 Subscriptions ({UserProfileData.SubscribedChannels.Count})";
 
             SetupBottomBarAutoFade();
             ApplySidebarState();
@@ -134,6 +134,11 @@ namespace VixzDesktop
                 VideoWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                 VideoWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
                 VideoWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
+
+                // Inject GDPR/consent cookies so YouTube never shows "Before you continue to YouTube"
+                // The sync log shows consent.youtube.com?gl=GB intercepting every navigation in this GB session.
+                // SOCS=CAI = "consent accepted, no personalisation". Must be set on both youtube.com and google.com.
+                WebViewManager.EnsureConsentCookiesAsync(VideoWebView.CoreWebView2);
 
                 // Map virtual host https://vixz.app to local WebAssets for valid secure origin
                 var webAssets = Path.Combine(appData, "WebAssets");
@@ -213,6 +218,7 @@ namespace VixzDesktop
         var currentVideoId = urlParams.get('v') || '';
         var startSec = parseFloat(urlParams.get('t') || '0') || 0;
         var preferredQuality = urlParams.get('vq') || 'hd1080';
+        var _fallbackFired = false; // guard: only one fallback message per video load
 
         function applyHighQuality() {
             try {
@@ -242,7 +248,8 @@ namespace VixzDesktop
                         'modestbranding': 1,
                         'iv_load_policy': 3,
                         'enablejsapi': 1,
-                        'origin': window.location.origin || 'https://vixz.app',
+                        'origin': 'https://www.youtube.com',
+                        'widget_referrer': 'https://www.youtube.com/',
                         'start': Math.floor(startSec),
                         'vq': preferredQuality,
                         'hd': 1
@@ -259,6 +266,25 @@ namespace VixzDesktop
                             setTimeout(function() { try { e.target.unMute(); applyHighQuality(); if (e.target.getPlayerState() !== 1) e.target.playVideo(); } catch(err) {} }, 750);
                             setTimeout(applyHighQuality, 1500);
                             setTimeout(applyHighQuality, 3000);
+                            // Sign-in wall detector: if still unstarted (-1) after 6s, the
+                            // YouTube session has expired and the embed is showing a login wall.
+                            // YouTube does NOT fire onError in this case — we must detect it here.
+                            // We send PLAYER_SIGNINWALL (not PLAYER_STREAM_FALLBACK) so C# can
+                            // open the sign-in window rather than try the stream engine.
+                            var _readyVideoId = currentVideoId;
+                            setTimeout(function() {
+                                try {
+                                    if (_fallbackFired) return; // onError already handled it
+                                    var state = e.target.getPlayerState();
+                                    // state -1=unstarted means sign-in wall blocking.
+                                    // 1=playing, 2=paused, 3=buffering, 5=cued are all OK.
+                                    if (state === -1 && _readyVideoId && window.chrome && window.chrome.webview) {
+                                        _fallbackFired = true;
+                                        console.warn('[Vixz] Player stuck unstarted at 6s — sign-in wall detected, triggering SIGNINWALL for', _readyVideoId);
+                                        window.chrome.webview.postMessage('PLAYER_SIGNINWALL:' + _readyVideoId);
+                                    }
+                                } catch(err) {}
+                            }, 6000);
                         },
                         'onStateChange': onPlayerStateChange,
                         'onPlaybackQualityChange': function(e) {
@@ -267,11 +293,13 @@ namespace VixzDesktop
                             }
                         },
                         'onError': function(e) {
+                            if (_fallbackFired) return; // prevent looping
+                            _fallbackFired = true;
                             console.warn('[Vixz Player] YT.Player error code:', e.data);
                             if (window.chrome && window.chrome.webview) {
                                 window.chrome.webview.postMessage('PLAYER_ERROR:' + e.data);
                             }
-                            if (e.data === 101 || e.data === 150 || e.data === 2) {
+                            if (e.data === 101 || e.data === 150 || e.data === 153 || e.data === 2) {
                                 if (window.chrome && window.chrome.webview) {
                                     window.chrome.webview.postMessage('PLAYER_STREAM_FALLBACK:' + (currentVideoId || ''));
                                 }
@@ -291,7 +319,7 @@ namespace VixzDesktop
             var pdiv = document.getElementById('player');
             if (!pdiv) return;
             var startParam = sec > 0 ? '&start=' + Math.floor(sec) : '';
-            var originParam = '&origin=' + encodeURIComponent(window.location.origin || 'https://vixz.app');
+            var originParam = '&origin=' + encodeURIComponent('https://www.youtube.com') + '&widget_referrer=' + encodeURIComponent('https://www.youtube.com/');
             pdiv.innerHTML = '<iframe id=""fallback-yt-frame"" src=""https://www.youtube.com/embed/' + vid + '?autoplay=1&playsinline=1&controls=1&rel=0&enablejsapi=1' + originParam + startParam + '"" style=""width:100%;height:100%;border:none;position:absolute;top:0;left:0;"" allow=""accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"" allowfullscreen></iframe>';
         }
 
@@ -311,6 +339,9 @@ namespace VixzDesktop
                 fallbackToDirectIframe(currentVideoId, startSec);
             }
         }, 4000);
+
+
+
 
         function onPlayerStateChange(event) {
             if (event.data === 1) { // Playing
@@ -404,6 +435,7 @@ namespace VixzDesktop
 
         function loadVideo(vid, seekTime, quality) {
             currentVideoId = vid;
+            _fallbackFired = false; // reset for each new video load
             if (quality) preferredQuality = quality;
             var targetSec = parseFloat(seekTime || '0') || 0;
 
@@ -772,6 +804,17 @@ namespace VixzDesktop
                                 headers
                             );
                         }
+                        else if (uri.Contains("youtube.com"))
+                        {
+                            try
+                            {
+                                if (!args.Request.Headers.Contains("Referer") || string.IsNullOrWhiteSpace(args.Request.Headers.GetHeader("Referer")))
+                                {
+                                    args.Request.Headers.SetHeader("Referer", "https://www.youtube.com/");
+                                }
+                            }
+                            catch { }
+                        }
                     }
                     catch { }
                 };
@@ -848,6 +891,38 @@ namespace VixzDesktop
                     }
                     // All other navigations are cancelled (args.Cancel = true above)
                 };
+
+                // Sub-frame challenge interceptor — catches YouTube's bot-check / age-gate page
+                // when it navigates INSIDE the embed iframe (cross-origin, so JS can't see it).
+                // FrameNavigationStarting fires in C# before any content is rendered, giving us
+                // a clean opportunity to trigger the stream fallback instead.
+                VideoWebView.CoreWebView2.FrameCreated += (s, frameArgs) =>
+                {
+                    frameArgs.Frame.NavigationStarting += (frameSender, navArgs) =>
+                    {
+                        try
+                        {
+                            var uri = navArgs.Uri ?? string.Empty;
+                            bool isChallenge =
+                                uri.Contains("accounts.google.com") ||
+                                uri.Contains("consent.youtube.com") ||
+                                uri.Contains("/verify") ||
+                                uri.Contains("challenge") ||
+                                (uri.Contains("youtube.com") && uri.Contains("signin"));
+
+                            if (isChallenge && _currentVideo != null)
+                            {
+                                var videoId = _currentVideo.Id;
+                                System.Diagnostics.Debug.WriteLine($"[Vixz] Sub-frame challenge detected for {videoId}: {uri}");
+                                Dispatcher.InvokeAsync(() =>
+                                {
+                                    VideoWebView.CoreWebView2?.PostWebMessageAsString($"PLAYER_STREAM_FALLBACK:{videoId}");
+                                });
+                            }
+                        }
+                        catch { }
+                    };
+                };
             }
             catch (Exception ex)
             {
@@ -875,12 +950,14 @@ namespace VixzDesktop
                 else if (msg.StartsWith("PLAYER_STREAM_FALLBACK:"))
                 {
                     var vid = msg.Substring("PLAYER_STREAM_FALLBACK:".Length);
+                    System.Diagnostics.Debug.WriteLine($"[Vixz] PLAYER_STREAM_FALLBACK triggered for: {vid}");
                     if (!string.IsNullOrEmpty(vid))
                     {
                         _ = Dispatcher.InvokeAsync(async () =>
                         {
                             try
                             {
+                                ShowToast("⚙️ Embed blocked — trying stream engine…");
                                 var streamUrl = await YouTubeService.GetStreamUrlAsync(vid);
                                 if (!string.IsNullOrEmpty(streamUrl))
                                 {
@@ -889,13 +966,41 @@ namespace VixzDesktop
                                     await VideoWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {curSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{vid}')");
                                     ShowToast("🛡️ Fallback: Playing via stream engine");
                                 }
+                                else
+                                {
+                                    // Stream engine can't get this video — owner has disabled embedding.
+                                    var youtubeUrl = $"https://www.youtube.com/watch?v={vid}";
+                                    try { Clipboard.SetText(youtubeUrl); } catch { }
+                                    ShowToast("🔒 This video can't be played here — the owner has disabled embedding.\nYouTube link copied to clipboard!");
+                                }
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[Vixz] Stream fallback failed: {ex.Message}");
+                                System.Diagnostics.Debug.WriteLine($"[Vixz] Stream fallback exception: {ex.Message}");
+                                var youtubeUrl = $"https://www.youtube.com/watch?v={vid}";
+                                try { Clipboard.SetText(youtubeUrl); } catch { }
+                                ShowToast("🔒 This video can't be played here — the owner has disabled embedding.\nYouTube link copied to clipboard!");
                             }
                         });
                     }
+                }
+                else if (msg.StartsWith("PLAYER_SIGNINWALL:"))
+                {
+                    // 6s timeout detected sign-in wall (session expired, not an embed-disabled video).
+                    // Open the sign-in window. After success, re-play the current video.
+                    var vid = msg.Substring("PLAYER_SIGNINWALL:".Length);
+                    System.Diagnostics.Debug.WriteLine($"[Vixz] PLAYER_SIGNINWALL detected for: {vid}");
+                    _ = Dispatcher.InvokeAsync(() =>
+                    {
+                        ShowToast("⚠️ YouTube session expired — please sign in again");
+                        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
+                        t.Tick += (ts, te) =>
+                        {
+                            t.Stop();
+                            OpenSignInWindow_Click(this, new RoutedEventArgs());
+                        };
+                        t.Start();
+                    });
                 }
                 else if (msg == "VIDEO_ENDED")
                 {
@@ -1112,14 +1217,18 @@ namespace VixzDesktop
         {
             DateFilterCombo.SelectedIndex = 0;
             DurationFilterCombo.SelectedIndex = 0;
-            SortByFilterCombo.SelectedIndex = 0;
+            SortByFilterCombo.SelectedIndex = 1;
             _currentFeed = _rawUnfilteredFeed.ToList();
             VideoItemsControl.ItemsSource = _currentFeed;
             ShowToast("Filters reset");
         }
 
+        private int _feedBatchIndex = 0;
+
         private async void NavHome_Click(object sender, RoutedEventArgs e)
         {
+            _feedBatchIndex = 0;
+            _currentSearchQuery = null;
             _isDiscoveryFeed = true;
             SwitchToFeedView();
             await LoadFeedAsync("Recommended Feed", () => YouTubeService.GetHomeFeedAsync());
@@ -1127,6 +1236,8 @@ namespace VixzDesktop
 
         private async void NavSubscriptions_Click(object sender, RoutedEventArgs e)
         {
+            _feedBatchIndex = 0;
+            _currentSearchQuery = null;
             _isDiscoveryFeed = true;
             SwitchToFeedView();
             await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
@@ -1155,8 +1266,8 @@ namespace VixzDesktop
         private void RefreshSubscribedChannelsUi()
         {
             SubscribedChannelsList.ItemsSource = null;
-            SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
-            SubscribersHeader.Text = $"👤 Subscriptions ({WillRyanProfileData.SubscribedChannels.Count})";
+            SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
+            SubscribersHeader.Text = $"👤 Subscriptions ({UserProfileData.SubscribedChannels.Count})";
             UpdateSubscribeToggleBtn();
         }
 
@@ -1164,7 +1275,7 @@ namespace VixzDesktop
         {
             if (sender is FrameworkElement elem && elem.Tag is string channelName)
             {
-                WillRyanProfileData.RemoveSubscribedChannel(channelName);
+                UserProfileData.RemoveSubscribedChannel(channelName);
                 RefreshSubscribedChannelsUi();
                 ShowToast($"Unsubscribed from {channelName}");
             }
@@ -1238,7 +1349,7 @@ namespace VixzDesktop
                 var val = txtBox.Text.Trim();
                 if (!string.IsNullOrWhiteSpace(val))
                 {
-                    WillRyanProfileData.AddSubscribedChannel(val);
+                    UserProfileData.AddSubscribedChannel(val);
                     RefreshSubscribedChannelsUi();
                     ShowToast($"Subscribed to {val}");
                     prompt.Close();
@@ -1300,7 +1411,7 @@ namespace VixzDesktop
             void PopulateList()
             {
                 listStack.Children.Clear();
-                if (WillRyanProfileData.SubscribedChannels.Count == 0)
+                if (UserProfileData.SubscribedChannels.Count == 0)
                 {
                     listStack.Children.Add(new TextBlock
                     {
@@ -1313,7 +1424,7 @@ namespace VixzDesktop
                     return;
                 }
 
-                foreach (var ch in WillRyanProfileData.SubscribedChannels.ToList())
+                foreach (var ch in UserProfileData.SubscribedChannels.ToList())
                 {
                     var row = new Grid { Margin = new Thickness(0, 2, 0, 2) };
                     row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -1341,7 +1452,7 @@ namespace VixzDesktop
                     {
                         if (s is FrameworkElement fe && fe.Tag is string c)
                         {
-                            WillRyanProfileData.RemoveSubscribedChannel(c);
+                            UserProfileData.RemoveSubscribedChannel(c);
                             RefreshSubscribedChannelsUi();
                             PopulateList();
                         }
@@ -1373,7 +1484,7 @@ namespace VixzDesktop
             };
             clearAllBtn.Click += (s, ev) =>
             {
-                WillRyanProfileData.ClearAllSubscribedChannels();
+                UserProfileData.ClearAllSubscribedChannels();
                 RefreshSubscribedChannelsUi();
                 PopulateList();
                 ShowToast("Cleared all subscriptions");
@@ -1388,7 +1499,7 @@ namespace VixzDesktop
             };
             restoreBtn.Click += (s, ev) =>
             {
-                WillRyanProfileData.RestoreDefaultChannels();
+                UserProfileData.RestoreDefaultChannels();
                 RefreshSubscribedChannelsUi();
                 PopulateList();
                 ShowToast("Restored default channels");
@@ -1535,14 +1646,14 @@ namespace VixzDesktop
             if (_currentVideo == null || string.IsNullOrWhiteSpace(_currentVideo.ChannelTitle)) return;
             var channel = _currentVideo.ChannelTitle.Trim();
 
-            if (WillRyanProfileData.IsSubscribed(channel))
+            if (UserProfileData.IsSubscribed(channel))
             {
-                WillRyanProfileData.RemoveSubscribedChannel(channel);
+                UserProfileData.RemoveSubscribedChannel(channel);
                 ShowToast($"Unsubscribed from {channel}");
             }
             else
             {
-                WillRyanProfileData.AddSubscribedChannel(channel);
+                UserProfileData.AddSubscribedChannel(channel);
                 ShowToast($"Subscribed to {channel}!");
             }
             RefreshSubscribedChannelsUi();
@@ -1557,7 +1668,7 @@ namespace VixzDesktop
             }
 
             SubscribeToggleBtn.Visibility = Visibility.Visible;
-            bool isSubbed = WillRyanProfileData.IsSubscribed(_currentVideo.ChannelTitle);
+            bool isSubbed = UserProfileData.IsSubscribed(_currentVideo.ChannelTitle);
             if (isSubbed)
             {
                 SubscribeToggleBtn.Content = "✓ Subscribed";
@@ -1867,7 +1978,7 @@ namespace VixzDesktop
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
             string? spParam = null;
-            if (sortByTag == "latest") spParam = "CAI%3D";
+            if (sortByTag == "latest") spParam = "CAISAhAB";
             else if (sortByTag == "views") spParam = "CAM%3D";
             else if (dateTag == "today") spParam = "EgIIAg%3D%3D";
             else if (dateTag == "week") spParam = "EgIIAw%3D%3D";
@@ -1881,9 +1992,44 @@ namespace VixzDesktop
             SwitchToFeedView();
             FeedTitleText.Text = $"🔍 Search: \"{query}\"";
 
-            var results = await YouTubeService.SearchVideosAsync(query, 50, spFilter: spParam);
-            _rawUnfilteredFeed = results;
-            _currentFeed = YouTubeService.ApplyLocalFilters(results, dateTag, durationTag, sortByTag);
+            // If query matches a creator or subscribed channel (or is 1-3 words), also query channel directly in parallel
+            var isCreator = UserProfileData.IsSubscribed(query) ||
+                            YouTubeService.VerifiedHandles.ContainsKey(query) ||
+                            query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries).Length <= 3;
+
+            Task<List<VideoItem>>? channelTask = null;
+            if (isCreator)
+            {
+                channelTask = YouTubeService.GetChannelVideosFeedAsync(query);
+            }
+
+            var searchTask = YouTubeService.SearchVideosAsync(query, 50, spFilter: spParam, sortByUploadDate: sortByTag == "latest");
+
+            var tasks = channelTask != null ? new[] { searchTask, channelTask } : new[] { searchTask };
+            await Task.WhenAll(tasks);
+
+            var combined = new List<VideoItem>();
+            if (channelTask != null && channelTask.Result != null)
+            {
+                combined.AddRange(channelTask.Result);
+            }
+            if (searchTask.Result != null)
+            {
+                combined.AddRange(searchTask.Result);
+            }
+
+            var uniqueVideos = combined.GroupBy(v => v.Id).Select(g => g.First()).ToList();
+
+            // Rank with dominant recency scoring so fresh uploads from minutes/hours ago appear at top!
+            var ranked = RecommendationEngine.ScoreAndRankVideos(
+                uniqueVideos,
+                StorageService.Settings.Favorites,
+                StorageService.Settings.WatchHistory,
+                UserProfileData.SubscribedChannels
+            );
+
+            _rawUnfilteredFeed = ranked;
+            _currentFeed = YouTubeService.ApplyLocalFilters(ranked, dateTag, durationTag, sortByTag);
             VideoItemsControl.ItemsSource = _currentFeed;
             LoadingSpinner.Visibility = Visibility.Collapsed;
         }
@@ -1920,6 +2066,18 @@ namespace VixzDesktop
                 if (!string.IsNullOrWhiteSpace(_currentSearchQuery))
                 {
                     moreVideos = await YouTubeService.FetchNextSearchBatchAsync(_currentSearchQuery, existingIds, 35);
+                }
+                else if (_isDiscoveryFeed)
+                {
+                    _feedBatchIndex++;
+                    var nextBatch = await YouTubeService.FetchSubscribedProfileFeedAsync(batchIndex: _feedBatchIndex, batchSize: 25);
+                    var ranked = RecommendationEngine.ScoreAndRankVideos(
+                        nextBatch,
+                        StorageService.Settings.Favorites,
+                        StorageService.Settings.WatchHistory,
+                        UserProfileData.SubscribedChannels
+                    );
+                    moreVideos = ranked.Where(v => !existingIds.Contains(v.Id)).ToList();
                 }
                 else
                 {
@@ -3616,13 +3774,39 @@ namespace VixzDesktop
             if (_isSyncingAccount) return StorageService.Settings.UserAccount;
             _isSyncingAccount = true;
 
+            var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop", "account_sync.log");
+
             try
             {
+                // ── Step 1: Try VideoWebView first ──────────────────────────────────────
+                // It's already warm, authenticated, and on a live YouTube page — no extra
+                // navigation needed. This avoids triggering YouTube's bot-detection throttle
+                // that was causing the BackgroundSyncWebView to get a signed-out 154KB page.
+                if (VideoWebView?.CoreWebView2 != null)
+                {
+                    var src = VideoWebView.Source?.ToString() ?? "";
+                    // Only run on actual YouTube pages — not vixz.app/player.html
+                    if (src.Contains("youtube.com") || src.Contains("google.com"))
+                    {
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] Trying VideoWebView extraction on: {src}\n");
+                        var quick = await AccountSyncService.ExtractAndUpdateAccountAsync(VideoWebView.CoreWebView2);
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] VideoWebView result: Name='{quick?.DisplayName}', Email='{quick?.Email}'\n");
+                        if (quick != null && !string.IsNullOrWhiteSpace(quick.Email))
+                        {
+                            UpdateAccountUi();
+                            if (!silent) ShowToast($"✅ Connected as {quick.Email}");
+                            return quick;
+                        }
+                    }
+                }
+
+                // ── Step 2: BackgroundSyncWebView with consent cookies pre-injected ────
                 BackgroundSyncWebView.Visibility = Visibility.Visible;
                 var env = await WebViewManager.GetEnvironmentAsync();
                 await BackgroundSyncWebView.EnsureCoreWebView2Async(env);
                 await WebViewManager.MaskWebViewIndicatorsAsync(BackgroundSyncWebView.CoreWebView2);
                 BackgroundSyncWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
+                WebViewManager.EnsureConsentCookiesAsync(BackgroundSyncWebView.CoreWebView2);
 
                 bool hasAuth = await WebViewManager.HasYouTubeAuthCookiesAsync(BackgroundSyncWebView.CoreWebView2);
                 if (!hasAuth)
@@ -3631,8 +3815,7 @@ namespace VixzDesktop
                     return null;
                 }
 
-                var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop", "account_sync.log");
-                File.AppendAllText(logFile, $"[{DateTime.Now}] Starting sync... HasAuth={hasAuth}\n");
+                File.AppendAllText(logFile, $"[{DateTime.Now}] Starting BackgroundSyncWebView sync... HasAuth={hasAuth}\n");
 
                 var tcs = new TaskCompletionSource<bool>();
                 void OnNavCompleted(object? s, CoreWebView2NavigationCompletedEventArgs e)
@@ -3652,20 +3835,17 @@ namespace VixzDesktop
                 {
                     UserAccount? updated = null;
 
-                    // Poll up to 4 attempts on youtube.com waiting for Polymer topbar to hydrate
                     for (int attempt = 1; attempt <= 4; attempt++)
                     {
                         await Task.Delay(attempt == 1 ? 1200 : 1500);
                         updated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
-                        File.AppendAllText(logFile, $"[{DateTime.Now}] YouTube attempt {attempt}: Name='{updated?.DisplayName}', Email='{updated?.Email}', Avatar='{updated?.AvatarUrl}'\n");
-                        if (updated != null && !string.IsNullOrWhiteSpace(updated.Email) && updated.DisplayName != "Google User")
-                        {
+                        File.AppendAllText(logFile, $"[{DateTime.Now}] Attempt {attempt}: Name='{updated?.DisplayName}', Email='{updated?.Email}', Avatar='{updated?.AvatarUrl}'\n");
+                        if (updated != null && !string.IsNullOrWhiteSpace(updated.Email))
                             break;
-                        }
                     }
 
-                    // Fallback 1: Navigate to https://www.youtube.com/account (dedicated profile & channel page)
-                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email) || updated.DisplayName == "Google User")
+                    // Fallback: youtube.com/account if main page gave signed-out response
+                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email))
                     {
                         var tcsAccount = new TaskCompletionSource<bool>();
                         void OnAccountNav(object? s, CoreWebView2NavigationCompletedEventArgs e)
@@ -3682,35 +3862,12 @@ namespace VixzDesktop
                         {
                             await Task.Delay(1500);
                             var accUpdated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
-                            File.AppendAllText(logFile, $"[{DateTime.Now}] Extracted from /account: Name='{accUpdated?.DisplayName}', Email='{accUpdated?.Email}', Avatar='{accUpdated?.AvatarUrl}'\n");
+                            File.AppendAllText(logFile, $"[{DateTime.Now}] /account result: Name='{accUpdated?.DisplayName}', Email='{accUpdated?.Email}'\n");
                             if (accUpdated != null) updated = accUpdated;
                         }
                     }
 
-                    // Fallback 2: Navigate to https://myaccount.google.com (to get real full name and profile details)
-                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email) || updated.DisplayName == "Google User" || updated.DisplayName.Contains("@"))
-                    {
-                        var tcsMyAcc = new TaskCompletionSource<bool>();
-                        void OnMyAccNav(object? s, CoreWebView2NavigationCompletedEventArgs e)
-                        {
-                            BackgroundSyncWebView.CoreWebView2.NavigationCompleted -= OnMyAccNav;
-                            tcsMyAcc.TrySetResult(e.IsSuccess);
-                        }
-                        BackgroundSyncWebView.CoreWebView2.NavigationCompleted += OnMyAccNav;
-                        BackgroundSyncWebView.CoreWebView2.Navigate("https://myaccount.google.com");
-                        var compMyAcc = await Task.WhenAny(tcsMyAcc.Task, Task.Delay(8000));
-                        bool myAccNavOk = compMyAcc == tcsMyAcc.Task && await tcsMyAcc.Task;
-                        File.AppendAllText(logFile, $"[{DateTime.Now}] Navigation to myaccount.google.com: {myAccNavOk}\n");
-                        if (myAccNavOk)
-                        {
-                            await Task.Delay(1500);
-                            var gUpdated = await AccountSyncService.ExtractAndUpdateAccountAsync(BackgroundSyncWebView.CoreWebView2);
-                            File.AppendAllText(logFile, $"[{DateTime.Now}] Extracted from myaccount.google.com: Name='{gUpdated?.DisplayName}', Email='{gUpdated?.Email}', Avatar='{gUpdated?.AvatarUrl}'\n");
-                            if (gUpdated != null) updated = gUpdated;
-                        }
-                    }
-
-                    if (updated != null)
+                    if (updated != null && !string.IsNullOrWhiteSpace(updated.Email))
                     {
                         UpdateAccountUi();
                         if (!silent)
@@ -3720,11 +3877,16 @@ namespace VixzDesktop
                         }
                         return updated;
                     }
+
+                    // Sync failed to get account from YouTube main page.
+                    // The BackgroundSyncWebView may be getting a bot-throttle page (111KB).
+                    // This is transient — don't prompt sign-in here, as it causes a loop.
+                    // The user can manually sign in via the account button.
+                    File.AppendAllText(logFile, $"[{DateTime.Now}] Sync: could not extract account info — possibly throttled, will retry next cycle\n");
                 }
             }
             catch (Exception ex)
             {
-                var logFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VixzDesktop", "account_sync.log");
                 File.AppendAllText(logFile, $"[{DateTime.Now}] Sync error: {ex}\n");
                 System.Diagnostics.Debug.WriteLine($"Account sync error: {ex.Message}");
             }
@@ -3795,12 +3957,39 @@ namespace VixzDesktop
             ShowToast("✅ Subscriptions & feed synced!");
         }
 
-        private void SignOutAccount_Click(object sender, RoutedEventArgs e)
+        private async void SignOutAccount_Click(object sender, RoutedEventArgs e)
         {
             AccountPopup.IsOpen = false;
+
+            // Clear the stored account first
             StorageService.SignOutUser();
             UpdateAccountUi();
-            ShowToast("🚪 Signed out of Google Account");
+
+            // Clear YouTube + Google auth cookies from the shared WebView2 profile
+            // so HasYouTubeAuthCookiesAsync returns false on next sync
+            try
+            {
+                var coreWv2 = VideoWebView.CoreWebView2;
+                if (coreWv2 != null)
+                {
+                    // Wipe all cookies in the profile — this is a full sign-out
+                    coreWv2.CookieManager.DeleteAllCookies();
+
+                    // Also hit Google's sign-out endpoint to invalidate the server-side session
+                    var env = await WebViewManager.GetEnvironmentAsync();
+                    await BackgroundSyncWebView.EnsureCoreWebView2Async(env);
+                    BackgroundSyncWebView.CoreWebView2?.Navigate("https://accounts.google.com/Logout");
+                    await Task.Delay(1500);
+                    BackgroundSyncWebView.CoreWebView2?.Navigate("about:blank");
+                    BackgroundSyncWebView.Visibility = Visibility.Collapsed;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Vixz] Sign-out cookie clear error: {ex.Message}");
+            }
+
+            ShowToast("🚪 Signed out — cookies cleared");
         }
 
         #endregion
@@ -3969,11 +4158,11 @@ namespace VixzDesktop
 
                 if (folderName == "All")
                 {
-                    SubscribedChannelsList.ItemsSource = WillRyanProfileData.SubscribedChannels;
+                    SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
                 }
                 else if (StorageService.Settings.SubscriptionFolders.TryGetValue(folderName, out var channels))
                 {
-                    var matched = WillRyanProfileData.SubscribedChannels
+                    var matched = UserProfileData.SubscribedChannels
                         .Where(c => channels.Any(ch => c.IndexOf(ch, StringComparison.OrdinalIgnoreCase) >= 0 || ch.IndexOf(c, StringComparison.OrdinalIgnoreCase) >= 0))
                         .ToList();
                     
@@ -4136,11 +4325,17 @@ namespace VixzDesktop
         private void AiSettingsBtn_Click(object sender, RoutedEventArgs e)
         {
             var currentKey = StorageService.Settings.GeminiApiKey ?? "";
+            if (string.IsNullOrWhiteSpace(currentKey))
+            {
+                var autoKey = AiCopilotService.TryDetectLocalFreeLlmApiKey();
+                if (!string.IsNullOrWhiteSpace(autoKey)) currentKey = autoKey;
+            }
+
             var prompt = new Window
             {
                 Title = "⚙️ Vixz AI Brain Settings",
-                Width = 470,
-                Height = 280,
+                Width = 540,
+                Height = 390,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Owner = this,
                 Background = (System.Windows.Media.Brush)FindResource("BgDarkPrimary"),
@@ -4152,7 +4347,7 @@ namespace VixzDesktop
             var sp = new StackPanel { Margin = new Thickness(18) };
             var heading = new TextBlock
             {
-                Text = "⚡ Connect Real AI (Gemini / Groq / OpenAI)",
+                Text = "⚡ Connect Real AI (Gemini / Groq / OpenAI / FreeLLMAPI)",
                 FontSize = 14,
                 FontWeight = FontWeights.Bold,
                 Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
@@ -4160,12 +4355,71 @@ namespace VixzDesktop
             };
             var desc = new TextBlock
             {
-                Text = "Paste your free API key from Google AI Studio (Gemini 2.0 / 1.5 Flash), Groq, or OpenAI to enable full conversational ChatGPT-level intelligence and video reasoning:",
+                Text = "Paste your API key below. Supported providers:\n• Google Gemini (AIzaSy...) — free, recommended, no VPN issues\n• Groq (gsk_...) — fast, free tier\n• OpenAI (sk-...) — paid\n• FreeLLMAPI (freellma...) — local proxy, works behind any VPN",
                 FontSize = 11.5,
                 Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 12)
+                Margin = new Thickness(0, 0, 0, 10)
             };
+
+            var linkRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+
+            var autoDetectBtn = new Button
+            {
+                Content = "⚡ Auto-Detect FreeLLMAPI",
+                Style = (Style)FindResource("GlassButton"),
+                Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                FontSize = 11,
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 8, 0),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+
+            var linkBtn = new Button
+            {
+                Content = "🌐 Get Gemini Key",
+                Style = (Style)FindResource("GlassButton"),
+                FontSize = 11,
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(0, 0, 8, 0),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            linkBtn.Click += (s, ev) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://aistudio.google.com/apikey",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            };
+
+            var freeLlmBtn = new Button
+            {
+                Content = "🔌 FreeLLMAPI Site",
+                Style = (Style)FindResource("GlassButton"),
+                FontSize = 11,
+                Padding = new Thickness(10, 5, 10, 5),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            freeLlmBtn.Click += (s, ev) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://freellmapi.com",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            };
+            linkRow.Children.Add(autoDetectBtn);
+            linkRow.Children.Add(linkBtn);
+            linkRow.Children.Add(freeLlmBtn);
 
             var txtBox = new TextBox
             {
@@ -4175,10 +4429,72 @@ namespace VixzDesktop
                 BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle"),
                 FontSize = 12,
                 Padding = new Thickness(8, 6, 8, 6),
-                Margin = new Thickness(0, 0, 0, 14)
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var statusBlock = new TextBlock
+            {
+                Text = "",
+                FontSize = 11,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+
+            autoDetectBtn.Click += async (s, ev) =>
+            {
+                var detected = AiCopilotService.TryDetectLocalFreeLlmApiKey();
+                if (!string.IsNullOrWhiteSpace(detected))
+                {
+                    txtBox.Text = detected;
+                    statusBlock.Text = "⏳ Testing detected FreeLLMAPI key...";
+                    statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary");
+                    var (ok, msg, resKey) = await AiCopilotService.ValidateApiKeyAsync(detected);
+                    statusBlock.Text = msg;
+                    statusBlock.Foreground = ok
+                        ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen)
+                        : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7043"));
+                }
+                else
+                {
+                    statusBlock.Text = "⚠️ FreeLLMAPI desktop app not found or not initialized.";
+                    statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
+                }
             };
 
             var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+            var testBtn = new Button
+            {
+                Content = "Test Key",
+                Style = (Style)FindResource("GlassButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            testBtn.Click += async (s, ev) =>
+            {
+                var val = txtBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(val))
+                {
+                    statusBlock.Text = "⚠️ Please enter an API key to test.";
+                    statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
+                    return;
+                }
+                statusBlock.Text = "⏳ Testing API connection...";
+                statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary");
+                testBtn.IsEnabled = false;
+
+                var (ok, msg, resKey) = await AiCopilotService.ValidateApiKeyAsync(val);
+                if (!string.IsNullOrWhiteSpace(resKey) && resKey != val)
+                {
+                    txtBox.Text = resKey;
+                }
+                statusBlock.Text = msg;
+                statusBlock.Foreground = ok
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen)
+                    : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7043"));
+                testBtn.IsEnabled = true;
+            };
+
             var clearBtn = new Button
             {
                 Content = "Clear Key",
@@ -4208,16 +4524,19 @@ namespace VixzDesktop
                 var val = txtBox.Text.Trim();
                 StorageService.Settings.GeminiApiKey = string.IsNullOrWhiteSpace(val) ? null : val;
                 StorageService.Save();
-                ShowToast("✨ AI Brain Connected Successfully!");
+                ShowToast("✨ AI Brain Settings Saved!");
                 prompt.Close();
             };
 
+            btnRow.Children.Add(testBtn);
             btnRow.Children.Add(clearBtn);
             btnRow.Children.Add(saveBtn);
 
             sp.Children.Add(heading);
             sp.Children.Add(desc);
+            sp.Children.Add(linkRow);
             sp.Children.Add(txtBox);
+            sp.Children.Add(statusBlock);
             sp.Children.Add(btnRow);
 
             prompt.Content = sp;
@@ -4408,9 +4727,9 @@ namespace VixzDesktop
             _ = SubmitAiCommandAsync("Summarise this video");
         }
 
-        private void AiChipBenny_Click(object sender, RoutedEventArgs e)
+        private void AiChipLofi_Click(object sender, RoutedEventArgs e)
         {
-            _ = SubmitAiCommandAsync("Play the latest Benny Johnson video");
+            _ = SubmitAiCommandAsync("Play Lofi Beats live");
         }
 
         private void AiChipTimer_Click(object sender, RoutedEventArgs e)
@@ -4602,7 +4921,7 @@ namespace VixzDesktop
             var mainContainer = new StackPanel
             {
                 Margin = new Thickness(0, 4, 10, 8),
-                HorizontalAlignment = HorizontalAlignment.Left
+                HorizontalAlignment = HorizontalAlignment.Stretch
             };
 
             // 1. Text Message
@@ -4639,7 +4958,8 @@ namespace VixzDesktop
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(12),
                     Padding = new Thickness(14, 14, 14, 14),
-                    Margin = new Thickness(0, 4, 0, 6)
+                    Margin = new Thickness(0, 4, 0, 6),
+                    HorizontalAlignment = HorizontalAlignment.Stretch
                 };
 
                 var cardStack = new StackPanel();
@@ -4652,35 +4972,56 @@ namespace VixzDesktop
                         Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2E1A1A")),
                         BorderBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7043")),
                         BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(6),
-                        Padding = new Thickness(8, 5, 8, 5),
-                        Margin = new Thickness(0, 0, 0, 8)
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(10, 8, 10, 8),
+                        Margin = new Thickness(0, 0, 0, 10)
                     };
+
+                    var warnStack = new StackPanel();
                     var warnText = new TextBlock
                     {
                         Text = sum.AuthWarning,
                         Foreground = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FFAA88")),
                         FontSize = 11,
+                        LineHeight = 16,
                         TextWrapping = TextWrapping.Wrap
                     };
-                    warnBorder.Child = warnText;
+                    warnStack.Children.Add(warnText);
+
+                    var openSettingsBtn = new Button
+                    {
+                        Content = "⚙️ Configure AI Brain",
+                        Style = (Style)FindResource("GlassButton"),
+                        FontSize = 10.5,
+                        Padding = new Thickness(8, 3, 8, 3),
+                        Margin = new Thickness(0, 6, 0, 0),
+                        HorizontalAlignment = HorizontalAlignment.Left
+                    };
+                    openSettingsBtn.Click += (s, ev) => AiSettingsBtn_Click(s, ev);
+                    warnStack.Children.Add(openSettingsBtn);
+
+                    warnBorder.Child = warnStack;
                     cardStack.Children.Add(warnBorder);
                 }
 
                 // TL;DR Header & Source Citation
-                var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var headerPanel = new WrapPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Margin = new Thickness(0, 0, 0, 8),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
 
                 var tldrHeader = new TextBlock
                 {
                     Text = "📌 EXECUTIVE SUMMARY",
                     Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
                     FontSize = 12,
-                    FontWeight = FontWeights.Bold
+                    FontWeight = FontWeights.Bold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 10, 4)
                 };
-                Grid.SetColumn(tldrHeader, 0);
-                headerGrid.Children.Add(tldrHeader);
+                headerPanel.Children.Add(tldrHeader);
 
                 if (!string.IsNullOrWhiteSpace(sum.SourceCitation))
                 {
@@ -4690,7 +5031,9 @@ namespace VixzDesktop
                         BorderBrush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#374151")),
                         BorderThickness = new Thickness(1),
                         CornerRadius = new CornerRadius(4),
-                        Padding = new Thickness(5, 2, 5, 2)
+                        Padding = new Thickness(6, 2, 6, 2),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 0, 0, 4)
                     };
                     var citeText = new TextBlock
                     {
@@ -4700,11 +5043,10 @@ namespace VixzDesktop
                         FontWeight = FontWeights.SemiBold
                     };
                     citeBadge.Child = citeText;
-                    Grid.SetColumn(citeBadge, 1);
-                    headerGrid.Children.Add(citeBadge);
+                    headerPanel.Children.Add(citeBadge);
                 }
 
-                cardStack.Children.Add(headerGrid);
+                cardStack.Children.Add(headerPanel);
 
                 var tldrBody = new TextBlock
                 {

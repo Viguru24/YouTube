@@ -1,6 +1,4 @@
 using System;
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -13,7 +11,11 @@ namespace VixzDesktop
     public partial class SignInWindow : Window
     {
         public bool IsSuccess { get; private set; } = false;
-        private bool _isDetecting = false;
+
+        // Prevent re-entrant auth detection if multiple NavigationCompleted events fire at once
+        private bool _authDetectionInProgress = false;
+        // Track if we've already successfully closed to avoid double-close
+        private bool _closed = false;
 
         public SignInWindow()
         {
@@ -23,10 +25,7 @@ namespace VixzDesktop
 
         private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left)
-            {
-                DragMove();
-            }
+            if (e.ChangedButton == MouseButton.Left) DragMove();
         }
 
         private async void SignInWindow_Loaded(object sender, RoutedEventArgs e)
@@ -39,81 +38,91 @@ namespace VixzDesktop
             try
             {
                 LoginProgress.Visibility = Visibility.Visible;
-                StatusText.Text = "Connecting to Google / YouTube Sign In...";
+                StatusText.Text = "Connecting to Google sign-in...";
 
+                // Share the same WebView2 profile so cookies are shared with the main window
                 var env = await WebViewManager.GetEnvironmentAsync();
                 await AuthWebView.EnsureCoreWebView2Async(env);
                 await WebViewManager.MaskWebViewIndicatorsAsync(AuthWebView.CoreWebView2);
 
-                // Use standard desktop Chrome User-Agent so Google allows login without WebView2 restrictions
                 AuthWebView.CoreWebView2.Settings.UserAgent = WebViewManager.CommonUserAgent;
                 AuthWebView.CoreWebView2.Settings.AreDevToolsEnabled = true;
                 AuthWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
-                AuthWebView.CoreWebView2.NavigationStarting -= AuthWebView_NavigationStarting;
-                AuthWebView.CoreWebView2.NavigationStarting += AuthWebView_NavigationStarting;
-                AuthWebView.CoreWebView2.NavigationCompleted -= AuthWebView_NavigationCompleted;
-                AuthWebView.CoreWebView2.NavigationCompleted += AuthWebView_NavigationCompleted;
+                // Register handlers (guard against double-registration on reload)
+                AuthWebView.CoreWebView2.NavigationStarting -= OnNavigationStarting;
+                AuthWebView.CoreWebView2.NavigationStarting += OnNavigationStarting;
+                AuthWebView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
+                AuthWebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
 
-                // Navigate directly to YouTube sign-in endpoint
-                var targetUrl = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue";
-                AuthWebView.CoreWebView2.Navigate(targetUrl);
+                // Go straight to Google's YouTube sign-in flow
+                AuthWebView.CoreWebView2.Navigate(
+                    "https://accounts.google.com/ServiceLogin?service=youtube" +
+                    "&passive=true" +
+                    "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue" +
+                    "&hl=en");
             }
             catch (Exception ex)
             {
-                StatusText.Text = $"Error initializing sign-in: {ex.Message}";
+                StatusText.Text = $"Error: {ex.Message}";
                 LoginProgress.Visibility = Visibility.Collapsed;
             }
         }
 
-        private void AuthWebView_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
+        private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
         {
             LoginProgress.Visibility = Visibility.Visible;
-            if (e.Uri.Contains("youtube.com"))
-            {
-                StatusText.Text = "Redirecting to YouTube...";
-            }
-            else if (e.Uri.Contains("accounts.google.com"))
-            {
+            var uri = e.Uri ?? "";
+
+            if (uri.Contains("youtube.com"))
+                StatusText.Text = "Signing in to YouTube...";
+            else if (uri.Contains("accounts.google.com"))
                 StatusText.Text = "🔐 Sign in with your Google account";
-            }
+            else if (uri.Contains("myaccount.google.com"))
+                StatusText.Text = "Loading account details...";
         }
 
-        private async void AuthWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+        private async void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             LoginProgress.Visibility = Visibility.Collapsed;
-            if (AuthWebView.CoreWebView2 == null) return;
+            if (_closed || _authDetectionInProgress || AuthWebView.CoreWebView2 == null) return;
 
             var uri = AuthWebView.CoreWebView2.Source ?? "";
 
-            // Check if user reached YouTube home or signed in state
-            if (uri.Contains("youtube.com") && !_isDetecting)
+            // Only attempt auth detection when we've actually landed on YouTube
+            // (not on the account chooser or any intermediate Google page)
+            if (uri.StartsWith("https://www.youtube.com") || uri.StartsWith("https://m.youtube.com"))
             {
-                await DetectYouTubeAuthenticationAsync();
+                await TryCompleteSignInAsync();
             }
         }
 
-        private async Task DetectYouTubeAuthenticationAsync()
+        private async Task TryCompleteSignInAsync()
         {
-            if (_isDetecting || AuthWebView.CoreWebView2 == null) return;
-            _isDetecting = true;
+            if (_authDetectionInProgress || _closed) return;
+            _authDetectionInProgress = true;
 
             try
             {
-                // Robust multi-cookie check for active login session
-                bool hasLoginCookie = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
+                StatusText.Text = "Checking authentication...";
+                LoginProgress.Visibility = Visibility.Visible;
 
-                if (hasLoginCookie)
+                // Give the page a moment to set cookies
+                await Task.Delay(600);
+
+                bool hasAuth = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
+                if (hasAuth)
                 {
-                    StatusText.Text = "🟢 YouTube Account Authenticated! Finalizing profile...";
+                    StatusText.Text = "✅ Signed in! Loading your profile...";
 
+                    // Extract account info from the live YouTube page
                     var account = await AccountSyncService.ExtractAndUpdateAccountAsync(AuthWebView.CoreWebView2);
-                    if (account == null)
+                    if (account == null || !account.IsSignedIn)
                     {
                         account = new UserAccount
                         {
                             IsSignedIn = true,
-                            DisplayName = "Google Account",
+                            DisplayName = "Google User",
                             Email = "",
                             LastSyncTime = DateTime.UtcNow
                         };
@@ -121,71 +130,83 @@ namespace VixzDesktop
                     }
 
                     var who = !string.IsNullOrWhiteSpace(account.Email) ? account.Email : account.DisplayName;
-                    StatusText.Text = $"🟢 Connected as {who}!";
+                    StatusText.Text = $"✅ Connected as {who}!";
                     IsSuccess = true;
 
-                    await Task.Delay(800);
-                    DialogResult = true;
-                    Close();
-                    return;
+                    await Task.Delay(700);
+                    CloseSuccess();
+                }
+                else
+                {
+                    // Landed on YouTube but no auth cookies — signed-out YouTube page
+                    StatusText.Text = "⚠️ Sign-in not detected yet. Complete the sign-in above, then click Done.";
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Detect auth error: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"[SignIn] Auth detection error: {ex.Message}");
+                StatusText.Text = "Error checking sign-in. Try clicking Done when ready.";
             }
             finally
             {
-                _isDetecting = false;
+                _authDetectionInProgress = false;
+                LoginProgress.Visibility = Visibility.Collapsed;
             }
         }
 
-        private void OpenInBrowserBtn_Click(object sender, RoutedEventArgs e)
+        private void CloseSuccess()
         {
+            if (_closed) return;
+            _closed = true;
             try
             {
-                var targetUrl = "https://accounts.google.com/ServiceLogin?service=youtube&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue";
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = targetUrl,
-                    UseShellExecute = true
-                });
-                StatusText.Text = "🌐 Sign in via browser, then click 'Done / Sync Account' below.";
+                DialogResult = true;
+                Close();
             }
-            catch (Exception ex)
-            {
-                StatusText.Text = $"Could not launch browser: {ex.Message}";
-            }
+            catch { }
         }
 
+        // "Done / Sync Account" button — manual trigger for when auto-detect didn't fire
         private async void DoneBtn_Click(object sender, RoutedEventArgs e)
         {
+            if (_authDetectionInProgress) return;
             LoginProgress.Visibility = Visibility.Visible;
-            StatusText.Text = "Syncing authentication status...";
+            StatusText.Text = "Checking sign-in status...";
 
             try
             {
-                if (AuthWebView.CoreWebView2 != null)
+                if (AuthWebView.CoreWebView2 == null)
                 {
-                    bool hasLoginCookie = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
-
-                    var account = await AccountSyncService.ExtractAndUpdateAccountAsync(AuthWebView.CoreWebView2);
-                    if (account == null)
-                    {
-                        account = new UserAccount
-                        {
-                            IsSignedIn = hasLoginCookie,
-                            DisplayName = hasLoginCookie ? "Google Account" : WillRyanProfileData.ProfileName,
-                            Email = "",
-                            LastSyncTime = DateTime.UtcNow
-                        };
-                        StorageService.SetUserAccount(account);
-                    }
-
-                    IsSuccess = true;
-                    DialogResult = true;
-                    Close();
+                    StatusText.Text = "Browser not ready yet.";
                     return;
+                }
+
+                bool hasAuth = await WebViewManager.HasYouTubeAuthCookiesAsync(AuthWebView.CoreWebView2);
+                var account = await AccountSyncService.ExtractAndUpdateAccountAsync(AuthWebView.CoreWebView2);
+
+                if (account == null)
+                {
+                    account = new UserAccount
+                    {
+                        IsSignedIn = hasAuth,
+                        DisplayName = hasAuth ? "Google User" : "",
+                        Email = "",
+                        LastSyncTime = DateTime.UtcNow
+                    };
+                    StorageService.SetUserAccount(account);
+                }
+
+                if (hasAuth || account.IsSignedIn)
+                {
+                    var who = !string.IsNullOrWhiteSpace(account.Email) ? account.Email : account.DisplayName;
+                    StatusText.Text = $"✅ Connected as {who}!";
+                    IsSuccess = true;
+                    await Task.Delay(500);
+                    CloseSuccess();
+                }
+                else
+                {
+                    StatusText.Text = "❌ Not signed in yet — please complete Google sign-in above.";
                 }
             }
             catch (Exception ex)
@@ -198,42 +219,43 @@ namespace VixzDesktop
             }
         }
 
-        private static string CleanJsonString(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json) || json == "null" || json == "\"\"") return "";
-            var trimmed = json.Trim();
-            if (trimmed.StartsWith("\"") && trimmed.EndsWith("\"") && trimmed.Length >= 2)
-            {
-                return trimmed.Substring(1, trimmed.Length - 2);
-            }
-            return trimmed;
-        }
-
+        // Reload button
         private async void ReloadBtn_Click(object sender, RoutedEventArgs e)
         {
             if (AuthWebView.CoreWebView2 != null)
-            {
                 AuthWebView.CoreWebView2.Reload();
-            }
             else
-            {
                 await InitializeAuthBrowserAsync();
+        }
+
+        // Open in system browser fallback
+        private void OpenInBrowserBtn_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "https://www.youtube.com/signin?action_handle_signin=true",
+                    UseShellExecute = true
+                });
+                StatusText.Text = "🌐 Sign in via your browser, then click '✅ Done / Sync Account'.";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"Could not launch browser: {ex.Message}";
             }
         }
 
         private void CloseBtn_Click(object sender, RoutedEventArgs e)
         {
             DialogResult = IsSuccess;
+            _closed = true;
             Close();
         }
 
         protected override void OnClosed(EventArgs e)
         {
-            try
-            {
-                AuthWebView.Dispose();
-            }
-            catch { }
+            try { AuthWebView.Dispose(); } catch { }
             base.OnClosed(e);
         }
     }

@@ -434,8 +434,8 @@
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
                                         <TextBlock Text="⚡ Sort:" Foreground="{StaticResource TextSecondary}" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                         <ComboBox x:Name="SortByFilterCombo" Width="120" Height="26" Style="{StaticResource ModernComboBoxStyle}" SelectionChanged="FilterOrSort_Changed">
-                                            <ComboBoxItem Content="Relevance" IsSelected="True" Tag=""/>
-                                            <ComboBoxItem Content="Newest First" Tag="latest"/>
+                                            <ComboBoxItem Content="Relevance" Tag=""/>
+                                            <ComboBoxItem Content="Newest First" IsSelected="True" Tag="latest"/>
                                             <ComboBoxItem Content="Most Viewed" Tag="views"/>
                                         </ComboBox>
                                     </StackPanel>
@@ -679,46 +679,6 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Always-Visible Floating Back Button (top-left) -->
-                            <Button x:Name="FloatingBackBtn"
-                                    Content="◀ Back"
-                                    HorizontalAlignment="Left"
-                                    VerticalAlignment="Top"
-                                    Margin="14,14,0,0"
-                                    Padding="10,6"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    Cursor="Hand"
-                                    Click="BackToFeed_Click"
-                                    Panel.ZIndex="20">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Background" Value="#B0000000"/>
-                                        <Setter Property="Foreground" Value="White"/>
-                                        <Setter Property="BorderBrush" Value="#50FFFFFF"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="10"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="#D0FF3B3B"/>
-                                                            <Setter Property="BorderBrush" Value="#FF3B3B"/>
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
                         </Grid>
 
                         <!-- Solid opaque backing for bottom bar row so fading controls never reveal background -->
@@ -1237,7 +1197,7 @@
                         <!-- Quick Action Suggestion Chips -->
                         <WrapPanel Grid.Row="1" Margin="0,0,0,10">
                             <Button Content="✨ Summarise Video" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipSummarize_Click"/>
-                            <Button Content="▶️ Latest Benny Johnson" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipBenny_Click"/>
+                            <Button Content="🎵 Play Lofi Beats" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipLofi_Click"/>
                             <Button Content="🌙 30m Sleep Timer" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipTimer_Click"/>
                             <Button Content="⚡ Today's Breaking News" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,4,4" Click="AiChipNews_Click"/>
                         </WrapPanel>
@@ -1276,7 +1236,7 @@
                                     <StackPanel>
                                         <TextBlock Text="🤖 Hello! I am your Vixz AI Assistant." Foreground="White" FontSize="13" FontWeight="Bold"/>
                                         <TextBlock Text="You can ask me anything:" Foreground="{StaticResource TextSecondary}" FontSize="12" Margin="0,4,0,0"/>
-                                        <TextBlock Text="• 'Play the latest Benny Johnson video'&#x0a;• 'Summarise this video'&#x0a;• 'Skip 30 seconds' / 'Go back 10s'&#x0a;• 'Sleep timer for 25 mins'&#x0a;• 'Find AI news from today'" Foreground="{StaticResource AccentGold}" FontSize="11.5" Margin="0,6,0,0"/>
+                                        <TextBlock Text="• 'Play Lofi Beats live'&#x0a;• 'Summarise this video'&#x0a;• 'Skip 30 seconds' / 'Go back 10s'&#x0a;• 'Sleep timer for 25 mins'&#x0a;• 'Find AI news from today'" Foreground="{StaticResource AccentGold}" FontSize="11.5" Margin="0,6,0,0"/>
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

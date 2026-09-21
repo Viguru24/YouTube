@@ -467,28 +467,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Subscribed Creators Management (Add, Remove, Rename)
-    private val DEFAULT_CREATORS = listOf(
-        "Benny Johnson",
-        "Tucker Carlson",
-        "The Rubin Report",
-        "Piers Morgan Uncensored",
-        "Lex Fridman",
-        "The Joe Rogan Experience",
-        "Huberman Lab",
-        "Veritasium",
-        "Cleo Abram",
-        "Matt Wolfe",
-        "Fireship",
-        "Two Minute Papers",
-        "Dwarkesh Patel",
-        "Matthew Berman",
-        "Triggernometry",
-        "Timcast IRL",
-        "Liberal Hivemind",
-        "David Ondrej",
-        "Anastasi In Tech",
-        "Alex Ziskind"
-    )
+    private val DEFAULT_CREATORS = listOf<String>()
 
     private fun loadDefaultSubscriptionsFromAssets(): List<String> {
         return try {
@@ -503,7 +482,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 result
             }
         } catch (e: Exception) {
-            DEFAULT_CREATORS
+            emptyList()
         }
     }
 
@@ -517,17 +496,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
         val limit = algoPrefs.getInt("subscription_limit", 20)
 
-        val assetDefaults = loadDefaultSubscriptionsFromAssets()
         val saved = prefs.getStringSet("subscribed_creators", null)
-
         val ordered = mutableListOf<String>()
-        // 1. VIP Creators first (guarantees Benny, Tucker, Rubin, Piers, etc. are always front and center)
-        DEFAULT_CREATORS.forEach { vip ->
-            if (!ordered.any { it.equals(vip, ignoreCase = true) }) {
-                ordered.add(vip)
-            }
-        }
-        // 2. Saved creators from preferences
+
         if (saved != null) {
             saved.forEach { ch ->
                 val trimmed = ch.trim()
@@ -535,12 +506,13 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     ordered.add(trimmed)
                 }
             }
-        }
-        // 3. Asset defaults from PC
-        assetDefaults.forEach { ch ->
-            val trimmed = ch.trim()
-            if (trimmed.isNotBlank() && !ordered.any { it.equals(trimmed, ignoreCase = true) }) {
-                ordered.add(trimmed)
+        } else {
+            val assetDefaults = loadDefaultSubscriptionsFromAssets()
+            assetDefaults.forEach { ch ->
+                val trimmed = ch.trim()
+                if (trimmed.isNotBlank() && !ordered.any { it.equals(trimmed, ignoreCase = true) }) {
+                    ordered.add(trimmed)
+                }
             }
         }
 
@@ -550,8 +522,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             ordered
         }
 
-        com.example.data.model.WillRyanProfileData.clearAllSubscribedChannels()
-        limited.forEach { com.example.data.model.WillRyanProfileData.addSubscribedChannel(it) }
+        com.example.data.model.UserProfileData.clearAllSubscribedChannels()
+        limited.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
         saveSubscribedCreators(limited)
         return limited
     }
@@ -846,7 +818,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 for (v in existing) {
                     if (!v.isFavorite && !v.isWatchLater && !v.isDownloaded &&
                         (com.example.util.YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) ||
-                         (v.category == "Shorts" && _subscribedCreators.value.none { v.channelName.contains(it, ignoreCase = true) || v.title.contains(it, ignoreCase = true) }))
+                         (v.category == "Shorts" && _subscribedCreators.value.isNotEmpty() && _subscribedCreators.value.none { v.channelName.contains(it, ignoreCase = true) || v.title.contains(it, ignoreCase = true) }))
                     ) {
                         repository.deleteVideoById(v.youtubeId)
                     }
@@ -877,7 +849,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                 com.example.data.remote.YouTubeLiveSearchService.clearCache()
 
-                // 1. Fetch latest uploads from all subscribed channels (Benny Johnson, Tucker Carlson, The Rubin Report, etc.)
+                // 1. Fetch latest uploads from all subscribed channels
                 val profileFeed = try {
                     com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
                 } catch (e: Exception) { emptyList() }
@@ -946,11 +918,11 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     } catch (e: Exception) { emptyList() }
 
                     val discoveryQueries = listOf(
-                        "Benny Johnson podcast 2026",
-                        "Tucker Carlson in depth",
-                        "Lex Fridman science tech",
                         "breakthrough tech AI 2026",
-                        "fascinating podcast full"
+                        "science documentary discovery",
+                        "space exploration discovery",
+                        "fascinating podcast full",
+                        "technology future innovations"
                     )
                     val discoveryBatch = try {
                         com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(discoveryQueries.random())
@@ -1177,7 +1149,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
         val current = _subscribedCreators.value
         val ordered = mutableListOf<String>()
-        DEFAULT_CREATORS.forEach { ordered.add(it) }
         current.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
         incoming.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
 
@@ -1185,8 +1156,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         if (limited != current) {
             _subscribedCreators.value = limited
             saveSubscribedCreators(limited)
-            com.example.data.model.WillRyanProfileData.clearAllSubscribedChannels()
-            limited.forEach { com.example.data.model.WillRyanProfileData.addSubscribedChannel(it) }
+            com.example.data.model.UserProfileData.clearAllSubscribedChannels()
+            limited.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
         }
     }
 
@@ -1791,7 +1762,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             current.add(0, trimmed)
             _subscribedCreators.value = current
             saveSubscribedCreators(current)
-            com.example.data.model.WillRyanProfileData.addSubscribedChannel(trimmed)
+            com.example.data.model.UserProfileData.addSubscribedChannel(trimmed)
             refreshTrendingFeed()
         }
     }
@@ -1813,7 +1784,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         val current = _subscribedCreators.value.filter { !it.equals(name.trim(), ignoreCase = true) }
         _subscribedCreators.value = current
         saveSubscribedCreators(current)
-        com.example.data.model.WillRyanProfileData.subscribedChannels.removeIf { it.equals(name.trim(), ignoreCase = true) }
+        com.example.data.model.UserProfileData.subscribedChannels.removeIf { it.equals(name.trim(), ignoreCase = true) }
         if (selectedSubscribedChannel.value.equals(name.trim(), ignoreCase = true)) {
             selectedSubscribedChannel.value = ""
         }
@@ -1828,9 +1799,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
         _subscribedCreators.value = current
         saveSubscribedCreators(current)
-        val idx = com.example.data.model.WillRyanProfileData.subscribedChannels.indexOfFirst { it.equals(oldName.trim(), ignoreCase = true) }
+        val idx = com.example.data.model.UserProfileData.subscribedChannels.indexOfFirst { it.equals(oldName.trim(), ignoreCase = true) }
         if (idx >= 0) {
-            com.example.data.model.WillRyanProfileData.subscribedChannels[idx] = trimmed
+            com.example.data.model.UserProfileData.subscribedChannels[idx] = trimmed
         }
         if (selectedSubscribedChannel.value.equals(oldName.trim(), ignoreCase = true)) {
             selectedSubscribedChannel.value = trimmed

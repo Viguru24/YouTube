@@ -1,12 +1,12 @@
-$targetExe = "E:\Documents\GitHub\Youtube\windows\VixzDesktop\bin\Debug\net9.0-windows\VixzDesktop.exe"
-$workingDir = "E:\Documents\GitHub\Youtube\windows\VixzDesktop\bin\Debug\net9.0-windows"
-$iconPath = "E:\Documents\GitHub\Youtube\windows\VixzDesktop\App.ico"
+$repoRoot = $PSScriptRoot
+$targetExe = Join-Path $repoRoot "windows\VixzDesktop\bin\Debug\net9.0-windows\VixzDesktop.exe"
+$workingDir = Join-Path $repoRoot "windows\VixzDesktop\bin\Debug\net9.0-windows"
+$iconPath = Join-Path $repoRoot "windows\VixzDesktop\App.ico"
 
 $wscript = New-Object -ComObject WScript.Shell
 
 $desktopPaths = @(
-    [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop),
-    "C:\Users\louis\Desktop"
+    [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 ) | Select-Object -Unique | Where-Object { Test-Path $_ }
 
 foreach ($d in $desktopPaths) {
@@ -23,8 +23,7 @@ foreach ($d in $desktopPaths) {
     Write-Host "Created Desktop shortcut: $desktopLnk"
 }
 
-# Repo root shortcut
-$repoLnk = "E:\Documents\GitHub\Youtube\Vixz Desktop.lnk"
+$repoLnk = Join-Path $repoRoot "Vixz Desktop.lnk"
 $s2 = $wscript.CreateShortcut($repoLnk)
 $s2.TargetPath = $targetExe
 $s2.WorkingDirectory = $workingDir

@@ -4,6 +4,25 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🔐 Release v2.0.0 — Authentication Overhaul (September 21, 2026)
+
+### 🔑 1. Complete Sign-In / Sign-Out System Rebuild
+- **Sign-In Window Rewrite:** `SignInWindow.xaml.cs` completely rebuilt from scratch. Previous version had an infinite polling loop that wrote to `account_sync.log` every 5 seconds and never auto-detected success. New version is fully event-driven — watches `NavigationCompleted` for a `youtube.com` landing after Google sign-in completes, checks cookies once, and closes automatically. Zero timers, zero polling.
+- **Sign-Out Now Actually Works:** `SignOutAccount_Click` previously only cleared the in-memory `UserAccount` object, leaving all YouTube/Google cookies intact in the WebView2 profile. The next background sync immediately re-detected the old session and re-set `HasAuth=True`, making sign-out appear broken. Fixed: sign-out now calls `CookieManager.DeleteAllCookies()` to wipe the entire profile cookie store, then navigates to `accounts.google.com/Logout` to invalidate the server-side session.
+- **Removed Auto Sign-In Loop:** `SyncAccountProfileAsync` was auto-opening the sign-in window when account extraction failed due to YouTube's bot-throttle page (111KB thin page). This caused a loop: sign-in window opens → user closes → `PlayVideoAsync` retries → player loads → Error 150 → stream fallback → sign-in window again, forever. Replaced with a silent log entry — the user can manually sign in from the account button.
+
+### 🛡️ 2. YouTube Embed Error Loop Fix
+- **`_fallbackFired` Guard:** YouTube's embed player was spamming `onError(150)` (embedding disabled) dozens of times per second. Each call sent `PLAYER_STREAM_FALLBACK` to C#, which opened the sign-in window, which re-played the video, which fired Error 150 again — an infinite loop. Now a `_fallbackFired` boolean guard ensures only a single fallback message fires per video load.
+- **`onError` vs Sign-In Wall Separated:** The 6-second "stuck unstarted" sign-in wall detector and the `onError(150)` handler were both sending `PLAYER_STREAM_FALLBACK`, colliding with each other. They now send distinct messages:
+  - `PLAYER_STREAM_FALLBACK:videoid` — embedding disabled (Error 150/101). C# tries stream engine, shows "owner disabled embedding" toast. No sign-in window.
+  - `PLAYER_SIGNINWALL:videoid` — 6-second timeout detected the YouTube session expired sign-in wall. C# opens the sign-in window cleanly, once.
+- **Guard resets on new video load:** `_fallbackFired` is reset to `false` at the top of `loadVideo()` so each new video gets a fresh guard.
+
+### 🔍 3. Improved Sign-In Wall Detection
+- **6-Second Player State Timeout:** Added to `onReady` callback — if `player.getPlayerState()` is still `-1` (unstarted) 6 seconds after the embed reports ready, the YouTube session has expired and the sign-in wall is blocking playback silently. YouTube never fires `onError` in this case. Now detected automatically.
+
+---
+
 ## 🚀 Release v1.9.8 (September 8, 2026)
 
 ### 🔍 1. Complete Pinch-to-Zoom & Pan Engine Overhaul
@@ -19,27 +38,15 @@ All notable changes, fixes, and improvements across the Android client and Windo
 - **Explicit-Only Summarization:** Video summaries now only run when the user taps the **AI Summary** button, preventing unwanted automatic summaries.
 - **Compact "Tight" Chat Modal:** Upgraded the AI chat dialog to a responsive, half-screen bottom sheet with draggable handles, keeping video controls and playback visible.
 - **Instant Non-Blocking Interaction:** Users can start typing and sending questions immediately while transcript captions stream in the background.
-- **Search Header Polish:** Removed visual impediments and banner overlays from search results so queries display cleanly without clipping.
 
 ### 🌌 3. Sovereign Cosmo Software Suite Integration
-- **In-App Showcase Card:** Added a dedicated, glassmorphic **Cosmo Software Suite** card in the main Settings dialog featuring 1-tap direct launchers to:
-  - 🎙️ **Cosmo Whisper:** Native AI voice dictation & local transcription for Windows & macOS.
-  - 🌌 **Cosmo Symphony:** GPU-accelerated video & photo orchestrator, AI 4K/8K upscaler & Wi-Fi sharing.
-  - 🌐 **Sovereign Suite Portal:** Central web hub at `viguru24.github.io`.
-- **Repository Badges & Showcase Table:** Added top-level badges and a comprehensive ecosystem table in `README.md`.
+- **In-App Showcase Card:** Added a dedicated, glassmorphic **Cosmo Software Suite** card in Settings with 1-tap direct launchers for Cosmo Whisper and Cosmo Symphony.
 
-### 📱 4. Multi-Device Simultaneous Installer (`YouTube_Install_On_Phone.bat`)
-- **Parallel Multi-Device Push:** Batch installer detects all connected Android devices (phones, tablets, car units) via ADB and installs/updates the latest APK across all of them in parallel.
+### 📱 4. Multi-Device Simultaneous Installer
+- **Parallel Multi-Device Push:** Batch installer detects all connected Android devices via ADB and installs/updates across all of them in parallel.
 
-### ⚙️ 5. Settings Dialog 3D Streamline & Obsidian Theme Overhaul
-- **Pure Dark Obsidian Glassmorphism:** Completely replaced Material You dynamic surface tinting (which generated muddy brown tones on Samsung One UI) with a hardcoded deep obsidian background gradient (`#171524` -> `#0F0E18` -> `#0A0A10`), neon bevel border, and frosted glass cards (`#14131E`, 85% opacity).
-- **Top Spotlight Cosmo Software Suite:** Elevated the Cosmo Whisper and Cosmo Symphony showcase to Spotlight Position #1 right at the top of Settings with compact 3D cards, live GitHub links, and official portal button (`viguru24.github.io`).
-- **Compact, Neat & Professional Typography:** All card titles streamlined to 12sp bold, descriptions to 10sp with high contrast, and chip/control sizes scaled down to prevent clipping or unnecessary scrolling.
-- **Streamlined Algorithm, AdBlock & VPS Cloud Cards:** Unified styling across Feed Algorithm, AdBlock, Gemini/Groq AI Keys, App Language, Blocked Keywords, and VPS Cross-Device Cloud Sync with 3D gradient buttons and polished switches.
-
-### 📦 6. Updated Release Binaries
-- **Android APK:** [`release/Vixz-YouTube-Player-latest.apk`](release/Vixz-YouTube-Player-latest.apk) (and `v1.9.7.apk`) compiled and verified.
-- **Windows Desktop Executable:** [`release/VixzDesktop-latest.exe`](release/VixzDesktop-latest.exe) built via .NET 9 single-file publish with WPF & WebView2 runtime.
+### ⚙️ 5. Settings Dialog Obsidian Theme Overhaul
+- **Pure Dark Obsidian Glassmorphism:** Deep obsidian background gradient, neon bevel border, and frosted glass cards.
 
 ---
 

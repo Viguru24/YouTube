@@ -247,9 +247,9 @@ namespace VixzDesktop.Services
                     foreach (var s in serverSubs)
                     {
                         var ch = s?.ToString()?.Trim();
-                        if (!string.IsNullOrWhiteSpace(ch) && !WillRyanProfileData.IsSubscribed(ch))
+                        if (!string.IsNullOrWhiteSpace(ch) && !UserProfileData.IsSubscribed(ch))
                         {
-                            WillRyanProfileData.AddSubscribedChannel(ch);
+                            UserProfileData.AddSubscribedChannel(ch);
                         }
                     }
                 }

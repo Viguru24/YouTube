@@ -23,6 +23,7 @@ obj/
 *.user
 *.suo
 *.msix
+!release/*.msix
 *.lnk
 *.log
 

@@ -245,7 +245,7 @@ namespace VixzDesktop.Services
                                 "summarize this video",
                                 "summarise video",
                                 "summarize video",
-                                "play latest benny johnson video",
+                                "play lofi beats",
                                 "play latest news",
                                 "find breaking news today",
                                 "set sleep timer for 30 minutes",

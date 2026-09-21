@@ -51,7 +51,7 @@ namespace VixzDesktop.Services
             if (videos == null || videos.Count == 0) return new List<VideoItem>();
 
             var currentSettings = settings ?? DefaultSettings;
-            var subChannels = subscribedChannels ?? WillRyanProfileData.SubscribedChannels;
+            var subChannels = subscribedChannels ?? UserProfileData.SubscribedChannels;
             var dislikedIds = new HashSet<string>(StorageService.Settings.DislikedVideoIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
             var deletedIds = new HashSet<string>(StorageService.Settings.DeletedVideoIds ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
             var dislikedChannels = new HashSet<string>(StorageService.Settings.DislikedChannels ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
@@ -66,19 +66,19 @@ namespace VixzDesktop.Services
                 .Where(b => !string.IsNullOrEmpty(b))
                 .ToList();
 
-            // 0. Filter out permanently disliked, deleted, blocked, and already watched videos
+            // 0. Filter out permanently disliked, deleted, and blocked videos
             var watchedIds = new HashSet<string>(watchHistory?.Select(w => w.Id) ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
             var filteredVideos = videos.Where(v =>
             {
-                if (dislikedIds.Contains(v.Id) || deletedIds.Contains(v.Id) || watchedIds.Contains(v.Id)) return false;
+                if (dislikedIds.Contains(v.Id) || deletedIds.Contains(v.Id)) return false;
                 var titleLower = v.Title.ToLowerInvariant();
                 var chanLower = v.ChannelTitle.ToLowerInvariant();
                 return !blockedLower.Any(blk => titleLower.Contains(blk) || chanLower.Contains(blk));
             }).ToList();
 
             // 1. Identify top favorite channels
-            var topChannels = favorites.Select(f => f.ChannelTitle)
-                .Concat(watchHistory.Select(w => w.ChannelTitle))
+            var topChannels = (favorites ?? Enumerable.Empty<VideoItem>()).Select(f => f.ChannelTitle)
+                .Concat((watchHistory ?? Enumerable.Empty<VideoItem>()).Select(w => w.ChannelTitle))
                 .GroupBy(c => c, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
@@ -88,7 +88,7 @@ namespace VixzDesktop.Services
                 "video", "with", "this", "that", "from", "2026", "youtube", "official"
             };
 
-            var topKeywords = watchHistory
+            var topKeywords = (watchHistory ?? Enumerable.Empty<VideoItem>())
                 .SelectMany(w => Regex.Split(w.Title.ToLowerInvariant(), @"\s+"))
                 .Where(w => w.Length > 3 && !stopWords.Contains(w))
                 .GroupBy(w => w, StringComparer.OrdinalIgnoreCase)
@@ -153,7 +153,33 @@ namespace VixzDesktop.Services
                     score += currentSettings.DiscoveryRatio * 75.0f;
                 }
 
-                // G. Watched Progress / Deprioritize Completed Videos on Discovery Feed
+                // G. Dominant Freshness & Recency Engine (minutes > hours >>> days)
+                // Guaranteed to keep fresh uploads (minutes/hours ago) strictly at the very top!
+                var ageSeconds = YouTubeService.ParsePublishedTimeToSeconds(video.UploadDateText);
+                float recencyBonus = 0f;
+                if (ageSeconds <= 3600) // 0-60 mins: 1200 down to 720 pts!
+                {
+                    recencyBonus = 1200.0f - (ageSeconds / 60.0f) * 8.0f;
+                }
+                else if (ageSeconds <= 86400) // 1-24 hrs: 720 down to 260 pts!
+                {
+                    recencyBonus = 720.0f - ((ageSeconds - 3600.0f) / 3600.0f) * 20.0f;
+                }
+                else if (ageSeconds <= 172800) // 1-2 days: 120 pts
+                {
+                    recencyBonus = 120.0f;
+                }
+                else if (ageSeconds <= 604800) // 2-7 days: 40 pts
+                {
+                    recencyBonus = 40.0f;
+                }
+                score += recencyBonus;
+
+                // H. Watched Progress / Deprioritize Already Watched Videos
+                if (watchedIds.Contains(video.Id))
+                {
+                    score -= 150.0f; // Strongly deprioritize previously watched videos
+                }
                 var savedPos = StorageService.GetPlaybackPosition(video.Id);
                 if (savedPos > 3)
                 {
@@ -161,7 +187,7 @@ namespace VixzDesktop.Services
                 }
 
                 video.AlgorithmScore = score;
-                video.RecommendationReason = GetRecommendationReason(video, favorites, watchHistory, subChannels);
+                video.RecommendationReason = GetRecommendationReason(video, favorites ?? new List<VideoItem>(), watchHistory ?? new List<VideoItem>(), subChannels);
 
                 scoredList.Add((video, score));
             }

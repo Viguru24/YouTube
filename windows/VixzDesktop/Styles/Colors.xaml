@@ -4,6 +4,7 @@
     <!-- Backgrounds -->
     <SolidColorBrush x:Key="BgDarkPrimary" Color="#0D0D14"/>
     <SolidColorBrush x:Key="BgDarkSecondary" Color="#14141F"/>
+    <SolidColorBrush x:Key="BgDarkTertiary" Color="#1C1B26"/>
     <SolidColorBrush x:Key="BgDarkCard" Color="#1C1B26"/>
     <SolidColorBrush x:Key="BgGlassCard" Color="#252230"/>
 

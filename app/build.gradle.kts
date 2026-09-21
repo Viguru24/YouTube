@@ -34,8 +34,9 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-    buildConfigField("String", "VPS_DEFAULT_URL", "\"${vpsDefaultUrl}\"")
-    buildConfigField("String", "VPS_DEFAULT_KEY", "\"${vpsDefaultKey}\"")
+    // Public releases contain zero hardcoded server IPs or keys
+    buildConfigField("String", "VPS_DEFAULT_URL", "\"\"")
+    buildConfigField("String", "VPS_DEFAULT_KEY", "\"\"")
   }
 
   androidComponents {
