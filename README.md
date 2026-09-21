@@ -20,14 +20,14 @@
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
 | 📱 **Android** | `APK (v1.9.7)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v1.9.7/Vixz-YouTube-Player-v1.9.7.apk) |
-| 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.0.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
-| 🖥️ **Windows (Standalone)** | `Portable EXE (v2.0.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
+| 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
+| 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
 <br/>
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
-  <a href="#-whats-new-in-v200">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v210">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -38,16 +38,15 @@
 
 ---
 
-## 🆕 What's New in v2.0.0
+## 🆕 What's New in v2.1.0
 
-- 🔐 **Authentication & Session Rebuild:** Rewrote `SignInWindow` from ground up. Event-driven auth detection without polling loops, instant recognition of Google sign-in completions, and proper server-side session termination + cookie store clearing on sign-out.
-- 🛡️ **Zero-Loop Embed Error Handling:** Protected against repetitive YouTube Error 150 spikes with `_fallbackFired` guards. Distinct routing for session-expired sign-in prompts vs owner-disabled embedding streams.
-- ⚡ **Enhanced Sign-In Wall Detection:** 6-second proactive watchdog to catch silent YouTube unstarted embed states and offer immediate fallback.
-- 🔍 **Overhauled Pinch-to-Zoom Engine (1.0x – 5.0x):** Zero jitter, fluid multi-touch scaling, intelligent pointer tracking, and 1-finger 2D panning with edge bounds.
-- 📱 **Pure Unobstructed Viewing:** No annoying badges, HUDs, or buttons blocking video content; pinching in or squeezing automatically snaps back to original 1.0x form.
-- 🌌 **Cosmo Software Suite Integration:** In-app showcase and instant 1-tap launcher for **Cosmo Whisper** and **Cosmo Symphony**.
-- 🤖 **On-Demand AI Summarization & Tight Chat:** Video summaries now only run when requested, paired with a compact, non-blocking AI chat modal.
-- 📦 **Latest Companion Binaries:** Fully self-contained Windows Desktop MSIX (`v2.0.0`) and Portable EXE (`v2.0.0`). See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
+- ⚡ **TypeSafe AI Jev System-One Engine:** Ultra-fast (70–300ms) autonomous decision model powers three new intelligent features — completely optional, requires a free API key from [console.typesafe.ai](https://console.typesafe.ai) (\$5 free credit on signup).
+- 🔐 **Autonomous Auth Resolver:** Jev automatically identifies and clicks the correct account chooser button and dismisses cookie consent walls during Google sign-in — zero user taps.
+- 📺 **Smart Viewport Quality Arbitrator:** Jev dynamically selects the optimal stream quality for your current window size before every video load.
+- 🎵 **Autonomous AI DJ / Content Curator:** Jev curates the best next video from your feed based on what you're watching — toasted as "⚡ Jev AI DJ: Playing '...'"
+- 🔐 **Authentication & Session Rebuild (v2.0.0):** Event-driven sign-in detection, cookie clearing on sign-out, and separated sign-in wall vs. embedding error handling.
+- 🛡️ **Zero-Loop Embed Error Handling:** `_fallbackFired` guards prevent repeated YouTube Error 150 spam loops.
+- 📦 **Self-Contained MSIX & Portable EXE:** Fully bundled installers — no .NET runtime needed. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
 
 ---
 

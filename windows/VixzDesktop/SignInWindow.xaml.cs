@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Microsoft.Web.WebView2.Core;
+using Newtonsoft.Json;
 using VixzDesktop.Models;
 using VixzDesktop.Services;
 
@@ -94,6 +96,76 @@ namespace VixzDesktop
             if (uri.StartsWith("https://www.youtube.com") || uri.StartsWith("https://m.youtube.com"))
             {
                 await TryCompleteSignInAsync();
+            }
+            else if (JevService.IsConfiguredAndEnabled &&
+                     (uri.Contains("accounts.google.com") || uri.Contains("consent.youtube.com") || uri.Contains("accountchooser")))
+            {
+                // Autonomous Jev System-One resolution for account chooser & consent
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(1000);
+                    await Dispatcher.InvokeAsync(async () =>
+                    {
+                        await TryJevAutoResolveAuthAsync(uri);
+                    });
+                });
+            }
+        }
+
+        private async Task TryJevAutoResolveAuthAsync(string uri)
+        {
+            if (_closed || _authDetectionInProgress || AuthWebView.CoreWebView2 == null) return;
+            try
+            {
+                var extractJs = @"(function() {
+                    var items = [];
+                    var btns = document.querySelectorAll('button, [role=""button""], a, div[data-identifier], div[data-email], li');
+                    for (var i = 0; i < btns.length && items.length < 10; i++) {
+                        var b = btns[i];
+                        var txt = (b.innerText || b.getAttribute('aria-label') || b.textContent || '').trim();
+                        if (txt && txt.length > 2 && txt.length < 80 && b.offsetParent !== null) {
+                            items.push({ id: 'btn_' + i, text: txt.replace(/\n+/g, ' ') });
+                            b.setAttribute('data-jev-id', 'btn_' + i);
+                        }
+                    }
+                    return JSON.stringify(items);
+                })()";
+
+                var jsonStr = await AuthWebView.CoreWebView2.ExecuteScriptAsync(extractJs);
+                if (string.IsNullOrWhiteSpace(jsonStr) || jsonStr == "null" || jsonStr == "\"[]\"") return;
+
+                var rawJson = JsonConvert.DeserializeObject<string>(jsonStr);
+                if (string.IsNullOrWhiteSpace(rawJson)) return;
+
+                var elementsList = JsonConvert.DeserializeObject<List<Dictionary<string, string>>>(rawJson);
+                if (elementsList == null || elementsList.Count == 0) return;
+
+                var visibleMap = new Dictionary<string, string>();
+                foreach (var el in elementsList)
+                {
+                    if (el.TryGetValue("id", out var id) && el.TryGetValue("text", out var text))
+                    {
+                        visibleMap[id] = text;
+                    }
+                }
+
+                var userEmail = StorageService.Settings.UserAccount?.Email ?? "joeblack10810@gmail.com";
+                var decisionKey = await JevService.DecideAuthActionAsync(uri, userEmail, visibleMap);
+
+                if (!string.IsNullOrEmpty(decisionKey))
+                {
+                    StatusText.Text = $"⚡ Jev Auto-Action: Selecting '{visibleMap.GetValueOrDefault(decisionKey, decisionKey)}'...";
+                    var clickJs = $@"(function() {{
+                        var el = document.querySelector('[data-jev-id=""{decisionKey}""]');
+                        if (el) {{ el.click(); return true; }}
+                        return false;
+                    }})()";
+                    await AuthWebView.CoreWebView2.ExecuteScriptAsync(clickJs);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SignInWindow] Jev AutoResolve error: {ex.Message}");
             }
         }
 

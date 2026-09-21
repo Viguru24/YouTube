@@ -73,6 +73,7 @@ namespace VixzDesktop
             UpdateFolderUi();
             UpdateAutoplayUi();
             UpdateAccountUi();
+            UpdateJevButtonUi();
             UpdateQualityButtonText(StorageService.Settings.PreferredQuality);
             SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
             SubscribersHeader.Text = $"👤 Subscriptions ({UserProfileData.SubscribedChannels.Count})";
@@ -2363,6 +2364,24 @@ namespace VixzDesktop
             }
 
             var prefQuality = StorageService.Settings.PreferredQuality ?? "hd1080";
+
+            // If Jev is enabled, dynamically arbitrate optimal quality based on player viewport size
+            if (JevService.IsConfiguredAndEnabled)
+            {
+                try
+                {
+                    var w = (int)Math.Max(ActualWidth, 640);
+                    var h = (int)Math.Max(ActualHeight, 360);
+                    var available = new List<string> { "hd1080", "hd720", "large", "medium" };
+                    var jevQuality = await JevService.DecideOptimalQualityAsync(w, h, prefQuality, available);
+                    if (!string.IsNullOrEmpty(jevQuality))
+                    {
+                        prefQuality = jevQuality;
+                    }
+                }
+                catch { }
+            }
+
             UpdateQualityButtonText(prefQuality);
 
             var currentSrc = VideoWebView.Source?.ToString() ?? "";
@@ -2507,19 +2526,41 @@ namespace VixzDesktop
             _sponsorBlockTimer.Start();
         }
 
-        public void PlayNextVideo()
+        public async void PlayNextVideo()
         {
             if (_currentFeed.Count == 0) return;
 
-            _currentVideoIndex++;
-            if (_currentVideoIndex >= _currentFeed.Count)
+            VideoItem? next = null;
+
+            // If Jev System-One is enabled, autonomously curate the best next video based on current context
+            if (JevService.IsConfiguredAndEnabled && _currentVideo != null && _currentFeed.Count > 1)
             {
-                _currentVideoIndex = 0;
+                try
+                {
+                    var candidates = _currentFeed.Where(v => v.Id != _currentVideo.Id).ToList();
+                    var jevChoice = await JevService.CurateNextVideoAsync(_currentVideo.Title, _currentVideo.ChannelTitle, candidates);
+                    if (jevChoice != null)
+                    {
+                        next = jevChoice;
+                        _currentVideoIndex = _currentFeed.IndexOf(jevChoice);
+                        ShowToast($"⚡ Jev AI DJ: Playing '{jevChoice.Title}'");
+                    }
+                }
+                catch { }
             }
 
-            var next = _currentFeed[_currentVideoIndex];
+            if (next == null)
+            {
+                _currentVideoIndex++;
+                if (_currentVideoIndex >= _currentFeed.Count)
+                {
+                    _currentVideoIndex = 0;
+                }
+                next = _currentFeed[_currentVideoIndex];
+                ShowToast("Autoplay: Playing Next Video ⏭️");
+            }
+
             _ = PlayVideoAsync(next);
-            ShowToast("Autoplay: Playing Next Video ⏭️");
         }
 
         public void PlayPreviousVideo()
@@ -4536,6 +4577,210 @@ namespace VixzDesktop
             sp.Children.Add(desc);
             sp.Children.Add(linkRow);
             sp.Children.Add(txtBox);
+            sp.Children.Add(statusBlock);
+            sp.Children.Add(btnRow);
+
+            prompt.Content = sp;
+            prompt.ShowDialog();
+        }
+
+        private void UpdateJevButtonUi()
+        {
+            if (JevAgentBtn == null) return;
+            if (StorageService.Settings.IsJevEnabled && !string.IsNullOrWhiteSpace(StorageService.Settings.JevApiKey))
+            {
+                JevAgentBtn.Content = "⚡ Jev ON";
+                JevAgentBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
+            }
+            else
+            {
+                JevAgentBtn.Content = "⚡ Jev OFF";
+                JevAgentBtn.Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary");
+            }
+        }
+
+        private void JevSettings_Click(object sender, RoutedEventArgs e)
+        {
+            var prompt = new Window
+            {
+                Title = "⚡ TypeSafe AI Jev System-One Settings",
+                Width = 540,
+                Height = 440,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkPrimary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                WindowStyle = WindowStyle.ToolWindow,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var sp = new StackPanel { Margin = new Thickness(18) };
+
+            var heading = new TextBlock
+            {
+                Text = "⚡ TypeSafe AI Jev System-One Decision Engine",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
+                Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var desc = new TextBlock
+            {
+                Text = "Jev is an ultra-fast (70-300ms) non-generative decision model designed for browser automation. In Vixz Desktop, it powers:\n" +
+                       "• 🔐 Autonomous Google Account Chooser & Cookie Consent Bypassing\n" +
+                       "• 📺 Smart Viewport / Playback Quality Arbitration\n" +
+                       "• 🎵 Autonomous Content Curator & Next-Up DJ",
+                FontSize = 11.5,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            // Toggle switch / checkbox
+            var toggleRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
+            var toggleCheck = new CheckBox
+            {
+                Content = "Enable Jev System-One Autonomous Engine",
+                IsChecked = StorageService.Settings.IsJevEnabled,
+                Foreground = System.Windows.Media.Brushes.White,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            toggleRow.Children.Add(toggleCheck);
+
+            // Direct Link Button to Console
+            var linkRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
+            var linkBtn = new Button
+            {
+                Content = "🌐 Get Jev API Key ($5 Free Credit at console.typesafe.ai)",
+                Style = (Style)FindResource("GlassButton"),
+                Foreground = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                FontSize = 11,
+                Padding = new Thickness(12, 6, 12, 6),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            linkBtn.Click += (s, ev) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://console.typesafe.ai",
+                        UseShellExecute = true
+                    });
+                }
+                catch { }
+            };
+            linkRow.Children.Add(linkBtn);
+
+            var keyLabel = new TextBlock
+            {
+                Text = "TypeSafe AI API Key (apikey_...):",
+                FontSize = 11,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextPrimary"),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var keyBox = new TextBox
+            {
+                Text = StorageService.Settings.JevApiKey ?? "",
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkTertiary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                BorderBrush = (System.Windows.Media.Brush)FindResource("BorderSubtle"),
+                FontSize = 12,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var statusBlock = new TextBlock
+            {
+                Text = StorageService.Settings.IsJevEnabled ? "🟢 Jev is currently ACTIVE" : "⚪ Jev is currently DISABLED",
+                FontSize = 11,
+                Foreground = StorageService.Settings.IsJevEnabled
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen)
+                    : (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 12)
+            };
+
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+
+            var testBtn = new Button
+            {
+                Content = "Test Jev Key",
+                Style = (Style)FindResource("GlassButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            testBtn.Click += async (s, ev) =>
+            {
+                var val = keyBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(val))
+                {
+                    statusBlock.Text = "⚠️ Please enter an API key to test.";
+                    statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
+                    return;
+                }
+                statusBlock.Text = "⏳ Testing TypeSafe Jev System-One connection...";
+                statusBlock.Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary");
+                testBtn.IsEnabled = false;
+
+                var (ok, msg) = await JevService.ValidateApiKeyAsync(val);
+                statusBlock.Text = msg;
+                statusBlock.Foreground = ok
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.LightGreen)
+                    : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF7043"));
+                testBtn.IsEnabled = true;
+            };
+
+            var clearBtn = new Button
+            {
+                Content = "Clear Key",
+                Style = (Style)FindResource("GlassButton"),
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            clearBtn.Click += (s, ev) =>
+            {
+                keyBox.Text = "";
+                StorageService.Settings.JevApiKey = null;
+                StorageService.Save();
+                UpdateJevButtonUi();
+                ShowToast("Cleared Jev API Key");
+            };
+
+            var saveBtn = new Button
+            {
+                Content = "Save & Apply",
+                Style = (Style)FindResource("GlassButton"),
+                Background = (System.Windows.Media.Brush)FindResource("AccentGold"),
+                Foreground = System.Windows.Media.Brushes.Black,
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(14, 6, 14, 6)
+            };
+            saveBtn.Click += (s, ev) =>
+            {
+                var val = keyBox.Text.Trim();
+                StorageService.Settings.JevApiKey = string.IsNullOrWhiteSpace(val) ? null : val;
+                StorageService.Settings.IsJevEnabled = toggleCheck.IsChecked ?? true;
+                StorageService.Save();
+                UpdateJevButtonUi();
+                ShowToast($"⚡ Jev System-One Settings Saved! ({(StorageService.Settings.IsJevEnabled ? "Enabled" : "Disabled")})");
+                prompt.Close();
+            };
+
+            btnRow.Children.Add(testBtn);
+            btnRow.Children.Add(clearBtn);
+            btnRow.Children.Add(saveBtn);
+
+            sp.Children.Add(heading);
+            sp.Children.Add(desc);
+            sp.Children.Add(toggleRow);
+            sp.Children.Add(linkRow);
+            sp.Children.Add(keyLabel);
+            sp.Children.Add(keyBox);
             sp.Children.Add(statusBlock);
             sp.Children.Add(btnRow);
 

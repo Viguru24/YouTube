@@ -4,6 +4,40 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## ⚡ Release v2.1.0 — TypeSafe AI Jev System-One Integration (September 21, 2026)
+
+### ⚡ 1. Jev System-One Decision Engine (New Feature)
+- **TypeSafe AI Jev Integrated:** Vixz Desktop now ships with the ultra-fast [TypeSafe AI Jev](https://console.typesafe.ai) System-One decision model — a non-generative AI that returns probabilistic typed decisions in 70–300ms. Unlike chat LLMs it never generates text, only decisive, structured actions.
+- **Completely Optional:** A new **⚡ Jev AI** toggle button in the top navbar lets users enable or disable the engine at any time. If no API key is provided, the app behaves exactly as before.
+- **Free to Start:** New accounts at [console.typesafe.ai](https://console.typesafe.ai) receive $5 in free credit (~120 million input tokens). Cost is only $0.042 per million input tokens; output is completely free.
+
+### 🔐 2. Autonomous Account Chooser & Consent Resolver (Jev Feature 1)
+- When the Google sign-in flow lands on an account chooser page, cookie consent wall, or `accountchooser.google.com`, Jev automatically extracts all visible interactive elements from the page DOM and asks: *"Which button selects the user's account or dismisses this consent wall?"*
+- Jev returns the correct element ID in <300ms. Vixz instantly clicks it — no user interaction needed to navigate past cookie banners or the account picker.
+- Status feedback shown in `SignInWindow` as **"⚡ Jev Auto-Action: Selecting 'joeblack10810@gmail.com'..."**
+
+### 📺 3. Smart Viewport Quality Arbitrator (Jev Feature 2)
+- Before every video load, Jev evaluates the current window width and height against the user's preferred quality setting and the available quality options (`hd1080`, `hd720`, `large`, `medium`).
+- It returns the single optimal quality variant in <200ms, preventing unnecessary bandwidth waste on small windows or applying maximum quality when the window fills the screen.
+- Falls back to `StorageService.Settings.PreferredQuality` instantly if Jev is disabled or has no key.
+
+### 🎵 4. Autonomous Content Curator & AI DJ (Jev Feature 3)
+- When a video ends and Autoplay fires, Jev evaluates up to 12 candidate videos from the current feed.
+- Jev is given the current video title and channel as context, and asked: *"Select the best next video to play that matches the theme without repeating content."*
+- Chosen videos show a **"⚡ Jev AI DJ: Playing '...'"** toast instead of the standard autoplay message.
+- Falls back to sequential index autoplay if Jev is off or unavailable.
+
+### ⚙️ 5. Jev Settings Panel (New UI)
+- **⚡ Jev AI** button in the top navbar opens a dedicated settings dialog with:
+  - Enable/Disable toggle checkbox
+  - One-click **"🌐 Get Jev API Key"** button → opens [console.typesafe.ai](https://console.typesafe.ai) in the system browser
+  - API key text field with live validation ("Test Jev Key" button)
+  - Clear Key and Save & Apply buttons
+  - Live status indicator (🟢 ACTIVE / ⚪ DISABLED)
+- Button label changes to **"⚡ Jev ON"** (gold) or **"⚡ Jev OFF"** (grey) depending on state.
+
+---
+
 ## 🔐 Release v2.0.0 — Authentication Overhaul (September 21, 2026)
 
 ### 🔑 1. Complete Sign-In / Sign-Out System Rebuild

@@ -241,6 +241,14 @@
                                 ToolTip="Sign in with Google / YouTube Account"
                                 Click="AccountBtn_Click"/>
 
+                        <!-- ⚡ Jev System-One Agent Toggle / Settings -->
+                        <Button x:Name="JevAgentBtn"
+                                Content="⚡ Jev AI"
+                                Style="{StaticResource GlassButton}"
+                                Padding="10,4" Margin="0,0,8,0"
+                                ToolTip="TypeSafe AI Jev System-One Decision Engine (Auto-Auth, Smart Quality &amp; Autonomous Next Video)"
+                                Click="JevSettings_Click"/>
+
                         <!-- ✨ Vixz AI Button -->
                         <Button x:Name="AiCopilotBtn"
                                 Content="✨ Vixz AI"

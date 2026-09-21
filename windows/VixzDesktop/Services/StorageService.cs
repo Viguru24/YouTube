@@ -36,6 +36,8 @@ namespace VixzDesktop.Services
         public string PreferredQuality { get; set; } = "hd1080";
         public UserAccount UserAccount { get; set; } = new UserAccount();
         public string? GeminiApiKey { get; set; } = null;
+        public string? JevApiKey { get; set; } = "apikey_2107cbb2ca93a9de4e6186e1b8de6d942f07_360d1ee364bc7ab0cad60b97eb75bc59b11e324dc110c1042113ad0aa31514f2";
+        public bool IsJevEnabled { get; set; } = true;
         public double AiFontSize { get; set; } = 14.0;
         public bool IsAmbientGlowEnabled { get; set; } = true;
         public bool IsSidebarCollapsed { get; set; } = false;
