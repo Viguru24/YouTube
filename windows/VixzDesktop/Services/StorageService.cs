@@ -91,7 +91,7 @@ namespace VixzDesktop.Services
                     }
                 }
 
-                if (string.IsNullOrWhiteSpace(Settings.VpsServerUrl))
+                if (string.IsNullOrWhiteSpace(Settings.VpsServerUrl) || Settings.VpsServerUrl.Contains("49.12.79.244"))
                 {
                     try
                     {
@@ -113,7 +113,7 @@ namespace VixzDesktop.Services
                                     var trimmed = line.Trim();
                                     if (trimmed.StartsWith("VPS_SERVER_URL=", StringComparison.OrdinalIgnoreCase))
                                     {
-                                        var val = trimmed.Substring("VPS_SERVER_URL=".Length).Trim().Trim('"').Trim('\'');
+                                        var val = trimmed.Substring("VPS_SERVER_URL=".Length).Trim().Trim('"').Trim('\'').Replace(@"\:", ":").Replace(@"\/", "/");
                                         if (!string.IsNullOrWhiteSpace(val)) Settings.VpsServerUrl = val;
                                     }
                                     else if (trimmed.StartsWith("VPS_API_KEY=", StringComparison.OrdinalIgnoreCase))
@@ -169,6 +169,19 @@ namespace VixzDesktop.Services
             Save();
 
             _ = VpsSyncService.NotifyWatchedAsync(video);
+        }
+
+        public static void ClearWatchHistory()
+        {
+            Settings.WatchHistory.Clear();
+            Save();
+        }
+
+        public static void RemoveFromWatchHistory(string videoId)
+        {
+            if (string.IsNullOrWhiteSpace(videoId)) return;
+            Settings.WatchHistory.RemoveAll(v => v.Id.Equals(videoId, StringComparison.OrdinalIgnoreCase));
+            Save();
         }
 
         public static void ToggleFavorite(VideoItem video)

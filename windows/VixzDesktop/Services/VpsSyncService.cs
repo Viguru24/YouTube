@@ -15,7 +15,7 @@ namespace VixzDesktop.Services
     {
         private static readonly HttpClient _httpClient = new HttpClient
         {
-            Timeout = TimeSpan.FromSeconds(12)
+            Timeout = TimeSpan.FromSeconds(30)
         };
 
         private static Timer? _syncTimer;
@@ -61,10 +61,11 @@ namespace VixzDesktop.Services
 
             try
             {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/health");
                 ApplyAuthHeaders(request, apiKey);
 
-                var response = await _httpClient.SendAsync(request);
+                var response = await _httpClient.SendAsync(request, cts.Token);
                 if (response.IsSuccessStatusCode)
                 {
                     return (true, "Connected successfully to VPS Sync Server! (Health: OK)");
@@ -73,6 +74,10 @@ namespace VixzDesktop.Services
                 {
                     return (false, $"Server returned HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                return (false, "Connection timed out. Check that your VPS is online and the URL/port are correct.");
             }
             catch (Exception ex)
             {
@@ -266,6 +271,10 @@ namespace VixzDesktop.Services
 
                 var totalWatched = StorageService.Settings.WatchHistory.Count;
                 return (true, $"Synced successfully! ({totalWatched} watched videos synchronized with VPS)");
+            }
+            catch (OperationCanceledException)
+            {
+                return (false, "Sync timed out (30s). Your VPS may be under load or unreachable. Try again or check the server.");
             }
             catch (Exception ex)
             {

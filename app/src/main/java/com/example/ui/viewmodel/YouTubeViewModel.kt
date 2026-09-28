@@ -816,8 +816,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val existing = repository.getAllVideosDirect()
                 for (v in existing) {
+                    val isStaleShort = v.category == "Shorts" && com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(v.publishedTimeText) > 180L * 86400L
                     if (!v.isFavorite && !v.isWatchLater && !v.isDownloaded &&
-                        (com.example.util.YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) ||
+                        (isStaleShort ||
+                         com.example.util.YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) ||
                          (v.category == "Shorts" && _subscribedCreators.value.isNotEmpty() && _subscribedCreators.value.none { v.channelName.contains(it, ignoreCase = true) || v.title.contains(it, ignoreCase = true) }))
                     ) {
                         repository.deleteVideoById(v.youtubeId)

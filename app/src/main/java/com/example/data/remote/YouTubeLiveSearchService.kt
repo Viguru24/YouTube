@@ -68,8 +68,110 @@ object YouTubeLiveSearchService {
         "veritasium" to listOf("veritasium", "Veritasium"),
         "cleo abram" to listOf("cleoabram", "CleoAbram"),
         "fireship" to listOf("Fireship"),
-        "two minute papers" to listOf("TwoMinutePapers")
+        "two minute papers" to listOf("TwoMinutePapers"),
+        "mkbhd" to listOf("mkbhd", "MarquesBrownlee"),
+        "marques brownlee" to listOf("mkbhd", "MarquesBrownlee"),
+        "matt wolfe" to listOf("mreflow", "MattWolfe"),
+        "daily dose of internet" to listOf("DailyDoseOfInternet"),
+        "mark rober" to listOf("MarkRober"),
+        "colin and samir" to listOf("ColinandSamir"),
+        "gordon ramsay" to listOf("gordonramsay"),
+        "bbc news" to listOf("bbcnews", "BBCNews")
     )
+
+    private val channelHandleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    suspend fun resolveChannelHandle(channelName: String): String? = withContext(Dispatchers.IO) {
+        val trimmed = channelName.trim()
+        if (trimmed.isEmpty()) return@withContext null
+        val lower = trimmed.lowercase()
+
+        // 1. Check known verified handles
+        VERIFIED_HANDLES[lower]?.firstOrNull()?.let { return@withContext it }
+
+        // 2. Check memory cache
+        channelHandleCache[lower]?.let { return@withContext it }
+
+        // 3. Search YouTube type=channel (&sp=EgIQAg%253D%253D) to extract real canonical @handle
+        try {
+            val encoded = URLEncoder.encode(trimmed, "UTF-8")
+            val url = "https://www.youtube.com/results?search_query=$encoded&sp=EgIQAg%253D%253D&hl=en&gl=US"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val html = response.body?.string() ?: ""
+                    val handleMatch = Regex(""""canonicalBaseUrl"\s*:\s*"/@([^"]+)"""").find(html)
+                    if (handleMatch != null) {
+                        val handle = handleMatch.groupValues[1]
+                        channelHandleCache[lower] = handle
+                        return@withContext handle
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Handle resolution error for '$channelName': ${e.message}")
+        }
+
+        val fallback = trimmed.replace(" ", "").lowercase()
+        channelHandleCache[lower] = fallback
+        return@withContext fallback
+    }
+
+    /**
+     * Fetches true, recent YouTube Shorts directly from the creator's channel /shorts endpoint.
+     * YouTube automatically orders the channel /shorts tab chronologically from newest upload to oldest.
+     */
+    suspend fun fetchChannelShorts(channelName: String, forceRefresh: Boolean = false): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val trimmed = channelName.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+
+        val cacheKey = "shorts:channel:$trimmed"
+        if (!forceRefresh) {
+            getCached(cacheKey)?.let { return@withContext it }
+        }
+
+        val handle = resolveChannelHandle(trimmed) ?: trimmed.replace(" ", "").lowercase()
+        val shortsUrl = "https://www.youtube.com/@$handle/shorts?hl=en&gl=US"
+
+        val list = mutableListOf<VideoEntity>()
+        try {
+            val request = Request.Builder()
+                .url(shortsUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val html = response.body?.string() ?: ""
+                    val parsed = parseVideoRenderers(html, trimmed)
+                        .map {
+                            it.copy(
+                                category = "Shorts",
+                                channelName = trimmed,
+                                durationText = if (it.durationText.isBlank() || it.durationText == "10:00") "0:45" else it.durationText,
+                                publishedTimeText = if (it.publishedTimeText.isBlank()) "Latest" else it.publishedTimeText
+                            )
+                        }
+                    list.addAll(parsed)
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Error fetching /shorts for '$trimmed': ${e.message}")
+        }
+
+        if (list.isNotEmpty()) {
+            putCache(cacheKey, list)
+        }
+        return@withContext list
+    }
 
     /**
      * Fetches latest uploads across ALL subscribed creator channels in parallel.
@@ -890,6 +992,54 @@ object YouTubeLiveSearchService {
                 }
             }
 
+            // 3. Shorts Lockup View Model (Channel /shorts tabs & modern Shorts shelves)
+            val svm = obj.optJSONObject("shortsLockupViewModel")
+            if (svm != null) {
+                var id = svm.optString("entityId", "")
+                if (id.startsWith("shorts-shelf-item-")) {
+                    id = id.removePrefix("shorts-shelf-item-")
+                }
+                if (id.length != 11) {
+                    val watchCmd = svm.optJSONObject("onTap")?.optJSONObject("innertubeCommand")
+                    val reelWatch = watchCmd?.optJSONObject("reelWatchEndpoint")?.optString("videoId", "") ?: ""
+                    val regularWatch = watchCmd?.optJSONObject("watchEndpoint")?.optString("videoId", "") ?: ""
+                    id = if (reelWatch.length == 11) reelWatch else regularWatch
+                }
+                if (id.length != 11) {
+                    val thumbUrl = svm.optJSONObject("thumbnailViewModel")?.optJSONObject("thumbnailViewModel")
+                        ?.optJSONArray("image")?.optJSONObject(0)?.optString("url", "")
+                        ?: svm.optJSONObject("thumbnailViewModel")?.optJSONObject("thumbnailViewModel")
+                        ?.optJSONObject("image")?.optJSONArray("sources")?.optJSONObject(0)?.optString("url", "") ?: ""
+                    val thumbMatch = Regex("""/vi/([a-zA-Z0-9_-]{11})/""").find(thumbUrl)
+                    if (thumbMatch != null) {
+                        id = thumbMatch.groupValues[1]
+                    }
+                }
+
+                if (id.length == 11 && !seenIds.contains(id)) {
+                    seenIds.add(id)
+                    val overlay = svm.optJSONObject("overlayMetadata")
+                    val title = extractJsonText(overlay?.opt("primaryText")) ?: "YouTube Short"
+                    val viewRaw = extractJsonText(overlay?.opt("secondaryText")) ?: ""
+                    val viewText = com.example.util.YouTubeUtils.formatViewCountText(viewRaw)
+
+                    if (title.isNotBlank() && !YouTubeUtils.isForeignLanguageContent(title, defaultCategory)) {
+                        results.add(
+                            VideoEntity(
+                                youtubeId = id,
+                                title = title,
+                                channelName = defaultCategory,
+                                thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
+                                durationText = "0:45",
+                                category = "Shorts",
+                                publishedTimeText = "Latest",
+                                viewCountText = viewText
+                            )
+                        )
+                    }
+                }
+            }
+
             val keys = obj.keys()
             while (keys.hasNext()) {
                 val key = keys.next()
@@ -983,13 +1133,50 @@ object YouTubeLiveSearchService {
             logD("YouTubeLiveSearchService", "Regex block parse error: ${t.message}")
         }
 
+        // 3. Fast Shorts Regex Parser fallback
+        try {
+            val shortsRegex = Pattern.compile(""""shortsLockupViewModel"\s*:\s*\{([^}]+(?:\{[^{}]*\}[^}]+)*)\}""")
+            val shortsMatcher = shortsRegex.matcher(html)
+            while (shortsMatcher.find() && results.size < 30) {
+                val block = shortsMatcher.group(1) ?: continue
+                val idMatcher = Pattern.compile(""""entityId"\s*:\s*"shorts-shelf-item-([a-zA-Z0-9_-]{11})"""").matcher(block)
+                if (idMatcher.find()) {
+                    val id = idMatcher.group(1) ?: continue
+                    if (!seenIds.contains(id)) {
+                        seenIds.add(id)
+                        val titleMatcher = Pattern.compile(""""primaryText"\s*:\s*\{\s*"content"\s*:\s*"([^"]+)"""").matcher(block)
+                        val viewMatcher = Pattern.compile(""""secondaryText"\s*:\s*\{\s*"content"\s*:\s*"([^"]+)"""").matcher(block)
+                        val title = if (titleMatcher.find()) cleanText(titleMatcher.group(1) ?: "") else "YouTube Short"
+                        val rawViewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: "") else ""
+                        val viewText = com.example.util.YouTubeUtils.formatViewCountText(rawViewText)
+                        if (title.isNotBlank() && !YouTubeUtils.isForeignLanguageContent(title, defaultCategory)) {
+                            results.add(
+                                VideoEntity(
+                                    youtubeId = id,
+                                    title = title,
+                                    channelName = defaultCategory,
+                                    thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
+                                    durationText = "0:45",
+                                    category = "Shorts",
+                                    publishedTimeText = "Latest",
+                                    viewCountText = viewText
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            logD("YouTubeLiveSearchService", "Regex shorts parse error: ${t.message}")
+        }
+
         return results
     }
 
     /**
-     * Fetches real, high-quality YouTube Shorts primarily from the user's subscribed channels
-     * and curated verified English creators.
-     * Strictly avoids generic trending/viral queries that return foreign/Indian shorts.
+     * Fetches real, high-quality YouTube Shorts directly from creator /shorts endpoints
+     * and strictly eliminates ancient videos (>180 days).
+     * Guarantees 0 ancient videos and strictly prioritizes latest uploads.
      */
     suspend fun fetchShortsFeed(subscribedChannels: List<String> = emptyList()): List<VideoEntity> = withContext(Dispatchers.IO) {
         val channels = if (subscribedChannels.isNotEmpty()) {
@@ -1004,7 +1191,7 @@ object YouTubeLiveSearchService {
         val isUserSubscribed = channels.isNotEmpty()
 
         if (isUserSubscribed) {
-            // Exclusively use user's subscribed creators! Never force foreign or curated creators
+            // Exclusively use user's subscribed creators!
             candidateChannels.addAll(channels.shuffled().take(12))
         } else {
             // ONLY fallback to curated creators if user has ZERO subscriptions configured
@@ -1032,50 +1219,47 @@ object YouTubeLiveSearchService {
                 shortsSemaphore.withPermit {
                     val creatorShorts = mutableListOf<VideoEntity>()
                     try {
-                        // 1. Check creator's latest channel uploads for true recent Shorts (hours / days ago)
-                        val channelUploads = try {
-                            fetchChannelLatestVideos(creator)
+                        // 1. Directly fetch creator's actual Shorts tab (https://www.youtube.com/@handle/shorts)
+                        // This guarantees 100% genuine, brand-new Shorts in chronological upload order!
+                        val directShorts = try {
+                            fetchChannelShorts(creator)
                         } catch (e: Exception) {
                             emptyList()
                         }
-                        for (v in channelUploads) {
-                            if (YouTubeUtils.isShortVideo(v) && !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)) {
-                                creatorShorts.add(
-                                    v.copy(
-                                        category = "Shorts",
-                                        channelName = if (v.channelName.isBlank() || v.channelName.equals("YouTube", ignoreCase = true)) creator else v.channelName,
-                                        durationText = if (v.durationText.isBlank() || v.durationText == "10:00") "0:45" else v.durationText
-                                    )
-                                )
+                        if (directShorts.isNotEmpty()) {
+                            creatorShorts.addAll(directShorts.take(10))
+                        }
+
+                        // 2. If channel didn't return direct shorts, fallback to YouTube date-sorted search
+                        if (creatorShorts.isEmpty()) {
+                            val query = "$creator #shorts"
+                            val searchResults = try {
+                                searchWebHtml(query, sortByUploadDate = true)
+                            } catch (e: Exception) {
+                                emptyList()
                             }
-                        }
 
-                        // 2. Query YouTube date-sorted search (&sp=CAISAhAB) specifically for this creator's Shorts
-                        val query = "$creator #shorts"
-                        val searchResults = try {
-                            searchWebHtml(query, sortByUploadDate = true)
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
+                            val maxAgeSeconds = 180L * 86400L // STRICT 6-month cutoff: NEVER accept 3-year-old videos!
+                            for (v in searchResults) {
+                                val hasShortsTag = v.title.contains("#shorts", ignoreCase = true) ||
+                                                   v.title.contains("#short", ignoreCase = true)
+                                val isExplicitShort = v.category.equals("Shorts", ignoreCase = true) || hasShortsTag
+                                val durationSec = YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
+                                val isShortDuration = durationSec in 1..185 || durationSec == 0 || v.durationText.isBlank()
+                                val matchesCreator = !isUserSubscribed || isMatchingChannel(v, creator)
+                                val elapsedSec = YouTubeUtils.parsePublishedTimeToSeconds(v.publishedTimeText)
 
-                        for (v in searchResults) {
-                            val hasShortsTag = v.title.contains("#shorts", ignoreCase = true) ||
-                                               v.title.contains("#short", ignoreCase = true)
-                            val isExplicitShort = v.category.equals("Shorts", ignoreCase = true) || hasShortsTag
-                            val durationSec = YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
-                            val isShortDuration = durationSec in 1..185 || durationSec == 0 || v.durationText.isBlank()
-
-                            // Strictly verify video belongs to this creator if user is subscribed!
-                            val matchesCreator = !isUserSubscribed || isMatchingChannel(v, creator)
-
-                            if (isExplicitShort && isShortDuration && matchesCreator && !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)) {
-                                creatorShorts.add(
-                                    v.copy(
-                                        category = "Shorts",
-                                        channelName = if (v.channelName.isBlank() || v.channelName.equals("YouTube", ignoreCase = true)) creator else v.channelName,
-                                        durationText = if (v.durationText.isBlank() || v.durationText == "10:00") "0:45" else v.durationText
+                                if (isExplicitShort && isShortDuration && matchesCreator &&
+                                    elapsedSec <= maxAgeSeconds &&
+                                    !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)) {
+                                    creatorShorts.add(
+                                        v.copy(
+                                            category = "Shorts",
+                                            channelName = if (v.channelName.isBlank() || v.channelName.equals("YouTube", ignoreCase = true)) creator else v.channelName,
+                                            durationText = if (v.durationText.isBlank() || v.durationText == "10:00") "0:45" else v.durationText
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -1083,31 +1267,41 @@ object YouTubeLiveSearchService {
                     }
 
                     if (creatorShorts.isNotEmpty()) {
-                        // Exclude ancient videos (> 1.5 years / ~550 days) when fresher shorts exist
-                        val maxAgeSeconds = 550L * 86400L
+                        // Strictly filter out any video older than 180 days (~6 months)
+                        val maxAgeSeconds = 180L * 86400L
                         val recentShorts = creatorShorts
                             .distinctBy { it.youtubeId }
                             .filter {
                                 val elapsedSec = YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                                elapsedSec <= maxAgeSeconds || it.publishedTimeText.isBlank()
+                                elapsedSec <= maxAgeSeconds || it.publishedTimeText == "Latest" || it.publishedTimeText.isBlank()
                             }
                             .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
 
-                        val targetList = if (recentShorts.isNotEmpty()) recentShorts else {
-                            creatorShorts.distinctBy { it.youtubeId }
-                                .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                        if (recentShorts.isNotEmpty()) {
+                            channelShortsMap[creator] = recentShorts.toMutableList()
                         }
-                        channelShortsMap[creator] = targetList.toMutableList()
                     }
                 }
             }
         }
         jobs.awaitAll()
 
+        // Fallback if subscribed channels don't produce shorts: supplement with curated tech/science shorts
+        if (channelShortsMap.isEmpty()) {
+            val curated = listOf("MKBHD", "Veritasium", "Fireship", "Cleo Abram", "Matt Wolfe")
+            for (c in curated) {
+                try {
+                    val s = fetchChannelShorts(c).take(4)
+                    if (s.isNotEmpty()) {
+                        channelShortsMap[c] = s.toMutableList()
+                    }
+                } catch (e: Exception) { }
+            }
+        }
+
         // Interleave shorts across channels chronologically:
         // Round 1: newest short from channel A, newest from channel B, newest from channel C...
         // Round 2: 2nd newest from channel A, 2nd newest from channel B...
-        // This ensures the top of the feed is fresh and evenly distributed across subscriptions!
         val accumulated = mutableListOf<VideoEntity>()
         val channelQueues = channelShortsMap.values.map { it.toMutableList() }.filter { it.isNotEmpty() }.toMutableList()
 

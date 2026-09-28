@@ -1125,6 +1125,8 @@ namespace VixzDesktop
         private async Task LoadFeedAsync(string title, Func<Task<List<VideoItem>>> fetcher)
         {
             FeedTitleText.Text = title;
+            if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Collapsed;
+            if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Visible;
             LoadingSpinner.Visibility = Visibility.Visible;
             VideoItemsControl.ItemsSource = null;
 
@@ -1157,11 +1159,27 @@ namespace VixzDesktop
                 return;
             }
 
-            var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-            var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            var isWatchHistory = FeedTitleText?.Text == "📜 Watch History";
+            if (isWatchHistory)
+            {
+                // In Watch History, preserve chronological watch order (most recent first = index 0)
+                // Filter by date or duration if explicitly selected by the user, but do NOT sort by YouTube upload date
+                var dateTag = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+                var durationTag = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+
+                // Passing null for sortBy maintains the exact watch-history insertion order
+                var list = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTag, durationTag, sortBy: null);
+
+                _currentFeed = list;
+                VideoItemsControl.ItemsSource = _currentFeed;
+                return;
+            }
+
+            var dateTagFilter = (DateFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            var durationTagFilter = (DurationFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
             var sortByTag = (SortByFilterCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
-            var filtered = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTag, durationTag, sortByTag);
+            var filtered = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTagFilter, durationTagFilter, sortByTag);
 
             // On discovery feeds (Home / Subscriptions), hide already-watched videos
             if (_isDiscoveryFeed)
@@ -1187,6 +1205,14 @@ namespace VixzDesktop
             if (!string.IsNullOrWhiteSpace(query))
             {
                 await PerformSearchWithFiltersAsync();
+                return;
+            }
+
+            // If we already have a loaded feed (Subscriptions, Home, Channel, etc.), apply filters directly to it!
+            if (_rawUnfilteredFeed != null && _rawUnfilteredFeed.Count > 0)
+            {
+                ApplyCurrentFilters();
+                ShowToast($"⚡ Filtered {_currentFeed.Count} videos");
                 return;
             }
 
@@ -1239,7 +1265,7 @@ namespace VixzDesktop
         {
             _feedBatchIndex = 0;
             _currentSearchQuery = null;
-            _isDiscoveryFeed = true;
+            _isDiscoveryFeed = false;
             SwitchToFeedView();
             await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
         }
@@ -1642,6 +1668,100 @@ namespace VixzDesktop
             prompt.ShowDialog();
         }
 
+        private void ClearHistoryBtn_Click(object sender, RoutedEventArgs e)
+        {
+            PromptClearWatchHistory();
+        }
+
+        private void PromptClearWatchHistory()
+        {
+            var prompt = new Window
+            {
+                Title = "🗑️ Clear Watch History",
+                Width = 440,
+                Height = 240,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = (System.Windows.Media.Brush)FindResource("BgDarkPrimary"),
+                Foreground = System.Windows.Media.Brushes.White,
+                WindowStyle = WindowStyle.ToolWindow,
+                ResizeMode = ResizeMode.NoResize
+            };
+
+            var sp = new StackPanel { Margin = new Thickness(20) };
+
+            var heading = new TextBlock
+            {
+                Text = "🗑️ Clear Entire Watch History?",
+                FontSize = 15,
+                FontWeight = FontWeights.Bold,
+                Foreground = (System.Windows.Media.Brush)FindResource("AccentRed"),
+                Margin = new Thickness(0, 0, 0, 10)
+            };
+
+            var body = new TextBlock
+            {
+                Text = "Are you sure you want to clear your entire watch history?\n\n" +
+                       "• All watched video records will be deleted.\n" +
+                       "• Your Favorites, Subscriptions, and Downloads will NOT be touched.",
+                FontSize = 11.5,
+                Foreground = (System.Windows.Media.Brush)FindResource("TextSecondary"),
+                TextWrapping = TextWrapping.Wrap,
+                LineHeight = 17,
+                Margin = new Thickness(0, 0, 0, 18)
+            };
+
+            var btnRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
+
+            var cancelBtn = new Button
+            {
+                Content = "Cancel",
+                Style = (Style)FindResource("GlassButton"),
+                FontSize = 11,
+                Padding = new Thickness(16, 6, 16, 6),
+                Margin = new Thickness(0, 0, 10, 0)
+            };
+            cancelBtn.Click += (s, ev) => prompt.Close();
+
+            var confirmBtn = new Button
+            {
+                Content = "Yes, Clear History",
+                Style = (Style)FindResource("GlassButton"),
+                Background = (System.Windows.Media.Brush)FindResource("AccentRed"),
+                Foreground = System.Windows.Media.Brushes.White,
+                FontWeight = FontWeights.Bold,
+                FontSize = 11,
+                Padding = new Thickness(16, 6, 16, 6)
+            };
+            confirmBtn.Click += (s, ev) =>
+            {
+                prompt.Close();
+                StorageService.ClearWatchHistory();
+                _rawUnfilteredFeed = new List<VideoItem>();
+                _currentFeed = new List<VideoItem>();
+                if (VideoItemsControl != null)
+                {
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                }
+                ShowToast("🗑️ Watch history cleared");
+            };
+
+            btnRow.Children.Add(cancelBtn);
+            btnRow.Children.Add(confirmBtn);
+
+            sp.Children.Add(heading);
+            sp.Children.Add(body);
+            sp.Children.Add(btnRow);
+
+            prompt.Content = sp;
+            prompt.ShowDialog();
+        }
+
         private void SubscribeToggleBtn_Click(object sender, RoutedEventArgs e)
         {
             if (_currentVideo == null || string.IsNullOrWhiteSpace(_currentVideo.ChannelTitle)) return;
@@ -1693,6 +1813,8 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "⭐ Favorite Videos";
+            if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Collapsed;
+            if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Visible;
             _rawUnfilteredFeed = StorageService.Settings.Favorites.ToList();
             ApplyCurrentFilters();
         }
@@ -1702,6 +1824,8 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "🕒 Watch Later Queue";
+            if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Collapsed;
+            if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Visible;
             _rawUnfilteredFeed = StorageService.Settings.WatchLater.ToList();
             ApplyCurrentFilters();
         }
@@ -1711,6 +1835,13 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "📜 Watch History";
+            if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Visible;
+            if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Collapsed;
+
+            // Reset filter combos to Any so watch history is displayed fully in watch order
+            if (DateFilterCombo != null) DateFilterCombo.SelectedIndex = 0;
+            if (DurationFilterCombo != null) DurationFilterCombo.SelectedIndex = 0;
+
             _rawUnfilteredFeed = StorageService.Settings.WatchHistory.ToList();
             ApplyCurrentFilters();
         }
@@ -1720,6 +1851,8 @@ namespace VixzDesktop
             _isDiscoveryFeed = false;
             SwitchToFeedView();
             FeedTitleText.Text = "💾 Downloaded Videos & Audio";
+            if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Collapsed;
+            if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Visible;
             _rawUnfilteredFeed = SyncLocalDownloadsFeed();
             ApplyCurrentFilters();
         }
@@ -2282,9 +2415,23 @@ namespace VixzDesktop
             _currentVideo = video;
             StorageService.AddHistory(video);
 
-            // Drop the video from the feed immediately so it's gone when the user goes back
-            if (FeedTitleText?.Text != "📜 Watch History" && FeedTitleText?.Text != "💾 Downloaded Videos & Audio")
+            // Update feed items
+            if (FeedTitleText?.Text == "📜 Watch History")
             {
+                // Move video to top of current Watch History feed
+                _rawUnfilteredFeed?.RemoveAll(v => v.Id == video.Id);
+                _rawUnfilteredFeed?.Insert(0, video);
+                _currentFeed?.RemoveAll(v => v.Id == video.Id);
+                _currentFeed?.Insert(0, video);
+                if (VideoItemsControl != null)
+                {
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                }
+            }
+            else if (FeedTitleText?.Text != "💾 Downloaded Videos & Audio")
+            {
+                // Drop the video from the discovery/recommendation feed immediately
                 _rawUnfilteredFeed?.RemoveAll(v => v.Id == video.Id);
                 _currentFeed?.RemoveAll(v => v.Id == video.Id);
                 if (VideoItemsControl != null)
@@ -2296,8 +2443,8 @@ namespace VixzDesktop
 
             CurrentVideoTitle.Text = video.Title;
             CurrentVideoChannel.Text = video.ChannelTitle;
-            CurrentVideoDate.Text = !string.IsNullOrWhiteSpace(video.UploadDateText) ? $" • {video.UploadDateText}" : "";
-            CurrentVideoViews.Text = !string.IsNullOrWhiteSpace(video.ViewCountText) ? $" • {video.ViewCountText}" : "";
+            CurrentVideoDate.Text = !string.IsNullOrWhiteSpace(video.DisplayTimestamp) ? $" • {video.DisplayTimestamp}" : (!string.IsNullOrWhiteSpace(video.UploadDateText) ? $" • {video.UploadDateText}" : "");
+            CurrentVideoViews.Text = !string.IsNullOrWhiteSpace(video.DisplayViews) ? $" • {video.DisplayViews}" : "";
             UpdateSubscribeToggleBtn();
 
             // If date is missing, fetch full details asynchronously
@@ -2313,7 +2460,12 @@ namespace VixzDesktop
                             if (_currentVideo?.Id == video.Id)
                             {
                                 video.UploadDateText = details.UploadDateText;
-                                CurrentVideoDate.Text = $" • {details.UploadDateText}";
+                                CurrentVideoDate.Text = $" • {video.DisplayTimestamp}";
+                                if (!string.IsNullOrWhiteSpace(details.ViewCountText))
+                                {
+                                    video.ViewCountText = details.ViewCountText;
+                                    CurrentVideoViews.Text = $" • {video.DisplayViews}";
+                                }
                             }
                         });
                     }
@@ -2693,6 +2845,17 @@ namespace VixzDesktop
         {
             if (sender is MenuItem menuItem && menuItem.DataContext is VideoItem video)
             {
+                if (FeedTitleText?.Text == "📜 Watch History")
+                {
+                    StorageService.RemoveFromWatchHistory(video.Id);
+                    _currentFeed.RemoveAll(v => v.Id == video.Id);
+                    _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                    ShowToast("🗑️ Removed from Watch History");
+                    return;
+                }
+
                 StorageService.DeleteVideo(video);
                 _currentFeed.RemoveAll(v => v.Id == video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
@@ -2761,6 +2924,17 @@ namespace VixzDesktop
             e.Handled = true;
             if (sender is FrameworkElement elem && elem.DataContext is VideoItem video)
             {
+                if (FeedTitleText?.Text == "📜 Watch History")
+                {
+                    StorageService.RemoveFromWatchHistory(video.Id);
+                    _currentFeed.RemoveAll(v => v.Id == video.Id);
+                    _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
+                    VideoItemsControl.ItemsSource = null;
+                    VideoItemsControl.ItemsSource = _currentFeed;
+                    ShowToast("🗑️ Removed from Watch History");
+                    return;
+                }
+
                 StorageService.DeleteVideo(video);
                 _currentFeed.RemoveAll(v => v.Id == video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
@@ -4190,7 +4364,7 @@ namespace VixzDesktop
 
         private string _activeSubscriptionFolder = "All";
 
-        private void SubscriptionFolderChip_Click(object sender, RoutedEventArgs e)
+        private async void SubscriptionFolderChip_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button btn && btn.Tag is string folderName)
             {
@@ -4200,6 +4374,9 @@ namespace VixzDesktop
                 if (folderName == "All")
                 {
                     SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
+                    _isDiscoveryFeed = false;
+                    SwitchToFeedView();
+                    await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync(forceRefresh: true));
                 }
                 else if (StorageService.Settings.SubscriptionFolders.TryGetValue(folderName, out var channels))
                 {
@@ -4212,6 +4389,9 @@ namespace VixzDesktop
                         matched = channels;
                     }
                     SubscribedChannelsList.ItemsSource = matched;
+                    _isDiscoveryFeed = false;
+                    SwitchToFeedView();
+                    await LoadFeedAsync($"📁 {folderName} Feed", () => YouTubeService.FetchSubscribedProfileFeedAsync(matched, 0, 150, forceRefresh: true));
                 }
                 ShowToast($"📁 Folder: {folderName}");
             }

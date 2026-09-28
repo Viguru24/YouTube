@@ -57,9 +57,15 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
-## 🚀 Release v1.9.8 (September 8, 2026)
+## 🚀 Release v1.9.8 (September 28, 2026)
 
-### 🔍 1. Complete Pinch-to-Zoom & Pan Engine Overhaul
+### ⚡ 1. Shorts Feed Engine Overhaul & True Latest Sorting
+- **Direct Creator `/shorts` Tab Endpoint:** Direct connection to `https://www.youtube.com/@handle/shorts` endpoints ensures user subscriptions and feed channels pull genuine, chronological Shorts in exact order of upload (0ms latency, latest uploads first).
+- **Modern `shortsLockupViewModel` Support:** Native parsing of modern YouTube Shorts containers extracts true video IDs, dynamic view counts, and clean metadata directly from channel shelves.
+- **Strict 180-Day Freshness Ceiling:** Eliminates stale, multi-year-old search result artifacts (hard ceiling rejects any Short older than 180 days).
+- **Automatic SQLite Cache Purge:** Background maintenance cleanses historical database cache of outdated shorts on startup so old shorts never linger in the queue.
+
+### 🔍 2. Complete Pinch-to-Zoom & Pan Engine Overhaul
 - **Smooth 1.0x – 5.0x Multi-Touch Scaling:** Completely re-engineered the gesture engine in `PlayerGestureModifier.kt` using Compose `@Composable` state wrappers (`rememberUpdatedState`) to eliminate stale closures.
 - **Zero Jitter & Elimination of Wild Jumps:** Fixed multi-pointer tracking so the previous pinch distance resets immediately when finger count drops below 2, preventing catastrophic multiplication spikes and erratic leaps.
 - **Dedicated 1-Finger 2D Panning:** When zoomed in (`> 1.05x`), single-finger drags now smoothly pan around the video frame with hardware boundary clamping (`maxPan = (dimension * (zoom - 1)) / 2`). Prevents accidental volume, brightness, or timeline scrubbing while zoomed.

@@ -1,6 +1,8 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+using System.Windows;
 
 namespace VixzDesktop.Models
 {
@@ -32,12 +34,15 @@ namespace VixzDesktop.Models
             get => _viewCountText;
             set
             {
-                if (_viewCountText != value)
+                var formatted = FormatViewsCount(value);
+                if (_viewCountText != formatted)
                 {
-                    _viewCountText = value;
+                    _viewCountText = formatted;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(SubtitleText));
                     OnPropertyChanged(nameof(MetaSubtitleText));
+                    OnPropertyChanged(nameof(FormattedDateAndViews));
+                    OnPropertyChanged(nameof(DisplayViews));
                 }
             }
         }
@@ -53,6 +58,10 @@ namespace VixzDesktop.Models
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(SubtitleText));
                     OnPropertyChanged(nameof(MetaSubtitleText));
+                    OnPropertyChanged(nameof(DisplayTimestamp));
+                    OnPropertyChanged(nameof(HasTimestamp));
+                    OnPropertyChanged(nameof(TimestampVisibility));
+                    OnPropertyChanged(nameof(FormattedDateAndViews));
                 }
             }
         }
@@ -111,7 +120,7 @@ namespace VixzDesktop.Models
                 var parts = new System.Collections.Generic.List<string>();
                 if (!string.IsNullOrWhiteSpace(ChannelTitle)) parts.Add(ChannelTitle);
                 if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube") parts.Add(UploadDateText);
-                if (!string.IsNullOrWhiteSpace(ViewCountText)) parts.Add(ViewCountText);
+                if (!string.IsNullOrWhiteSpace(DisplayViews)) parts.Add(DisplayViews);
                 return string.Join(" • ", parts);
             }
         }
@@ -121,9 +130,110 @@ namespace VixzDesktop.Models
             get
             {
                 var parts = new System.Collections.Generic.List<string>();
-                if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube") parts.Add(UploadDateText);
-                if (!string.IsNullOrWhiteSpace(ViewCountText)) parts.Add(ViewCountText);
+                if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube") parts.Add(UploadDateText.Replace('\u00A0', ' ').Trim());
+                if (!string.IsNullOrWhiteSpace(DisplayViews)) parts.Add(DisplayViews);
                 return parts.Count > 0 ? string.Join(" • ", parts) : "";
+            }
+        }
+
+        public bool HasTimestamp => !string.IsNullOrWhiteSpace(DisplayTimestamp);
+
+        public Visibility TimestampVisibility => HasTimestamp ? Visibility.Visible : Visibility.Collapsed;
+
+        public string DisplayTimestamp
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(UploadDateText) || UploadDateText == "YouTube")
+                {
+                    return "";
+                }
+                var clean = UploadDateText.Replace('\u00A0', ' ').Trim();
+                var lower = clean.ToLowerInvariant();
+
+                if (lower.Contains("live") || lower.Contains("watching")) return "LIVE";
+                if (lower.Contains("moment") || lower.Contains("just now")) return "NOW";
+                if (lower.Contains("today")) return "Today";
+                if (lower.Contains("yesterday")) return "1d ago";
+
+                // Formats compact: e.g. "2 hours ago" -> "2h ago", "15 minutes ago" -> "15m ago", "1 day ago" -> "1d ago"
+                var match = Regex.Match(lower, @"(\d+)\s*(s|sec|seconds?|m|min|minutes?|h|hr|hours?|d|days?|w|wk|weeks?|mo|mth|months?|y|yr|years?)\b");
+                if (match.Success)
+                {
+                    var num = match.Groups[1].Value;
+                    var unit = match.Groups[2].Value;
+                    string suffix = "d";
+                    if (unit.StartsWith("s")) suffix = "s";
+                    else if ((unit.StartsWith("m") && !unit.StartsWith("mo") && !unit.StartsWith("mth")) || unit == "min") suffix = "m";
+                    else if (unit.StartsWith("h")) suffix = "h";
+                    else if (unit.StartsWith("d")) suffix = "d";
+                    else if (unit.StartsWith("w")) suffix = "w";
+                    else if (unit.StartsWith("mo") || unit.StartsWith("mth")) suffix = "mo";
+                    else if (unit.StartsWith("y")) suffix = "y";
+                    return $"{num}{suffix} ago";
+                }
+
+                return clean;
+            }
+        }
+
+        public static string FormatViewsCount(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var clean = raw.Replace('\u00A0', ' ').Trim();
+
+            // Already in compact format: e.g. "1.2M views", "450K views", "12B views", "LIVE"
+            if (Regex.IsMatch(clean, @"\b\d+(?:\.\d+)?\s*[KMB]\b", RegexOptions.IgnoreCase))
+            {
+                return clean.EndsWith("views", StringComparison.OrdinalIgnoreCase) || clean.EndsWith("watching", StringComparison.OrdinalIgnoreCase)
+                    ? clean
+                    : $"{clean} views";
+            }
+
+            // Extract numeric part (e.g. "2,177,000", "2.177.000", "21769")
+            var match = Regex.Match(clean, @"([\d,\.]{3,})");
+            if (match.Success)
+            {
+                var numStr = match.Groups[1].Value.Replace(",", "").Replace(".", "");
+                if (long.TryParse(numStr, out var count))
+                {
+                    string suffix = clean.Contains("watch", StringComparison.OrdinalIgnoreCase) ? "watching" : "views";
+                    if (count >= 1_000_000_000) return $"{count / 1_000_000_000.0:0.#}B {suffix}";
+                    if (count >= 1_000_000) return $"{count / 1_000_000.0:0.#}M {suffix}";
+                    if (count >= 1_000) return $"{count / 1_000.0:0.#}K {suffix}";
+                    return $"{count} {suffix}";
+                }
+            }
+
+            var smallMatch = Regex.Match(clean, @"^(\d+)\s*(views?|watching)?$", RegexOptions.IgnoreCase);
+            if (smallMatch.Success && long.TryParse(smallMatch.Groups[1].Value, out var smallCount))
+            {
+                string suffix = clean.Contains("watch", StringComparison.OrdinalIgnoreCase) ? "watching" : "views";
+                return $"{smallCount} {suffix}";
+            }
+
+            return clean.EndsWith("views", StringComparison.OrdinalIgnoreCase) || clean.EndsWith("watching", StringComparison.OrdinalIgnoreCase)
+                ? clean
+                : $"{clean} views";
+        }
+
+        public string DisplayViews => FormatViewsCount(ViewCountText);
+
+        public string FormattedDateAndViews
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(UploadDateText) && UploadDateText != "YouTube")
+                {
+                    parts.Add($"🕒 {UploadDateText.Replace('\u00A0', ' ').Trim()}");
+                }
+                if (!string.IsNullOrWhiteSpace(ViewCountText))
+                {
+                    var views = DisplayViews;
+                    parts.Add($"👁️ {views}");
+                }
+                return string.Join("   •   ", parts);
             }
         }
     }

@@ -61,7 +61,7 @@ data class AppStrings(
     val catGaming: String = "Gaming",
     val catFocusAmbient: String = "Focus & Ambient",
 
-    val subscribed: String = "Subscribed",
+    val subscribed: String = "Sub",
     val allFeedVideos: String = "All Feed Videos",
     val manageCreators: String = "Manage Creators",
     val manageTopicsCreators: String = "Manage Topics & Creators",

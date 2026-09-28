@@ -23,6 +23,8 @@ fun PlayerTopHeader(
     shouldShowControls: Boolean,
     videoTitle: String,
     onToggleFullscreen: () -> Unit,
+    viewCountText: String = "",
+    publishedTimeText: String = "",
     modifier: Modifier = Modifier
 ) {
     if (isFullscreen && shouldShowControls) {
@@ -49,15 +51,30 @@ fun PlayerTopHeader(
                 )
             }
             Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = videoTitle,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = videoTitle,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                val metaText = listOfNotNull(
+                    viewCountText.takeIf { it.isNotBlank() },
+                    publishedTimeText.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (metaText.isNotBlank()) {
+                    Text(
+                        text = metaText,
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }

@@ -29,20 +29,21 @@ android {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 35
-    versionName = "1.9.7"
+    versionCode = 36
+    versionName = "1.9.8"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-    // Public releases contain zero hardcoded server IPs or keys
-    buildConfigField("String", "VPS_DEFAULT_URL", "\"\"")
-    buildConfigField("String", "VPS_DEFAULT_KEY", "\"\"")
+    val defaultUrl = if (vpsDefaultUrl.isNotBlank() && !vpsDefaultUrl.contains("49.12.79.244")) vpsDefaultUrl else "https://api.cosmowhisper.com/vixz"
+    val defaultKey = if (vpsDefaultKey.isNotBlank()) vpsDefaultKey else "vixz-cloud-sync-7f4a2b9c"
+    buildConfigField("String", "VPS_DEFAULT_URL", "\"$defaultUrl\"")
+    buildConfigField("String", "VPS_DEFAULT_KEY", "\"$defaultKey\"")
   }
 
   androidComponents {
     onVariants { variant ->
       variant.outputs.forEach { output ->
-        output.outputFileName.set("Vixz-YouTube-Player-v1.9.7.apk")
+        output.outputFileName.set("Vixz-YouTube-Player-v1.9.8.apk")
       }
     }
   }

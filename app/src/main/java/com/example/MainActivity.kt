@@ -342,6 +342,8 @@ fun MainAppContent(
                     videoId = activeVideo!!.youtubeId,
                     videoTitle = activeVideo!!.title,
                     channelName = activeVideo!!.channelName,
+                    viewCountText = activeVideo!!.viewCountText,
+                    publishedTimeText = activeVideo!!.publishedTimeText,
                     isFavorite = activeVideo!!.isFavorite,
                     isWatchLater = activeVideo!!.isWatchLater,
                     isDisliked = activeVideo!!.youtubeId in dislikedVideoIds,

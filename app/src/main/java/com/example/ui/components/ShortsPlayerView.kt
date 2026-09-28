@@ -57,6 +57,8 @@ fun ShortsPlayerView(
     videoId: String,
     videoTitle: String,
     channelName: String,
+    viewCountText: String = "",
+    publishedTimeText: String = "",
     isFavorite: Boolean = false,
     isWatchLater: Boolean = false,
     isDisliked: Boolean = false,
@@ -642,6 +644,20 @@ fun ShortsPlayerView(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                val shortsMeta = listOfNotNull(
+                    com.example.util.YouTubeUtils.formatViewCountText(viewCountText).takeIf { it.isNotBlank() },
+                    publishedTimeText.takeIf { it.isNotBlank() }
+                ).joinToString(" • ")
+                if (shortsMeta.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = shortsMeta,
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             // Interactive YouTube Red scrubber with clear visibility

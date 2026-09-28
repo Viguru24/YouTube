@@ -248,9 +248,6 @@ fun VideoCard(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
         ) {
             val isShort = com.example.util.YouTubeUtils.isShortVideo(video)
-            val hasValidTime = video.publishedTimeText.isNotBlank() &&
-                    !video.publishedTimeText.equals("Recent", ignoreCase = true) &&
-                    !video.publishedTimeText.equals("Recently", ignoreCase = true)
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Thumbnail container with Duration Overlay
@@ -281,28 +278,26 @@ fun VideoCard(
                         contentScale = ContentScale.Crop
                     )
 
-                    // Published Time Badge Top Left (compact: 6H, 1D, 2M)
-                    if (hasValidTime) {
-                        val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
-                        if (compactTime.isNotBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .align(Alignment.TopStart)
-                                    .background(
-                                        Color.Black.copy(alpha = 0.75f),
-                                        RoundedCornerShape(4.dp)
-                                    )
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = compactTime,
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                    // Published Time / Recency Badge Top Left (Always present, compact: 6H, 1D, 2M, or Latest)
+                    val compactTime = remember(video.publishedTimeText) {
+                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "Latest")
+                    }
+                    Box(
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .align(Alignment.TopStart)
+                            .background(
+                                Color.Black.copy(alpha = 0.75f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = compactTime,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     // Watched progress bar along bottom edge of thumbnail
@@ -357,43 +352,42 @@ fun VideoCard(
                         }
                     }
 
-                    // Top Right Quick Actions (Favorite & Watch Later)
+                    // Top Right Quick Actions (Favorite & Watch Later) - Minimalist & Tiny (exact icon size)
                     Row(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(4.dp)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            onClick = { onWatchLaterToggle(video) },
+                        Box(
                             modifier = Modifier
-                                .size(28.dp)
-                                .background(
-                                    Color.Black.copy(alpha = 0.6f),
-                                    CircleShape
-                                )
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable { onWatchLaterToggle(video) },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
                                 contentDescription = "Watch Later",
                                 tint = if (video.isWatchLater) YouTubeRed else Color.White,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        IconButton(
-                            onClick = { onFavoriteToggle(video) },
+                        Box(
                             modifier = Modifier
-                                .size(28.dp)
-                                .background(
-                                    Color.Black.copy(alpha = 0.6f),
-                                    CircleShape
-                                )
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable { onFavoriteToggle(video) },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                 contentDescription = "Favorite",
                                 tint = if (video.isFavorite) GoldStar else Color.White,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
@@ -442,22 +436,27 @@ fun VideoCard(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = video.viewCountText,
+                                    text = com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1
                                 )
                             }
-                        }
 
-                        if (recommendationReason.isNotBlank()) {
-                            Text(
-                                text = "✨ $recommendationReason",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = YouTubeRed,
-                                maxLines = 1,
-                                fontSize = 10.sp
-                            )
+                            if (video.publishedTimeText.isNotBlank()) {
+                                Text(
+                                    text = "•",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = video.publishedTimeText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 

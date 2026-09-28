@@ -408,6 +408,7 @@
                                 <TextBlock x:Name="FeedTitleText" Text="Recommended Feed" Foreground="White" FontSize="20" FontWeight="Bold" VerticalAlignment="Center"/>
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                     <ProgressBar x:Name="LoadingSpinner" IsIndeterminate="True" Width="120" Height="4" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                    <Button x:Name="ClearHistoryBtn" Content="🗑️ Clear History" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentRed}" FontSize="11" Padding="10,4" ToolTip="Delete all watched videos from your history" Visibility="Collapsed" Click="ClearHistoryBtn_Click"/>
                                     <Button x:Name="ResetAlgorithmBtn" Content="🤖 Reset Algorithm" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="11" Padding="10,4" ToolTip="Reset recommendation algorithm, watch history affinity, and dislikes back to factory defaults" Click="ResetAlgorithmBtn_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -467,7 +468,7 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>
-                                            <Border Width="280" Height="274" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
+                                            <Border Width="280" Height="286" Margin="8" Background="#15151D" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="12" Cursor="Hand" MouseDown="VideoCard_MouseDown">
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
                                                         <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
@@ -504,6 +505,13 @@
                                                     <Border Grid.Row="0" CornerRadius="12,12,0,0" ClipToBounds="True">
                                                         <Grid>
                                                             <Image Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
+                                                            <!-- Published / Recency Timestamp Badge (Top Left) -->
+                                                            <Border Background="#E60A0A0E" BorderBrush="#33FFFFFF" BorderThickness="1" CornerRadius="5" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="7" Visibility="{Binding TimestampVisibility}">
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="🕒 " FontSize="9" VerticalAlignment="Center"/>
+                                                                    <TextBlock Text="{Binding DisplayTimestamp}" Foreground="{StaticResource AccentGold}" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                            </Border>
                                                             <!-- Duration Badge -->
                                                             <Border Background="#CC000000" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="8">
                                                                 <TextBlock Text="{Binding DurationText}" Foreground="White" FontSize="11" FontWeight="Bold"/>
@@ -514,23 +522,24 @@
                                                     <!-- Video Info & Actions -->
                                                     <Grid Grid.Row="1" Margin="10,8,10,8">
                                                         <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="Auto"/>
-                                                            <RowDefinition Height="*"/>
-                                                            <RowDefinition Height="Auto"/>
+                                                             <RowDefinition Height="Auto"/>
+                                                             <RowDefinition Height="Auto"/>
+                                                             <RowDefinition Height="Auto"/>
+                                                             <RowDefinition Height="*"/>
+                                                             <RowDefinition Height="Auto"/>
                                                         </Grid.RowDefinitions>
 
                                                         <!-- Video Title -->
                                                         <TextBlock Grid.Row="0" Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
 
-                                                        <!-- Channel & Meta Subtitle -->
-                                                        <WrapPanel Grid.Row="1" Margin="0,3,0,0">
-                                                            <TextBlock Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" ToolTip="Click to view creator videos" MouseDown="ChannelName_MouseDown"/>
-                                                            <TextBlock Text="{Binding MetaSubtitleText, StringFormat='{} • {0}'}" Foreground="{StaticResource TextSecondary}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                                        </WrapPanel>
+                                                        <!-- Channel Title -->
+                                                        <TextBlock Grid.Row="1" Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="Click to view creator videos" Margin="0,3,0,0" MouseDown="ChannelName_MouseDown"/>
+
+                                                        <!-- Date & Views Metadata Subtitle -->
+                                                        <TextBlock Grid.Row="2" Text="{Binding FormattedDateAndViews}" Foreground="{StaticResource TextSecondary}" FontSize="10.5" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
 
                                                         <!-- Quick Action Bar: Thumbs Up, Thumbs Down, Delete -->
-                                                        <Grid Grid.Row="3" Margin="0,6,0,0">
+                                                        <Grid Grid.Row="4" Margin="0,4,0,0">
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto"/>
                                                                 <ColumnDefinition Width="*"/>

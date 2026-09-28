@@ -348,6 +348,8 @@ fun PlayerScreen(
                         onDeleteDownloadClick = onDeleteDownloadClick,
                         onAiSummaryClick = { showAiSummaryModal = true },
                         videoTitle = video.title,
+                        viewCountText = com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText),
+                        publishedTimeText = video.publishedTimeText,
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = toggleFullscreen,
                         onPlayerReady = { wv -> webViewInstance = wv },
@@ -416,9 +418,13 @@ fun PlayerScreen(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (video.viewCountText.isNotBlank()) {
+                                            val statsSubtitle = listOfNotNull(
+                                                com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText).takeIf { it.isNotBlank() },
+                                                video.publishedTimeText.takeIf { it.isNotBlank() }
+                                            ).joinToString(" • ")
+                                            if (statsSubtitle.isNotBlank()) {
                                                 Text(
-                                                    text = video.viewCountText,
+                                                    text = statsSubtitle,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -948,26 +954,24 @@ private fun PlaylistQueueItem(
                         contentScale = ContentScale.Crop
                     )
 
-                    // Top Left Overlay Badge: Published Age
-                    if (video.publishedTimeText.isNotBlank()) {
-                        val compactTime = com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText)
-                        if (compactTime.isNotBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(3.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(Color.Black.copy(alpha = 0.8f))
-                                    .padding(horizontal = 3.dp, vertical = 1.dp)
-                            ) {
-                                Text(
-                                    text = compactTime,
-                                    color = Color.White,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                    // Top Left Overlay Badge: Published Age (Always present, compact: 6H, 1D, 2M, or Latest)
+                    val compactTime = remember(video.publishedTimeText) {
+                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "Latest")
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = compactTime,
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     // Bottom Right Overlay Badge: Video Duration
@@ -1019,7 +1023,7 @@ private fun PlaylistQueueItem(
 
                     val queueSubText = listOfNotNull(
                         video.publishedTimeText.takeIf { it.isNotBlank() },
-                        video.viewCountText.takeIf { it.isNotBlank() }
+                        com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText).takeIf { it.isNotBlank() }
                     ).joinToString(" • ")
 
                     if (queueSubText.isNotBlank()) {

@@ -68,27 +68,29 @@ echo.
 echo [*] Total connected devices ready to update: %DEVICE_COUNT%
 echo.
 
-REM 3. Locate the latest compiled APK
-set "APK_PATH=%REPO_DIR%app\build\outputs\apk\debug\Vixz-YouTube-Player-v1.9.7.apk"
-
-if not exist "%APK_PATH%" (
-    for /f "delims=" %%f in ('dir /b /s /a-d "%REPO_DIR%app\build\outputs\apk\debug\*.apk" 2^>nul') do (
-        set "APK_PATH=%%f"
-    )
+REM 3. ALWAYS Compile fresh debug APK with latest code changes
+echo [*] Clearing Kotlin compile cache to ensure latest code is compiled...
+if exist "%REPO_DIR%app\build\tmp\kotlin-classes" (
+    rmdir /s /q "%REPO_DIR%app\build\tmp\kotlin-classes"
 )
+if exist "%REPO_DIR%app\build\kotlin" (
+    rmdir /s /q "%REPO_DIR%app\build\kotlin"
+)
+echo [*] Compiling latest Vixz Android changes (Debug APK)...
+call "%REPO_DIR%gradlew.bat" assembleDebug
+if errorlevel 1 (
+    color 0C
+    echo.
+    echo [ERROR] Gradle build failed! Check compiler errors above.
+    pause
+    exit /b 1
+)
+echo [OK] Build succeeded.
+echo.
 
-if not exist "%APK_PATH%" (
-    echo [*] APK not found. Building YouTube debug APK now...
-    call "%REPO_DIR%gradlew.bat" assembleDebug
-    if errorlevel 1 (
-        color 0C
-        echo [ERROR] Gradle build failed.
-        pause
-        exit /b 1
-    )
-    for /f "delims=" %%f in ('dir /b /s /a-d "%REPO_DIR%app\build\outputs\apk\debug\*.apk" 2^>nul') do (
-        set "APK_PATH=%%f"
-    )
+set "APK_PATH="
+for /f "delims=" %%f in ('dir /b /s /a-d /o-d "%REPO_DIR%app\build\outputs\apk\debug\*.apk" 2^>nul') do (
+    if not defined APK_PATH set "APK_PATH=%%f"
 )
 
 if "%APK_PATH%"=="" (

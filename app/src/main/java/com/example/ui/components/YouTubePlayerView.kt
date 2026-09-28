@@ -72,6 +72,8 @@ fun YouTubePlayerView(
     onDownloadClick: () -> Unit = {},
     onDeleteDownloadClick: () -> Unit = {},
     videoTitle: String = "Video",
+    viewCountText: String = "",
+    publishedTimeText: String = "",
     isFullscreen: Boolean = false,
     onToggleFullscreen: () -> Unit = {},
     onEnterPip: () -> Unit = {},
@@ -827,12 +829,14 @@ fun YouTubePlayerView(
             modifier = Modifier.align(Alignment.TopEnd)
         )
 
-        // 5. Fullscreen Top Header Bar (Back button + Video title)
+        // 5. Fullscreen Top Header Bar (Back button + Video title + Views + Publish date)
         PlayerTopHeader(
             isFullscreen = isFullscreen,
             shouldShowControls = shouldShowControls,
             videoTitle = videoTitle,
             onToggleFullscreen = onToggleFullscreen,
+            viewCountText = viewCountText,
+            publishedTimeText = publishedTimeText,
             modifier = Modifier.align(Alignment.TopStart)
         )
 

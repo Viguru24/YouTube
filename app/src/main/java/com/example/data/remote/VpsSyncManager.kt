@@ -30,7 +30,11 @@ object VpsSyncManager {
 
     fun getServerUrl(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        val saved = prefs.getString(KEY_SERVER_URL, "")?.trim().orEmpty()
+        if (saved.isBlank() || saved.contains("49.12.79.244")) {
+            return "https://api.cosmowhisper.com/vixz"
+        }
+        return saved
     }
 
     fun setServerUrl(context: Context, url: String) {
@@ -40,7 +44,8 @@ object VpsSyncManager {
 
     fun getApiKey(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_API_KEY, "")?.trim().orEmpty()
+        val saved = prefs.getString(KEY_API_KEY, "")?.trim().orEmpty()
+        return if (saved.isNotBlank()) saved else "vixz-cloud-sync-7f4a2b9c"
     }
 
     fun setApiKey(context: Context, key: String) {
