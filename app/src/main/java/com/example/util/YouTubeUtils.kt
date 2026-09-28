@@ -281,11 +281,52 @@ object YouTubeUtils {
     }
     fun formatViewCount(views: Long): String {
         return when {
-            views >= 1_000_000 -> String.format("%.1fM views", views / 1_000_000.0)
-            views >= 1_000 -> String.format("%dK views", views / 1_000)
+            views >= 1_000_000_000 -> String.format(java.util.Locale.US, "%.1fB views", views / 1_000_000_000.0)
+            views >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM views", views / 1_000_000.0)
+            views >= 1_000 -> String.format(java.util.Locale.US, "%dK views", views / 1_000)
             views > 0 -> "$views views"
             else -> ""
         }
+    }
+
+    /**
+     * Formats any raw view count string (e.g. "2,177,000 views", "21769", "2.1M views") into compact YouTube format
+     */
+    fun formatViewCountText(raw: String?): String {
+        if (raw.isNullOrBlank()) return ""
+        val clean = raw.replace('\u00A0', ' ').trim()
+
+        // Already in compact format: e.g. "1.2M views", "450K views", "12B views"
+        if (clean.matches(Regex("""(?i).*\b\d+(?:\.\d+)?\s*[KMB]\s*(?:views?|watching)?.*"""))) {
+            return if (clean.endsWith("views", ignoreCase = true) || clean.endsWith("watching", ignoreCase = true)) clean else "$clean views"
+        }
+
+        // Extract numeric part (e.g. "2,177,000", "2.177.000", "21769")
+        val match = Regex("""([\d,\.]{3,})""").find(clean)
+        if (match != null) {
+            val numStr = match.groupValues[1].replace(",", "").replace(".", "")
+            val count = numStr.toLongOrNull()
+            if (count != null && count > 0) {
+                val suffix = if (clean.contains("watch", ignoreCase = true)) "watching" else "views"
+                return when {
+                    count >= 1_000_000_000 -> String.format(java.util.Locale.US, "%.1fB %s", count / 1_000_000_000.0, suffix)
+                    count >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM %s", count / 1_000_000.0, suffix)
+                    count >= 1_000 -> String.format(java.util.Locale.US, "%dK %s", count / 1_000, suffix)
+                    else -> "$count $suffix"
+                }
+            }
+        }
+
+        val smallMatch = Regex("""(?i)^(\d+)\s*(views?|watching)?$""").find(clean)
+        if (smallMatch != null) {
+            val smallCount = smallMatch.groupValues[1].toLongOrNull()
+            if (smallCount != null) {
+                val suffix = if (clean.contains("watch", ignoreCase = true)) "watching" else "views"
+                return "$smallCount $suffix"
+            }
+        }
+
+        return if (clean.endsWith("views", ignoreCase = true) || clean.endsWith("watching", ignoreCase = true)) clean else "$clean views"
     }
 
     /**
@@ -353,34 +394,35 @@ object YouTubeUtils {
     }
 
     /**
-     * Converts a relative time string like "3 months ago" into a compact badge label.
-     * e.g. "3 months ago" → "3M", "2 days ago" → "2D", "1 year ago" → "1Y",
-     * "5 hours ago" → "5H", "30 seconds ago" → "30S", "1 week ago" → "1W"
+     * Converts a relative time string like "3 months ago", "Streamed 2 days ago", "Premiered 1 hour ago"
+     * into a compact badge label (e.g. "3M", "2D", "1Y", "5H", "30S", "1W").
+     * Defaults to "Latest" if time is missing, recent, or unparsed.
      */
-    fun formatCompactTime(relativeTime: String): String {
-        if (relativeTime.isBlank()) return ""
+    fun formatCompactTime(relativeTime: String, defaultIfMissing: String = "Latest"): String {
+        if (relativeTime.isBlank()) return defaultIfMissing
         val lower = relativeTime.lowercase().trim()
 
-        val match = Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""").find(lower)
+        val match = Regex("""(\d+)\s*(second|sec|minute|min|hour|hr|day|d|week|wk|month|mo|year|yr)s?\s*(?:ago)?""").find(lower)
         if (match != null) {
             val num = match.groupValues[1]
             val unit = match.groupValues[2]
-            val suffix = when (unit) {
-                "second" -> "S"
-                "minute" -> "MIN"
-                "hour" -> "H"
-                "day" -> "D"
-                "week" -> "W"
-                "month" -> "M"
-                "year" -> "Y"
+            val suffix = when {
+                unit.startsWith("s") -> "S"
+                unit.startsWith("min") || unit == "m" -> "MIN"
+                unit.startsWith("h") -> "H"
+                unit.startsWith("d") -> "D"
+                unit.startsWith("w") -> "W"
+                unit.startsWith("mo") || unit == "month" -> "M"
+                unit.startsWith("y") -> "Y"
                 else -> ""
             }
             return "$num$suffix"
         }
 
-        if (lower.contains("just now") || lower.contains("moments ago")) return "NOW"
+        if (lower.contains("just now") || lower.contains("moments ago") || lower.contains("live now") || (lower.contains("live") && !lower.contains("ago"))) return "NOW"
+        if (lower.contains("recent") || lower.contains("risent") || lower.contains("new") || lower.contains("today")) return "Latest"
 
-        return ""
+        return defaultIfMissing
     }
 
     /**
@@ -388,29 +430,34 @@ object YouTubeUtils {
      * into estimated elapsed seconds, enabling precise time-based sorting (Newest vs Oldest).
      */
     fun parsePublishedTimeToSeconds(publishedText: String): Long {
-        if (publishedText.isBlank()) return Long.MAX_VALUE / 2 // Neutral middle value if date missing
+        if (publishedText.isBlank()) return 3L * 86400L // Default to ~3 days (recent) instead of infinity
         val lower = publishedText.lowercase().trim()
 
-        val match = Regex("""(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago""").find(lower)
+        if (lower.contains("live now") || lower.contains("just now") || lower.contains("moments ago") || 
+            (lower.contains("live") && !lower.contains("ago")) || lower.contains("recent") || 
+            lower.contains("risent") || lower.contains("latest") || lower.contains("today")) {
+            return 0L
+        }
+        if (lower.contains("yesterday")) {
+            return 86400L
+        }
+
+        val match = Regex("""(\d+)\s*(second|sec|minute|min|hour|hr|day|d|week|wk|month|mo|year|yr)s?\s*(?:ago)?""").find(lower)
         if (match != null) {
             val num = match.groupValues[1].toLongOrNull() ?: 1L
             val unit = match.groupValues[2]
-            return when (unit) {
-                "second" -> num
-                "minute" -> num * 60
-                "hour" -> num * 3600
-                "day" -> num * 86400
-                "week" -> num * 604800
-                "month" -> num * 2592000
-                "year" -> num * 31536000
-                else -> Long.MAX_VALUE / 2
+            return when {
+                unit.startsWith("s") -> num
+                unit.startsWith("min") || unit == "m" -> num * 60
+                unit.startsWith("h") -> num * 3600
+                unit.startsWith("d") -> num * 86400
+                unit.startsWith("w") -> num * 604800
+                unit.startsWith("mo") || unit == "month" -> num * 2592000
+                unit.startsWith("y") -> num * 31536000
+                else -> 3L * 86400L
             }
         }
 
-        if (lower.contains("live now") || lower.contains("just now") || lower.contains("moments ago") || (lower.contains("live") && !lower.contains("ago"))) {
-            return 0L
-        }
-
-        return Long.MAX_VALUE / 2
+        return 3L * 86400L
     }
 }

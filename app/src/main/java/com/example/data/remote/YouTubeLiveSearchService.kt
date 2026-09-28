@@ -264,7 +264,7 @@ object YouTubeLiveSearchService {
                                         durationText = durFormatted,
                                         category = "YouTube",
                                         publishedTimeText = item.textualUploadDate ?: "",
-                                        viewCountText = if (item.viewCount >= 0) "${item.viewCount} views" else ""
+                                        viewCountText = if (item.viewCount >= 0) com.example.util.YouTubeUtils.formatViewCount(item.viewCount) else ""
                                     )
                                 )
                             }
@@ -786,9 +786,10 @@ object YouTubeLiveSearchService {
                     }
 
                     val publishedText = extractJsonText(r.opt("publishedTimeText")) ?: ""
-                    val viewText = extractJsonText(r.opt("viewCountText"))
-                        ?: extractJsonText(r.opt("shortViewCountText"))
+                    val rawViews = extractJsonText(r.opt("shortViewCountText"))
+                        ?: extractJsonText(r.opt("viewCountText"))
                         ?: ""
+                    val viewText = com.example.util.YouTubeUtils.formatViewCountText(rawViews)
 
                     if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
                         val assignedCategory = if (key == "reelItemRenderer") "Shorts" else defaultCategory
@@ -863,7 +864,7 @@ object YouTubeLiveSearchService {
                                     val part = parts.optJSONObject(p) ?: continue
                                     val txt = extractJsonText(part.opt("text")) ?: ""
                                     if (txt.contains("view", ignoreCase = true)) {
-                                        viewText = txt
+                                        viewText = com.example.util.YouTubeUtils.formatViewCountText(txt)
                                     } else if (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true)) {
                                         publishedText = txt
                                     }
@@ -957,7 +958,8 @@ object YouTubeLiveSearchService {
                         val title = if (titleMatcher.find()) cleanText(titleMatcher.group(1) ?: titleMatcher.group(2) ?: "") else "YouTube Video"
                         val channel = if (ownerMatcher.find()) cleanText(ownerMatcher.group(1) ?: ownerMatcher.group(2) ?: "") else defaultCategory
                         val publishedText = if (pubMatcher.find()) cleanText(pubMatcher.group(1) ?: pubMatcher.group(2) ?: "") else ""
-                        val viewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: viewMatcher.group(2) ?: "") else ""
+                        val rawViewText = if (viewMatcher.find()) cleanText(viewMatcher.group(1) ?: viewMatcher.group(2) ?: "") else ""
+                        val viewText = com.example.util.YouTubeUtils.formatViewCountText(rawViewText)
                         val duration = if (lengthMatcher.find()) cleanText(lengthMatcher.group(1) ?: lengthMatcher.group(2) ?: "") else ""
 
                         if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
@@ -990,68 +992,139 @@ object YouTubeLiveSearchService {
      * Strictly avoids generic trending/viral queries that return foreign/Indian shorts.
      */
     suspend fun fetchShortsFeed(subscribedChannels: List<String> = emptyList()): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val candidateChannels = mutableListOf<String>()
-
-        // 1. PRIMARY SOURCE: The user's actual subscribed creators!
-        if (subscribedChannels.isNotEmpty()) {
-            val shuffledSubs = subscribedChannels.shuffled().take(6)
-            candidateChannels.addAll(shuffledSubs)
+        val channels = if (subscribedChannels.isNotEmpty()) {
+            subscribedChannels
+        } else if (com.example.data.model.UserProfileData.subscribedChannels.isNotEmpty()) {
+            com.example.data.model.UserProfileData.subscribedChannels.toList()
+        } else {
+            emptyList()
         }
 
-        // 2. Curated premium Western/English creators as supplemental fallback (NEVER generic trending/viral)
-        val curatedCreators = listOf(
-            "Veritasium",
-            "MKBHD",
-            "Daily Dose of Internet",
-            "Cleo Abram",
-            "Fireship",
-            "Matt Wolfe",
-            "Two Minute Papers",
-            "Mark Rober",
-            "Colin and Samir",
-            "Gordon Ramsay",
-            "BBC News"
-        )
-        val needed = (6 - candidateChannels.size).coerceAtLeast(2)
-        val supplemental = curatedCreators.filter { cur ->
-            candidateChannels.none { it.equals(cur, ignoreCase = true) }
-        }.shuffled().take(needed)
-        candidateChannels.addAll(supplemental)
+        val candidateChannels = mutableListOf<String>()
+        val isUserSubscribed = channels.isNotEmpty()
 
-        val accumulated = mutableListOf<VideoEntity>()
+        if (isUserSubscribed) {
+            // Exclusively use user's subscribed creators! Never force foreign or curated creators
+            candidateChannels.addAll(channels.shuffled().take(12))
+        } else {
+            // ONLY fallback to curated creators if user has ZERO subscriptions configured
+            val curatedCreators = listOf(
+                "Veritasium",
+                "MKBHD",
+                "Daily Dose of Internet",
+                "Cleo Abram",
+                "Fireship",
+                "Matt Wolfe",
+                "Two Minute Papers",
+                "Mark Rober",
+                "Colin and Samir",
+                "Gordon Ramsay",
+                "BBC News"
+            )
+            candidateChannels.addAll(curatedCreators.shuffled().take(6))
+        }
+
+        val channelShortsMap = java.util.Collections.synchronizedMap(mutableMapOf<String, MutableList<VideoEntity>>())
+        val shortsSemaphore = kotlinx.coroutines.sync.Semaphore(6)
+
         val jobs = candidateChannels.map { creator ->
             async {
-                try {
-                    val query = "$creator #shorts"
-                    val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
-                        searchRealYouTubeVideos(query, sortByUploadDate = true)
-                    } ?: emptyList()
+                shortsSemaphore.withPermit {
+                    val creatorShorts = mutableListOf<VideoEntity>()
+                    try {
+                        // 1. Check creator's latest channel uploads for true recent Shorts (hours / days ago)
+                        val channelUploads = try {
+                            fetchChannelLatestVideos(creator)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        for (v in channelUploads) {
+                            if (YouTubeUtils.isShortVideo(v) && !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)) {
+                                creatorShorts.add(
+                                    v.copy(
+                                        category = "Shorts",
+                                        channelName = if (v.channelName.isBlank() || v.channelName.equals("YouTube", ignoreCase = true)) creator else v.channelName,
+                                        durationText = if (v.durationText.isBlank() || v.durationText == "10:00") "0:45" else v.durationText
+                                    )
+                                )
+                            }
+                        }
 
-                    val filtered = fetched.filter { v ->
-                        val hasShortsTag = v.title.contains("#shorts", ignoreCase = true) ||
-                                           v.title.contains("#short", ignoreCase = true)
-                        val isExplicitShort = v.category.equals("Shorts", ignoreCase = true) || hasShortsTag
-                        val durationSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
-                        isExplicitShort &&
-                        (durationSec in 1..185 || durationSec == 0 || v.durationText.isBlank()) &&
-                        !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)
-                    }.map {
-                        it.copy(
-                            category = "Shorts",
-                            durationText = if (it.durationText.isBlank() || it.durationText == "10:00") "0:45" else it.durationText
-                        )
+                        // 2. Query YouTube date-sorted search (&sp=CAISAhAB) specifically for this creator's Shorts
+                        val query = "$creator #shorts"
+                        val searchResults = try {
+                            searchWebHtml(query, sortByUploadDate = true)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+
+                        for (v in searchResults) {
+                            val hasShortsTag = v.title.contains("#shorts", ignoreCase = true) ||
+                                               v.title.contains("#short", ignoreCase = true)
+                            val isExplicitShort = v.category.equals("Shorts", ignoreCase = true) || hasShortsTag
+                            val durationSec = YouTubeUtils.parseFormattedTimeToSeconds(v.durationText)
+                            val isShortDuration = durationSec in 1..185 || durationSec == 0 || v.durationText.isBlank()
+
+                            // Strictly verify video belongs to this creator if user is subscribed!
+                            val matchesCreator = !isUserSubscribed || isMatchingChannel(v, creator)
+
+                            if (isExplicitShort && isShortDuration && matchesCreator && !YouTubeUtils.isForeignLanguageContent(v.title, v.channelName)) {
+                                creatorShorts.add(
+                                    v.copy(
+                                        category = "Shorts",
+                                        channelName = if (v.channelName.isBlank() || v.channelName.equals("YouTube", ignoreCase = true)) creator else v.channelName,
+                                        durationText = if (v.durationText.isBlank() || v.durationText == "10:00") "0:45" else v.durationText
+                                    )
+                                )
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logD("YouTubeLiveSearchService", "Error fetching shorts for '$creator': ${e.message}")
                     }
-                    filtered
-                } catch (e: Exception) {
-                    emptyList<VideoEntity>()
+
+                    if (creatorShorts.isNotEmpty()) {
+                        // Exclude ancient videos (> 1.5 years / ~550 days) when fresher shorts exist
+                        val maxAgeSeconds = 550L * 86400L
+                        val recentShorts = creatorShorts
+                            .distinctBy { it.youtubeId }
+                            .filter {
+                                val elapsedSec = YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                                elapsedSec <= maxAgeSeconds || it.publishedTimeText.isBlank()
+                            }
+                            .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+
+                        val targetList = if (recentShorts.isNotEmpty()) recentShorts else {
+                            creatorShorts.distinctBy { it.youtubeId }
+                                .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                        }
+                        channelShortsMap[creator] = targetList.toMutableList()
+                    }
+                }
+            }
+        }
+        jobs.awaitAll()
+
+        // Interleave shorts across channels chronologically:
+        // Round 1: newest short from channel A, newest from channel B, newest from channel C...
+        // Round 2: 2nd newest from channel A, 2nd newest from channel B...
+        // This ensures the top of the feed is fresh and evenly distributed across subscriptions!
+        val accumulated = mutableListOf<VideoEntity>()
+        val channelQueues = channelShortsMap.values.map { it.toMutableList() }.filter { it.isNotEmpty() }.toMutableList()
+
+        while (channelQueues.isNotEmpty()) {
+            val iter = channelQueues.iterator()
+            while (iter.hasNext()) {
+                val q = iter.next()
+                if (q.isNotEmpty()) {
+                    accumulated.add(q.removeAt(0))
+                }
+                if (q.isEmpty()) {
+                    iter.remove()
                 }
             }
         }
 
-        val allResults = jobs.awaitAll().flatten()
-        accumulated.addAll(allResults)
-
-        return@withContext accumulated.distinctBy { it.youtubeId }.shuffled()
+        return@withContext accumulated.distinctBy { it.youtubeId }
     }
 
     private fun formatSeconds(sec: Long): String {

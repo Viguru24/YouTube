@@ -180,8 +180,8 @@ fun HomeScreen(
     var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
-    var selectedSort by remember { mutableStateOf("Default") }
-    val sortCycle = listOf("Default", "Newest", "Oldest")
+    var selectedSort by remember { mutableStateOf("Newest") }
+    val sortCycle = listOf("Newest", "Default", "Oldest")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
     val strings = com.example.util.LocalAppStrings.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -403,7 +403,7 @@ fun HomeScreen(
                                         coroutineScope.launch {
                                             gridState.scrollToItem(0)
                                         }
-                                        onCategorySelected("All")
+                                        onCategorySelected("⚡ Latest")
                                         onSearchQueryChanged("")
                                         onSubscribedChannelSelected("")
                                         onRefreshFeed()
@@ -418,9 +418,137 @@ fun HomeScreen(
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
 
-                            // Subscribed Channels Pull-Down Menu Button (Right next to the Play Button)
+                            // Persistent Recency / Time Filter Button (Always on Top-Left, Defaults to Latest)
+                            var showRecencyMenu by remember { mutableStateOf(false) }
+                            val is24hActive = selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true)
+                            val isHourActive = selectedCategory.contains("hour", ignoreCase = true)
+                            val isWeekActive = selectedCategory.contains("week", ignoreCase = true)
+                            val isMonthActive = selectedCategory.contains("month", ignoreCase = true)
+                            val isLatestActive = selectedCategory.contains("Latest", ignoreCase = true) || (!is24hActive && !isHourActive && !isWeekActive && !isMonthActive && selectedCategory == "All")
+
+                            val recencyLabel = when {
+                                is24hActive -> "24h"
+                                isHourActive -> "1h"
+                                isWeekActive -> "Week"
+                                isMonthActive -> "Month"
+                                else -> "Latest"
+                            }
+
+                            Box {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = YouTubeRed,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable { showRecencyMenu = true }
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (is24hActive || isHourActive || isWeekActive || isMonthActive) Icons.Filled.AccessTime else Icons.Filled.FlashOn,
+                                            contentDescription = "Time Filter",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = recencyLabel,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Icon(
+                                            imageVector = Icons.Filled.ArrowDropDown,
+                                            contentDescription = "Select Time",
+                                            tint = Color.White.copy(alpha = 0.85f),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = showRecencyMenu,
+                                    onDismissRequest = { showRecencyMenu = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("⚡ Latest (Default)", fontWeight = if (isLatestActive) FontWeight.Bold else FontWeight.Normal, color = if (isLatestActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("⚡ Latest")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⏰ Last 24 Hours", fontWeight = if (is24hActive) FontWeight.Bold else FontWeight.Normal, color = if (is24hActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("⏰ Last 24h")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⏳ Last Hour", fontWeight = if (isHourActive) FontWeight.Bold else FontWeight.Normal, color = if (isHourActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("⏳ Last Hour")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("📅 This Week", fontWeight = if (isWeekActive) FontWeight.Bold else FontWeight.Normal, color = if (isWeekActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("📅 This Week")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("🗓️ This Month", fontWeight = if (isMonthActive) FontWeight.Bold else FontWeight.Normal, color = if (isMonthActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("🗓️ This Month")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⭐ All Feed Videos", fontWeight = if (selectedCategory == "All") FontWeight.Bold else FontWeight.Normal) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("All")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Subscribed Channels Pull-Down Menu Button (Right next to the Recency Button)
                             Box {
                                 Surface(
                                     shape = RoundedCornerShape(20.dp),
@@ -436,15 +564,15 @@ fun HomeScreen(
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 10.dp)
+                                        modifier = Modifier.padding(horizontal = 8.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Subscriptions,
                                             contentDescription = "Subscriptions",
                                             tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(15.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = if (selectedSubscribedChannel.isNotBlank()) selectedSubscribedChannel else strings.subscribed,
                                             fontSize = 12.sp,
@@ -453,12 +581,12 @@ fun HomeScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
                                         Icon(
                                             imageVector = Icons.Filled.ArrowDropDown,
                                             contentDescription = "Open Subscriptions",
                                             tint = if (selectedSubscribedChannel.isNotBlank()) YouTubeRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
+                                            modifier = Modifier.size(16.dp)
                                         )
                                     }
                                 }
@@ -473,7 +601,7 @@ fun HomeScreen(
                                         onClick = {
                                             showSubscribedChannelsMenu = false
                                             onSubscribedChannelSelected("")
-                                            onCategorySelected("All")
+                                            onCategorySelected("⚡ Latest")
                                             searchTextFieldValue = TextFieldValue("", selection = TextRange.Zero)
                                             onSearchQueryChanged("")
                                         }
@@ -503,48 +631,6 @@ fun HomeScreen(
                                             }
                                         )
                                     }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            // Latest Filter Pill Button
-                            val isLatestActive = selectedCategory.contains("Latest", ignoreCase = true)
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isLatestActive) YouTubeRed else MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(
-                                    1.dp,
-                                    if (isLatestActive) YouTubeRed else Color(0xFF333333)
-                                ),
-                                modifier = Modifier
-                                    .height(34.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable {
-                                        dismissKeyboard()
-                                        onCategorySelected("⚡ Latest")
-                                        if (selectedSubscribedChannel.isNotBlank()) {
-                                            onSubscribedChannelSelected("")
-                                        }
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 10.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.FlashOn,
-                                        contentDescription = "Latest",
-                                        tint = if (isLatestActive) Color.White else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "Latest",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isLatestActive) Color.White else MaterialTheme.colorScheme.onSurface
-                                    )
                                 }
                             }
                         }
@@ -788,7 +874,7 @@ fun HomeScreen(
             }
 
             // Category Filter Chips & Search Time Selector Row
-            val systemChips = listOf("All", "⚡ Latest", "⏰ Last 24h")
+            val systemChips = listOf("⚡ Latest", "⏰ Last 24h", "All")
             val topicNames = categories.map { it.name }.filter { name ->
                 !name.equals("All", ignoreCase = true) &&
                 !name.contains("Latest", ignoreCase = true) &&
@@ -1226,6 +1312,36 @@ fun HomeScreen(
                             .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                             .take(25)
                     }
+                } else if (selectedCategory.contains("hour", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val withinHour = allCandidate
+                        .filter {
+                            val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                            (sec <= 3600L || it.publishedTimeText.lowercase().contains("min") || it.publishedTimeText.lowercase().contains("just now")) && !isVideoHidden(it)
+                        }
+                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                        .distinctBy { it.youtubeId }
+                    if (withinHour.isNotEmpty()) withinHour else allCandidate.take(25)
+                } else if (selectedCategory.contains("week", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val withinWeek = allCandidate
+                        .filter {
+                            val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                            sec <= 604800L && !isVideoHidden(it)
+                        }
+                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                        .distinctBy { it.youtubeId }
+                    if (withinWeek.isNotEmpty()) withinWeek else allCandidate.take(25)
+                } else if (selectedCategory.contains("month", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val withinMonth = allCandidate
+                        .filter {
+                            val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
+                            sec <= 2592000L && !isVideoHidden(it)
+                        }
+                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                        .distinctBy { it.youtubeId }
+                    if (withinMonth.isNotEmpty()) withinMonth else allCandidate.take(25)
                 } else if (selectedCategory.contains("Latest", ignoreCase = true)) {
                     val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
                     allCandidate
@@ -1389,15 +1505,19 @@ fun HomeScreen(
                     if (algorithmSettings.shortsMode == "Hidden") {
                         emptyList()
                     } else {
-                        val fromDisplay = displayList.filter {
-                            com.example.util.YouTubeUtils.isShortVideo(it) &&
-                            !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
-                        }
                         val fromQueue = shortsQueue.filter {
                             !isVideoHidden(it) &&
                             !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
                         }
-                        (fromQueue + fromDisplay).distinctBy { it.youtubeId }
+                        if (fromQueue.isNotEmpty()) {
+                            fromQueue
+                        } else {
+                            displayList.filter {
+                                com.example.util.YouTubeUtils.isShortVideo(it) &&
+                                !isVideoHidden(it) &&
+                                !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
+                            }
+                        }
                     }
                 }
                 val mainVideosList = remember(displayList) {
@@ -1800,7 +1920,7 @@ private fun ShortsReelCard(
         if (video.viewCountText.isNotEmpty() || video.channelName.isNotEmpty()) {
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = if (video.viewCountText.isNotEmpty()) video.viewCountText else video.channelName,
+                text = if (video.viewCountText.isNotEmpty()) com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText) else video.channelName,
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

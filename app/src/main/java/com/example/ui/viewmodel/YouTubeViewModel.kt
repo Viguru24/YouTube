@@ -381,7 +381,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     // Search query & Category filter state
     val searchQuery = MutableStateFlow("")
-    val selectedCategory = MutableStateFlow("All")
+    val selectedCategory = MutableStateFlow("⚡ Latest") // Default is strictly "Latest"
     val selectedTimeFilter = MutableStateFlow("Any Time")
     val searchSortOption = MutableStateFlow("Latest") // "Latest" (Default), "Most Popular", "Relevance"
 
@@ -668,7 +668,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             while (coroutineContext.isActive) {
                 try {
-                    if (selectedCategory.value == "All" && searchQuery.value.isBlank() && selectedSubscribedChannel.value.isBlank()) {
+                    if ((selectedCategory.value == "All" || selectedCategory.value.contains("Latest", ignoreCase = true)) && searchQuery.value.isBlank() && selectedSubscribedChannel.value.isBlank()) {
                         if (_categoryVideos.value.size < MIN_BUFFER_THRESHOLD) {
                             replenishFeedBufferAsync()
                         }
@@ -844,7 +844,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 currentSearchBatchIndex = 0
                 selectedSubscribedChannel.value = ""
                 searchQuery.value = ""
-                selectedCategory.value = "All"
+                selectedCategory.value = "⚡ Latest"
                 selectedTimeFilter.value = "Any Time"
 
                 com.example.data.remote.YouTubeLiveSearchService.clearCache()
@@ -1270,7 +1270,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         lastPositionSeconds = posToKeep,
                         isDownloaded = isDownloadedState,
                         localFilePath = localPathToKeep,
-                        downloadSizeMb = sizeMbToKeep
+                        downloadSizeMb = sizeMbToKeep,
+                        viewCountText = YouTubeUtils.formatViewCountText(video.viewCountText.ifBlank { existing?.viewCountText.orEmpty() }),
+                        publishedTimeText = video.publishedTimeText.ifBlank { existing?.publishedTimeText.orEmpty() }
                     )
                 }
             }
@@ -1279,7 +1281,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 lastPositionSeconds = posToKeep,
                 isDownloaded = isDownloadedState,
                 localFilePath = localPathToKeep,
-                downloadSizeMb = sizeMbToKeep
+                downloadSizeMb = sizeMbToKeep,
+                viewCountText = YouTubeUtils.formatViewCountText(video.viewCountText.ifBlank { existing?.viewCountText.orEmpty() }),
+                publishedTimeText = video.publishedTimeText.ifBlank { existing?.publishedTimeText.orEmpty() }
             )
             repository.saveVideo(updated)
             repository.updateWatchHistory(video.youtubeId, posToKeep)
@@ -1395,10 +1399,15 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 } catch (e: Exception) { }
             }
 
-            // Fallback: Check category videos for any unplayed Short
+            // Fallback: Check category videos for any unplayed Short from subscribed creators
             if (candidate == null) {
+                val subs = _subscribedCreators.value
                 candidate = _categoryVideos.value.firstOrNull { 
-                    com.example.util.YouTubeUtils.isShortVideo(it) && it.youtubeId !in _seenShortIds && it.youtubeId !in disliked && it.youtubeId !in watched
+                    com.example.util.YouTubeUtils.isShortVideo(it) &&
+                    it.youtubeId !in _seenShortIds &&
+                    it.youtubeId !in disliked &&
+                    it.youtubeId !in watched &&
+                    (subs.isEmpty() || subs.any { s -> it.channelName.contains(s, ignoreCase = true) || s.contains(it.channelName, ignoreCase = true) })
                 }
             }
 
@@ -1747,7 +1756,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             repository.deleteCategory(category.id)
             repository.deleteCategoryByName(category.name)
             if (selectedCategory.value.equals(category.name, ignoreCase = true)) {
-                selectedCategory.value = "All"
+                selectedCategory.value = "⚡ Latest"
             }
         }
     }
