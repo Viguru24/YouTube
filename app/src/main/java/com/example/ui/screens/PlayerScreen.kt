@@ -528,18 +528,20 @@ fun PlayerScreen(
 
                                 Spacer(modifier = Modifier.height(6.dp))
 
-                                // Action Pills Row: Like | I Don't Like 👎 | ✨ AI Chat | Watch Later | Organize | Share
+                                // Action Buttons Row (Picture-Only Icons: Like | Dislike | AI Chat | Watch Later | Organize | Share | Download)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        .horizontalScroll(rememberScrollState())
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // 1. Like Button
+                                    // 1. 👍 Like Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable {
                                                 localIsFavorite = !localIsFavorite
                                                 if (localIsFavorite) localIsDisliked = false
@@ -547,148 +549,104 @@ fun PlayerScreen(
                                                 val msg = if (localIsFavorite) "Liked 👍" else "Unliked"
                                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
                                             },
-                                        shape = RoundedCornerShape(18.dp),
-                                        color = if (localIsFavorite) YouTubeRed.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        shape = CircleShape,
+                                        color = if (localIsFavorite) YouTubeRed.copy(alpha = 0.20f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                                         border = if (localIsFavorite) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                                 contentDescription = "Like",
                                                 tint = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = if (localIsFavorite) "Liked" else "Like",
-                                                color = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 12.sp
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // 2. "I don't like" Button (Immediately downvotes and moves to next video!)
+                                    // 2. 👎 Dislike Button (Picture Only: downvotes & skips to next video)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable { handleDislikeAndNext() },
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = CircleShape,
                                         color = if (localIsDisliked) YouTubeRed.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
                                         border = if (localIsDisliked) androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)) else null
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                                                 contentDescription = "I don't like",
                                                 tint = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = "I don't like",
-                                                color = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // 3. ✨ AI Chat Button ("tiny little AI button" that opens the tight chat window!)
+                                    // 3. ✨ AI Chat Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable { showAiSummaryModal = true },
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = CircleShape,
                                         color = YouTubeRed.copy(alpha = 0.18f),
                                         border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.5f))
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = Icons.Filled.AutoAwesome,
                                                 contentDescription = "AI Chat",
                                                 tint = YouTubeRed,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = "AI Chat",
-                                                color = YouTubeRed,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // 4. Watch Later Pill
+                                    // 4. Watch Later Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable { onWatchLaterToggle(video) },
-                                        shape = RoundedCornerShape(18.dp),
-                                        color = if (video.isWatchLater) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                        shape = CircleShape,
+                                        color = if (video.isWatchLater) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        border = if (video.isWatchLater) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)) else null
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = if (video.isWatchLater) Icons.Filled.Bookmark else Icons.Outlined.WatchLater,
                                                 contentDescription = "Watch Later",
                                                 tint = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = if (video.isWatchLater) "Saved" else "Save",
-                                                color = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Medium,
-                                                fontSize = 12.sp
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // 5. Organize Pill
+                                    // 5. Organize Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable { showSaveToSubjectDialog = true },
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = CircleShape,
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = Icons.Filled.PlaylistAdd,
                                                 contentDescription = "Organize",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Text(
-                                                text = "Organize",
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Medium,
-                                                fontSize = 12.sp
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
 
-                                    // 6. Share Pill
+                                    // 6. Share Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .size(38.dp)
+                                            .clip(CircleShape)
                                             .clickable {
                                                 val sendIntent = android.content.Intent().apply {
                                                     action = android.content.Intent.ACTION_SEND
@@ -698,26 +656,54 @@ fun PlayerScreen(
                                                 val shareIntent = android.content.Intent.createChooser(sendIntent, null)
                                                 context.startActivity(shareIntent)
                                             },
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = CircleShape,
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                        ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                             Icon(
                                                 imageVector = Icons.Filled.Share,
                                                 contentDescription = "Share",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(15.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
-                                            Text(
-                                                text = "Share",
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                fontWeight = FontWeight.Medium,
-                                                fontSize = 12.sp
-                                            )
+                                        }
+                                    }
+
+                                    // 7. Download Button (Picture Only)
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .clickable {
+                                                if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
+                                            },
+                                        shape = CircleShape,
+                                        color = if (isDownloaded) Color(0xFF4CAF50).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                        border = if (isDownloaded) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.6f)) else null
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                            if (isDownloaded) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.CheckCircle,
+                                                    contentDescription = "Downloaded",
+                                                    tint = Color(0xFF4CAF50),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            } else if (downloadProgress in 1..99) {
+                                                CircularProgressIndicator(
+                                                    progress = { downloadProgress / 100f },
+                                                    modifier = Modifier.size(18.dp),
+                                                    color = YouTubeRed,
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Download,
+                                                    contentDescription = "Download Video",
+                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

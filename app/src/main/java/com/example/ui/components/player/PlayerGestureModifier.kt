@@ -137,7 +137,7 @@ fun Modifier.playerGestureEngine(
                     prevPinchDist = 0f
                     prevCentroid = null
 
-                    if (hasPinchOccurred && activeZoom <= 1.08f) {
+                    if (hasPinchOccurred && activeZoom <= 1.05f) {
                         activeZoom = 1f
                         activePanX = 0f
                         activePanY = 0f
@@ -218,7 +218,7 @@ fun Modifier.playerGestureEngine(
                                 singleTapJob = null
                                 lastTapTime = 0L
 
-                                if (activeZoom > 1.05f) {
+                                if (activeZoom > 1.02f) {
                                     activeZoom = 1f
                                     activePanX = 0f
                                     activePanY = 0f
@@ -293,6 +293,12 @@ fun Modifier.playerGestureEngine(
                     hasPinchOccurred = true
                     isDragging = false
                     dragMode = 0
+                    singleTapJob?.cancel()
+                    singleTapJob = null
+                    currentOnSeekFeedback(null)
+                    currentOnAdjustingBrightness(false)
+                    currentOnAdjustingVolume(false)
+
                     val p1 = activePointers[0].position
                     val p2 = activePointers[1].position
                     val dist = hypot(p1.x - p2.x, p1.y - p2.y)
@@ -300,21 +306,20 @@ fun Modifier.playerGestureEngine(
 
                     if (prevPinchDist > 0f && prevCentroid != null) {
                         val scaleRatio = dist / prevPinchDist
-                        val rawZoom = (activeZoom * scaleRatio).coerceIn(1f, 5f)
-                        if (rawZoom <= 1.05f) {
-                            activeZoom = 1f
-                            activePanX = 0f
-                            activePanY = 0f
-                            currentOnZoomChange(1f, 0f, 0f)
-                        } else {
-                            activeZoom = rawZoom
-                            val panDelta = centroid - prevCentroid!!
-                            val maxPanX = (w * (rawZoom - 1f)) / 2f
-                            val maxPanY = (h * (rawZoom - 1f)) / 2f
+                        val newZoom = (activeZoom * scaleRatio).coerceIn(1f, 5f)
+                        activeZoom = newZoom
+
+                        val panDelta = centroid - prevCentroid!!
+                        val maxPanX = (w * (newZoom - 1f)) / 2f
+                        val maxPanY = (h * (newZoom - 1f)) / 2f
+                        if (newZoom > 1f) {
                             activePanX = (activePanX + panDelta.x).coerceIn(-maxPanX, maxPanX)
                             activePanY = (activePanY + panDelta.y).coerceIn(-maxPanY, maxPanY)
-                            currentOnZoomChange(rawZoom, activePanX, activePanY)
+                        } else {
+                            activePanX = 0f
+                            activePanY = 0f
                         }
+                        currentOnZoomChange(newZoom, activePanX, activePanY)
                     }
                     prevPinchDist = dist
                     prevCentroid = centroid
@@ -330,7 +335,7 @@ fun Modifier.playerGestureEngine(
                     totalDx = dx
                     totalDy = dy
 
-                    if (activeZoom > 1.05f && !hasPinchOccurred) {
+                    if (activeZoom > 1.02f && !hasPinchOccurred) {
                         // Smooth 1-finger 2D panning while zoomed in
                         val maxPanX = (w * (activeZoom - 1f)) / 2f
                         val maxPanY = (h * (activeZoom - 1f)) / 2f

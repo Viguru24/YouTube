@@ -693,12 +693,12 @@ fun YouTubePlayerView(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = zoomScale,
-                        scaleY = zoomScale,
-                        translationX = panOffsetX,
+                    .graphicsLayer {
+                        scaleX = zoomScale
+                        scaleY = zoomScale
+                        translationX = panOffsetX
                         translationY = panOffsetY
-                    )
+                    }
             )
         } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
             AndroidView(
@@ -766,12 +766,12 @@ fun YouTubePlayerView(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = zoomScale,
-                        scaleY = zoomScale,
-                        translationX = panOffsetX,
+                    .graphicsLayer {
+                        scaleX = zoomScale
+                        scaleY = zoomScale
+                        translationX = panOffsetX
                         translationY = panOffsetY
-                    )
+                    }
                     .testTag("fallback_webview_player")
             )
         }
