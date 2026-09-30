@@ -77,9 +77,11 @@ fun PlayerBottomBar(
     isFullscreen: Boolean,
     onToggleFullscreen: () -> Unit,
     coroutineScope: CoroutineScope,
+    showSettingsMenu: Boolean = false,
+    onSettingsMenuChange: (Boolean) -> Unit = {},
+    onInteraction: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showSettingsMenu by remember { mutableStateOf(false) }
 
     AnimatedVisibility(
         visible = shouldShowControls,
@@ -109,8 +111,12 @@ fun PlayerBottomBar(
 
                 Slider(
                     value = activeSliderValue,
-                    onValueChange = onScrubberDragChange,
+                    onValueChange = {
+                        onInteraction()
+                        onScrubberDragChange(it)
+                    },
                     onValueChangeFinished = {
+                        onInteraction()
                         val targetMs = (dragFraction * totalDurationMs).toLong()
                         onScrubberDragFinished(targetMs)
                     },
@@ -140,7 +146,10 @@ fun PlayerBottomBar(
                 ) {
                     // Quick Play / Pause Button
                     IconButton(
-                        onClick = onPlayPauseClick,
+                        onClick = {
+                            onInteraction()
+                            onPlayPauseClick()
+                        },
                         modifier = Modifier.size(32.dp).testTag("bottom_bar_play_pause_btn")
                     ) {
                         Icon(
@@ -153,7 +162,10 @@ fun PlayerBottomBar(
 
                     // Direct Star (Favorite) Button
                     IconButton(
-                        onClick = onFavoriteToggle,
+                        onClick = {
+                            onInteraction()
+                            onFavoriteToggle()
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -166,7 +178,10 @@ fun PlayerBottomBar(
 
                     // Direct Save to Subject Button
                     IconButton(
-                        onClick = onSaveToSubject,
+                        onClick = {
+                            onInteraction()
+                            onSaveToSubject()
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -179,7 +194,10 @@ fun PlayerBottomBar(
 
                     // Direct Watch Later Button
                     IconButton(
-                        onClick = onWatchLaterToggle,
+                        onClick = {
+                            onInteraction()
+                            onWatchLaterToggle()
+                        },
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
@@ -244,6 +262,7 @@ fun PlayerBottomBar(
                                     .size(24.dp)
                                     .clip(CircleShape)
                                     .clickable {
+                                        onInteraction()
                                         val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
                                         val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
                                         if (prev != selectedSpeed) {
@@ -271,6 +290,7 @@ fun PlayerBottomBar(
                                     .padding(horizontal = 3.dp)
                                     .clip(RoundedCornerShape(4.dp))
                                     .clickable {
+                                        onInteraction()
                                         if (selectedSpeed != 1.0f) {
                                             onSpeedChange(1.0f)
                                             exoPlayer.playbackParameters = PlaybackParameters(1.0f)
@@ -289,6 +309,7 @@ fun PlayerBottomBar(
                                     .size(24.dp)
                                     .clip(CircleShape)
                                     .clickable {
+                                        onInteraction()
                                         val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 3.0f)
                                         val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
                                         if (next != selectedSpeed) {
@@ -310,7 +331,10 @@ fun PlayerBottomBar(
 
                     // Screenshot Button [📸]
                     IconButton(
-                        onClick = onTakeScreenshot,
+                        onClick = {
+                            onInteraction()
+                            onTakeScreenshot()
+                        },
                         modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
@@ -323,7 +347,10 @@ fun PlayerBottomBar(
 
                     // Screenshot Folder Switcher [📁]
                     IconButton(
-                        onClick = onOpenScreenshotFolder,
+                        onClick = {
+                            onInteraction()
+                            onOpenScreenshotFolder()
+                        },
                         modifier = Modifier.size(26.dp)
                     ) {
                         Icon(
@@ -336,7 +363,10 @@ fun PlayerBottomBar(
 
                     // Autoplay Toggle [▶️ / ⏸️]
                     IconButton(
-                        onClick = onToggleAutoplay,
+                        onClick = {
+                            onInteraction()
+                            onToggleAutoplay()
+                        },
                         modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -367,7 +397,10 @@ fun PlayerBottomBar(
 
                     // Sleep Timer [🌙]
                     IconButton(
-                        onClick = onSleepTimerClick,
+                        onClick = {
+                            onInteraction()
+                            onSleepTimerClick()
+                        },
                         modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -390,7 +423,10 @@ fun PlayerBottomBar(
 
                     // Subtitles [CC]
                     IconButton(
-                        onClick = onToggleCaptions,
+                        onClick = {
+                            onInteraction()
+                            onToggleCaptions()
+                        },
                         modifier = Modifier.size(30.dp)
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -414,6 +450,7 @@ fun PlayerBottomBar(
                     // Share Button [↗️]
                     IconButton(
                         onClick = {
+                            onInteraction()
                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_SUBJECT, videoTitle)
@@ -434,7 +471,10 @@ fun PlayerBottomBar(
                     // Settings Gear [⚙️]
                     Box {
                         IconButton(
-                            onClick = { showSettingsMenu = true },
+                            onClick = {
+                                onInteraction()
+                                onSettingsMenuChange(true)
+                            },
                             modifier = Modifier.size(30.dp)
                         ) {
                             Icon(
@@ -447,7 +487,10 @@ fun PlayerBottomBar(
 
                         PlayerSettingsDropdown(
                             expanded = showSettingsMenu,
-                            onDismissRequest = { showSettingsMenu = false },
+                            onDismissRequest = {
+                                onInteraction()
+                                onSettingsMenuChange(false)
+                            },
                             context = context,
                             videoId = videoId,
                             videoTitle = videoTitle,
@@ -462,13 +505,17 @@ fun PlayerBottomBar(
                             onRotate180 = onRotate180,
                             onToggleDebugConsole = onToggleDebugConsole,
                             onSwitchStreamUrl = onSwitchStreamUrl,
-                            coroutineScope = coroutineScope
+                            coroutineScope = coroutineScope,
+                            onInteraction = onInteraction
                         )
                     }
 
                     // Pop-Out / PiP Floating Window Button
                     IconButton(
-                        onClick = onEnterPip,
+                        onClick = {
+                            onInteraction()
+                            onEnterPip()
+                        },
                         modifier = Modifier.size(30.dp).testTag("pip_popout_btn")
                     ) {
                         Icon(
@@ -481,7 +528,10 @@ fun PlayerBottomBar(
 
                     // Fullscreen / Maximize & Minimize Button [⤢ / ⤡]
                     IconButton(
-                        onClick = onToggleFullscreen,
+                        onClick = {
+                            onInteraction()
+                            onToggleFullscreen()
+                        },
                         modifier = Modifier.size(30.dp).testTag("fullscreen_toggle_btn")
                     ) {
                         Icon(

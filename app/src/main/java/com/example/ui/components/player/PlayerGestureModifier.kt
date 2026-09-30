@@ -239,26 +239,33 @@ fun Modifier.playerGestureEngine(
                                     } else {
                                         currentPlayingState
                                     }
-                                    val willPlay = !wasPlaying
 
-                                    if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
-                                        if (willPlay) {
-                                            exoPlayer.play()
-                                        } else {
-                                            exoPlayer.pause()
-                                        }
+                                    if (!wasPlaying && !currentAreControlsVisible) {
+                                        // When paused and controls timed out (clean paused screen),
+                                        // single tap wakes up all options and controls for 3 seconds without unexpectedly unpausing!
+                                        currentOnControlsVisibilityChange(true)
                                     } else {
-                                        currentWebViewRef?.evaluateJavascript(
-                                            "var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); }",
-                                            null
-                                        )
-                                    }
-                                    currentOnPlayingStateChange(willPlay)
-                                    currentOnControlsVisibilityChange(!willPlay || !currentAreControlsVisible)
-                                    currentOnPlayPauseFeedback(willPlay)
-                                    coroutineScope.launch {
-                                        delay(650)
-                                        currentOnPlayPauseFeedback(null)
+                                        val willPlay = !wasPlaying
+
+                                        if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                            if (willPlay) {
+                                                exoPlayer.play()
+                                            } else {
+                                                exoPlayer.pause()
+                                            }
+                                        } else {
+                                            currentWebViewRef?.evaluateJavascript(
+                                                "var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); }",
+                                                null
+                                            )
+                                        }
+                                        currentOnPlayingStateChange(willPlay)
+                                        currentOnControlsVisibilityChange(!willPlay || !currentAreControlsVisible)
+                                        currentOnPlayPauseFeedback(willPlay)
+                                        coroutineScope.launch {
+                                            delay(650)
+                                            currentOnPlayPauseFeedback(null)
+                                        }
                                     }
                                 }
                             }

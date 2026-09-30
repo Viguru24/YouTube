@@ -156,6 +156,7 @@ fun YouTubePlayerView(
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
     var activeScreenshotFolder by remember { mutableStateOf(ScreenshotManager.getActiveFolder(context)) }
     var showScreenshotFolderDialog by remember { mutableStateOf(false) }
+    var showSettingsMenu by remember { mutableStateOf(false) }
 
     // Transient HUD Feedback State
     var forwardRewindFeedback by remember { mutableStateOf<String?>(null) }
@@ -164,6 +165,7 @@ fun YouTubePlayerView(
 
     // Controls visibility & Scrubber dragging
     var areControlsVisible by remember { mutableStateOf(true) }
+    var controlsKeepAliveTrigger by remember { mutableLongStateOf(0L) }
     var isDraggingScrubber by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
     var selectedSpeed by remember { mutableFloatStateOf(1.0f) }
@@ -282,6 +284,10 @@ fun YouTubePlayerView(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
                 onPlayingStateChanged(isPlaying)
+                if (!isPlaying) {
+                    areControlsVisible = true
+                    controlsKeepAliveTrigger = System.currentTimeMillis()
+                }
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -315,7 +321,15 @@ fun YouTubePlayerView(
         playerCommandFlow?.collect { cmd ->
             when {
                 cmd == "TOGGLE_PLAY_PAUSE" -> {
-                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    if (exoPlayer.isPlaying) {
+                        exoPlayer.pause()
+                        isPlayingState = false
+                        areControlsVisible = true
+                        controlsKeepAliveTrigger = System.currentTimeMillis()
+                    } else {
+                        exoPlayer.play()
+                        isPlayingState = true
+                    }
                 }
                 cmd.startsWith("SEEK_FORWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
@@ -338,10 +352,12 @@ fun YouTubePlayerView(
         }
     }
 
-    // Auto-hide bottom utility controls: when actively playing, auto-hide after 3.5s
-    LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber) {
-        if (areControlsVisible && isPlayingState && !isDraggingScrubber) {
-            delay(3500L)
+    // Auto-hide utility controls and pause options: auto-hide after 3 seconds of inactivity ONLY when actively playing.
+    // When paused, controls and bottom menu remain visible indefinitely so the user can configure resolution, speed, etc.
+    // If the user selects anything while paused, it will not vanish or go back to anything else.
+    LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSleepTimerDialog, showScreenshotFolderDialog, showDebugConsole, showSettingsMenu, controlsKeepAliveTrigger) {
+        if (isPlayingState && areControlsVisible && !isDraggingScrubber && !showSleepTimerDialog && !showScreenshotFolderDialog && !showDebugConsole && !showSettingsMenu) {
+            delay(3000L)
             areControlsVisible = false
         }
     }
@@ -617,10 +633,15 @@ fun YouTubePlayerView(
             }
             exoPlayer.volume = if (isMutedState) 0f else 1.0f
             exoPlayer.prepare()
-            exoPlayer.play()
+            if (!hasPreparedMedia || isPlayingState) {
+                exoPlayer.play()
+                isPlayingState = true
+            } else {
+                exoPlayer.pause()
+            }
             hasPreparedMedia = true
             onPlayerReady(exoPlayer)
-            addLog("ExoPlayer Prepared & Playing (isLocal=$isLocalFile) at ${targetSeekMs / 1000}s")
+            addLog("ExoPlayer Prepared (playing=$isPlayingState, isLocal=$isLocalFile) at ${targetSeekMs / 1000}s")
         }
     }
 
@@ -857,7 +878,7 @@ fun YouTubePlayerView(
 
         // 8. White Options Pill when Paused: 👍 | 👎 | ↗️ | ✨ | ⬇️
         PlayerPauseActionStrip(
-            visible = !isPlayingState && !isInPipMode,
+            visible = !isPlayingState && !isInPipMode && areControlsVisible,
             isFullscreen = isFullscreen,
             context = context,
             videoId = videoId,
@@ -867,19 +888,30 @@ fun YouTubePlayerView(
             isDownloaded = isDownloaded,
             downloadProgress = downloadProgress,
             onFavoriteToggle = {
+                controlsKeepAliveTrigger = System.currentTimeMillis()
                 localIsFavorite = !localIsFavorite
                 if (localIsFavorite) localIsDisliked = false
                 onFavoriteToggle()
             },
             onDislikeToggle = {
+                controlsKeepAliveTrigger = System.currentTimeMillis()
                 localIsDisliked = true
                 localIsFavorite = false
                 onDislikeToggle()
                 onNextVideo()
             },
-            onAiSummaryClick = onAiSummaryClick,
-            onDownloadClick = onDownloadClick,
-            onDeleteDownloadClick = onDeleteDownloadClick,
+            onAiSummaryClick = {
+                controlsKeepAliveTrigger = System.currentTimeMillis()
+                onAiSummaryClick()
+            },
+            onDownloadClick = {
+                controlsKeepAliveTrigger = System.currentTimeMillis()
+                onDownloadClick()
+            },
+            onDeleteDownloadClick = {
+                controlsKeepAliveTrigger = System.currentTimeMillis()
+                onDeleteDownloadClick()
+            },
             modifier = Modifier
                 .align(Alignment.Center)
                 .offset(y = if (isFullscreen) 0.dp else (-34).dp)
@@ -900,10 +932,12 @@ fun YouTubePlayerView(
                 isDraggingScrubber = true
                 dragFraction = fraction
                 currentPosMs = (fraction * totalDurationMs).toLong()
+                controlsKeepAliveTrigger = System.currentTimeMillis()
             },
             onScrubberDragFinished = { targetMs ->
                 exoPlayer.seekTo(targetMs)
                 isDraggingScrubber = false
+                controlsKeepAliveTrigger = System.currentTimeMillis()
                 val sec = (targetMs / 1000).toInt()
                 if (sec >= 0) {
                     playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
@@ -916,10 +950,13 @@ fun YouTubePlayerView(
                     exoPlayer.pause()
                     isPlayingState = false
                     playPauseFeedbackState = false
+                    areControlsVisible = true
+                    controlsKeepAliveTrigger = System.currentTimeMillis()
                 } else {
                     exoPlayer.play()
                     isPlayingState = true
                     playPauseFeedbackState = true
+                    controlsKeepAliveTrigger = System.currentTimeMillis()
                 }
                 coroutineScope.launch {
                     delay(650)
@@ -978,9 +1015,15 @@ fun YouTubePlayerView(
             onSwitchStreamUrl = { targetUrl, quality ->
                 val currentPos = exoPlayer.currentPosition
                 savedPositionMs = currentPos
-                isSwitchingQuality = quality
-                streamUrl = targetUrl
+                controlsKeepAliveTrigger = System.currentTimeMillis()
+                if (streamUrl != targetUrl) {
+                    isSwitchingQuality = quality
+                    streamUrl = targetUrl
+                }
             },
+            showSettingsMenu = showSettingsMenu,
+            onSettingsMenuChange = { showSettingsMenu = it },
+            onInteraction = { controlsKeepAliveTrigger = System.currentTimeMillis() },
             isFullscreen = isFullscreen,
             onToggleFullscreen = onToggleFullscreen,
             coroutineScope = coroutineScope,

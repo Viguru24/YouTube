@@ -37,7 +37,8 @@ fun PlayerSettingsDropdown(
     onRotate180: () -> Unit,
     onToggleDebugConsole: () -> Unit,
     onSwitchStreamUrl: (targetUrl: String, quality: String) -> Unit,
-    coroutineScope: CoroutineScope
+    coroutineScope: CoroutineScope,
+    onInteraction: () -> Unit = {}
 ) {
     var showSpeedSubMenu by remember(expanded) { mutableStateOf(false) }
     var showQualitySubMenu by remember(expanded) { mutableStateOf(false) }
@@ -45,6 +46,7 @@ fun PlayerSettingsDropdown(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = {
+            onInteraction()
             showSpeedSubMenu = false
             showQualitySubMenu = false
             onDismissRequest()
@@ -54,17 +56,24 @@ fun PlayerSettingsDropdown(
             DropdownMenuItem(
                 text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
                 leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
-                onClick = { showQualitySubMenu = true }
+                onClick = {
+                    onInteraction()
+                    showQualitySubMenu = true
+                }
             )
             DropdownMenuItem(
                 text = { Text("Playback Speed: ${selectedSpeed}x", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
                 leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null, tint = YouTubeRed) },
-                onClick = { showSpeedSubMenu = true }
+                onClick = {
+                    onInteraction()
+                    showSpeedSubMenu = true
+                }
             )
             DropdownMenuItem(
                 text = { Text("Pop-Out Floating Player (PiP)", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = YouTubeRed) },
                 onClick = {
+                    onInteraction()
                     onDismissRequest()
                     onEnterPip()
                 }
@@ -73,6 +82,7 @@ fun PlayerSettingsDropdown(
                 text = { Text("Rotate 180° (Flip Screen)", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.ScreenRotation, contentDescription = null, tint = YouTubeRed) },
                 onClick = {
+                    onInteraction()
                     onDismissRequest()
                     onRotate180()
                 }
@@ -81,6 +91,7 @@ fun PlayerSettingsDropdown(
                 text = { Text("Stats & Debug Console", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.BugReport, contentDescription = null) },
                 onClick = {
+                    onInteraction()
                     onDismissRequest()
                     onToggleDebugConsole()
                 }
@@ -89,6 +100,7 @@ fun PlayerSettingsDropdown(
                 text = { Text("Share Video ↗️", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null, tint = Color.White) },
                 onClick = {
+                    onInteraction()
                     onDismissRequest()
                     try {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -104,6 +116,7 @@ fun PlayerSettingsDropdown(
                 text = { Text("Open in Browser 🌐", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.OpenInBrowser, contentDescription = null) },
                 onClick = {
+                    onInteraction()
                     onDismissRequest()
                     try {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
@@ -114,7 +127,10 @@ fun PlayerSettingsDropdown(
         } else if (showQualitySubMenu) {
             DropdownMenuItem(
                 text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                onClick = { showQualitySubMenu = false }
+                onClick = {
+                    onInteraction()
+                    showQualitySubMenu = false
+                }
             )
             availableQualities.forEach { q ->
                 val isCurrent = q.equals(selectedQuality, ignoreCase = true)
@@ -140,6 +156,7 @@ fun PlayerSettingsDropdown(
                         )
                     },
                     onClick = {
+                        onInteraction()
                         onQualitySelected(q)
                         showQualitySubMenu = false
                         onDismissRequest()
@@ -185,7 +202,10 @@ fun PlayerSettingsDropdown(
         } else if (showSpeedSubMenu) {
             DropdownMenuItem(
                 text = { Text("⬅ Back to Settings", fontWeight = FontWeight.Bold) },
-                onClick = { showSpeedSubMenu = false }
+                onClick = {
+                    onInteraction()
+                    showSpeedSubMenu = false
+                }
             )
             listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { s ->
                 val isCurrent = s == selectedSpeed
@@ -199,6 +219,7 @@ fun PlayerSettingsDropdown(
                         )
                     },
                     onClick = {
+                        onInteraction()
                         onSpeedSelected(s)
                         showSpeedSubMenu = false
                         onDismissRequest()
