@@ -123,6 +123,76 @@ object YouTubeLiveSearchService {
         return@withContext fallback
     }
 
+    private val channelSubscribersCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun getChannelSubscribers(channelName: String): String? {
+        if (channelName.isBlank()) return null
+        return channelSubscribersCache[channelName.trim().lowercase()]
+    }
+
+    fun putChannelSubscribers(channelName: String, subscriberText: String) {
+        if (channelName.isNotBlank() && subscriberText.isNotBlank()) {
+            channelSubscribersCache[channelName.trim().lowercase()] = subscriberText.trim()
+        }
+    }
+
+    suspend fun fetchChannelSubscriberCount(channelName: String): String = withContext(Dispatchers.IO) {
+        val trimmed = channelName.trim()
+        if (trimmed.isEmpty()) return@withContext ""
+        val lower = trimmed.lowercase()
+        channelSubscribersCache[lower]?.let { return@withContext it }
+
+        try {
+            val handle = resolveChannelHandle(trimmed) ?: trimmed.replace(" ", "").lowercase()
+            val url = "https://www.youtube.com/@$handle/videos?hl=en&gl=US"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val html = resp.body?.string() ?: ""
+                    val subMatch = Regex("""(\d+[\d\.]*[KMB]?\s+subscribers?)""", RegexOption.IGNORE_CASE).find(html)
+                    if (subMatch != null) {
+                        val count = subMatch.groupValues[1]
+                        channelSubscribersCache[lower] = count
+                        return@withContext count
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Subscriber fetch error for '$channelName': ${e.message}")
+        }
+        ""
+    }
+
+    suspend fun fetchVideoStats(videoId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        if (videoId.length != 11) return@withContext null
+        try {
+            val url = "https://www.youtube.com/watch?v=$videoId&hl=en&gl=US"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .header("Cookie", "PREF=hl=en&gl=US; SOCS=CAI")
+                .build()
+            client.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val html = resp.body?.string() ?: ""
+                    val subMatch = Regex("""(\d+[\d\.]*[KMB]?\s+subscribers?)""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1) ?: ""
+                    val viewMatch = Regex("""viewCount["\']?\s*:\s*["\']?(\d+)""").find(html)?.groupValues?.get(1)?.toLongOrNull()
+                    val viewFormatted = if (viewMatch != null && viewMatch > 0) YouTubeUtils.formatViewCount(viewMatch) else ""
+                    return@withContext Pair(subMatch, viewFormatted)
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Stats fetch error for '$videoId': ${e.message}")
+        }
+        null
+    }
+
     /**
      * Fetches true, recent YouTube Shorts directly from the creator's channel /shorts endpoint.
      * YouTube automatically orders the channel /shorts tab chronologically from newest upload to oldest.
@@ -535,6 +605,12 @@ object YouTubeLiveSearchService {
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val html = response.body?.string() ?: ""
+
+                        // Extract and cache live channel subscriber count
+                        val subMatch = Regex("""(\d+[\d\.]*[KMB]?\s+subscribers?)""", RegexOption.IGNORE_CASE).find(html)
+                        if (subMatch != null) {
+                            putChannelSubscribers(trimmed, subMatch.groupValues[1])
+                        }
 
                         // Parse direct channel videos
                         val parsed = parseVideoRenderers(html, trimmed)
@@ -965,8 +1041,10 @@ object YouTubeLiveSearchService {
                                 for (p in 0 until parts.length()) {
                                     val part = parts.optJSONObject(p) ?: continue
                                     val txt = extractJsonText(part.opt("text")) ?: ""
-                                    if (txt.contains("view", ignoreCase = true)) {
-                                        viewText = com.example.util.YouTubeUtils.formatViewCountText(txt)
+                                    val accessLabel = part.optString("accessibilityLabel", "")
+                                    if (txt.contains("view", ignoreCase = true) || accessLabel.contains("view", ignoreCase = true) || txt.matches(Regex("""^[\d,\.]+\s*[KMB]?$""", RegexOption.IGNORE_CASE))) {
+                                        val candidate = if (txt.isNotBlank() && (txt.contains("view", ignoreCase = true) || txt.matches(Regex("""^[\d,\.]+\s*[KMB]?$""", RegexOption.IGNORE_CASE)))) txt else accessLabel
+                                        viewText = com.example.util.YouTubeUtils.formatViewCountText(candidate)
                                     } else if (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true)) {
                                         publishedText = txt
                                     }

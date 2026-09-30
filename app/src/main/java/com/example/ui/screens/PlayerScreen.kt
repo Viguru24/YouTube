@@ -91,6 +91,40 @@ fun PlayerScreen(
     var showDeleteChannelDialog by remember { mutableStateOf(false) }
     var localIsFavorite by remember(video.youtubeId, video.isFavorite) { mutableStateOf(video.isFavorite) }
     var localIsDisliked by remember(video.youtubeId, isDisliked) { mutableStateOf(isDisliked) }
+    var liveSubscriberCount by remember(video.channelName) {
+        mutableStateOf(com.example.data.remote.YouTubeLiveSearchService.getChannelSubscribers(video.channelName) ?: "")
+    }
+    var liveViewCountText by remember(video.youtubeId, video.viewCountText) {
+        mutableStateOf(video.viewCountText)
+    }
+
+    LaunchedEffect(video.youtubeId, video.channelName) {
+        // 1. Asynchronously resolve live channel subscriber count if not yet in cache
+        if (liveSubscriberCount.isBlank() && video.channelName.isNotBlank()) {
+            val cached = com.example.data.remote.YouTubeLiveSearchService.getChannelSubscribers(video.channelName)
+            if (!cached.isNullOrBlank()) {
+                liveSubscriberCount = cached
+            } else {
+                val fetched = com.example.data.remote.YouTubeLiveSearchService.fetchChannelSubscriberCount(video.channelName)
+                if (fetched.isNotBlank()) {
+                    liveSubscriberCount = fetched
+                }
+            }
+        }
+        // 2. Asynchronously resolve views if missing from video entity
+        if (liveViewCountText.isBlank()) {
+            val stats = com.example.data.remote.YouTubeLiveSearchService.fetchVideoStats(video.youtubeId)
+            if (stats != null) {
+                if (liveSubscriberCount.isBlank() && stats.first.isNotBlank()) {
+                    liveSubscriberCount = stats.first
+                    com.example.data.remote.YouTubeLiveSearchService.putChannelSubscribers(video.channelName, stats.first)
+                }
+                if (liveViewCountText.isBlank() && stats.second.isNotBlank()) {
+                    liveViewCountText = stats.second
+                }
+            }
+        }
+    }
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -348,7 +382,7 @@ fun PlayerScreen(
                         onDeleteDownloadClick = onDeleteDownloadClick,
                         onAiSummaryClick = { showAiSummaryModal = true },
                         videoTitle = video.title,
-                        viewCountText = com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText),
+                        viewCountText = com.example.util.YouTubeUtils.formatViewCountText(liveViewCountText.ifBlank { video.viewCountText }),
                         publishedTimeText = video.publishedTimeText,
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = toggleFullscreen,
@@ -419,7 +453,8 @@ fun PlayerScreen(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             val statsSubtitle = listOfNotNull(
-                                                com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText).takeIf { it.isNotBlank() },
+                                                liveSubscriberCount.takeIf { it.isNotBlank() },
+                                                com.example.util.YouTubeUtils.formatViewCountText(liveViewCountText.ifBlank { video.viewCountText }).takeIf { it.isNotBlank() },
                                                 video.publishedTimeText.takeIf { it.isNotBlank() }
                                             ).joinToString(" • ")
                                             if (statsSubtitle.isNotBlank()) {
