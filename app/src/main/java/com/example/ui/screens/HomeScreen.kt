@@ -433,14 +433,16 @@ fun HomeScreen(
                                 isHourActive -> "1h"
                                 isWeekActive -> "Week"
                                 isMonthActive -> "Month"
+                                selectedCategory.equals("All", ignoreCase = true) -> "All"
+                                !isLatestActive && selectedCategory.isNotBlank() -> selectedCategory
                                 else -> "Latest"
                             }
 
                             Box {
                                 Surface(
                                     shape = RoundedCornerShape(20.dp),
-                                    color = YouTubeRed,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
                                     modifier = Modifier
                                         .height(34.dp)
                                         .clip(RoundedCornerShape(20.dp))
@@ -453,21 +455,23 @@ fun HomeScreen(
                                         Icon(
                                             imageVector = if (is24hActive || isHourActive || isWeekActive || isMonthActive) Icons.Filled.AccessTime else Icons.Filled.FlashOn,
                                             contentDescription = "Time Filter",
-                                            tint = Color.White,
+                                            tint = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.size(15.dp)
                                         )
                                         Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = recencyLabel,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Spacer(modifier = Modifier.width(2.dp))
                                         Icon(
                                             imageVector = Icons.Filled.ArrowDropDown,
                                             contentDescription = "Select Time",
-                                            tint = Color.White.copy(alpha = 0.85f),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -475,10 +479,11 @@ fun HomeScreen(
 
                                 DropdownMenu(
                                     expanded = showRecencyMenu,
-                                    onDismissRequest = { showRecencyMenu = false }
+                                    onDismissRequest = { showRecencyMenu = false },
+                                    modifier = Modifier.heightIn(max = 420.dp).widthIn(min = 200.dp)
                                 ) {
                                     DropdownMenuItem(
-                                        text = { Text("⚡ Latest (Default)", fontWeight = if (isLatestActive) FontWeight.Bold else FontWeight.Normal, color = if (isLatestActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        text = { Text("⚡ Latest (Default)", fontWeight = if (isLatestActive && selectedCategory != "All") FontWeight.Bold else FontWeight.Normal, color = if (isLatestActive && selectedCategory != "All") YouTubeRed else MaterialTheme.colorScheme.onSurface) },
                                         onClick = {
                                             showRecencyMenu = false
                                             dismissKeyboard()
@@ -533,7 +538,7 @@ fun HomeScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⭐ All Feed Videos", fontWeight = if (selectedCategory == "All") FontWeight.Bold else FontWeight.Normal) },
+                                        text = { Text("⭐ All Feed Videos", fontWeight = if (selectedCategory == "All") FontWeight.Bold else FontWeight.Normal, color = if (selectedCategory == "All") YouTubeRed else MaterialTheme.colorScheme.onSurface) },
                                         onClick = {
                                             showRecencyMenu = false
                                             dismissKeyboard()
@@ -541,6 +546,47 @@ fun HomeScreen(
                                             if (selectedSubscribedChannel.isNotBlank()) {
                                                 onSubscribedChannelSelected("")
                                             }
+                                        }
+                                    )
+
+                                    val topicCategories = categories.map { it.name }.filter { name ->
+                                        !name.equals("All", ignoreCase = true) &&
+                                        !name.contains("Latest", ignoreCase = true) &&
+                                        !name.contains("24h", ignoreCase = true) &&
+                                        !name.contains("Last 24", ignoreCase = true)
+                                    }
+
+                                    if (topicCategories.isNotEmpty()) {
+                                        HorizontalDivider()
+                                        topicCategories.forEach { topic ->
+                                            val isCurrent = selectedCategory.equals(topic, ignoreCase = true)
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = "🏷️ $topic",
+                                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (isCurrent) YouTubeRed else MaterialTheme.colorScheme.onSurface,
+                                                        fontSize = 13.sp
+                                                    )
+                                                },
+                                                onClick = {
+                                                    showRecencyMenu = false
+                                                    dismissKeyboard()
+                                                    onCategorySelected(topic)
+                                                    if (selectedSubscribedChannel.isNotBlank()) {
+                                                        onSubscribedChannelSelected("")
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("⚙️ ${strings.manageTopicsCreators}", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            onOpenManageTopicsAndCreators(1)
                                         }
                                     )
                                 }
@@ -873,15 +919,7 @@ fun HomeScreen(
                 }
             }
 
-            // Category Filter Chips & Search Time Selector Row
-            val systemChips = listOf("⚡ Latest", "⏰ Last 24h", "All")
-            val topicNames = categories.map { it.name }.filter { name ->
-                !name.equals("All", ignoreCase = true) &&
-                !name.contains("Latest", ignoreCase = true) &&
-                !name.contains("24h", ignoreCase = true) &&
-                !name.contains("Last 24", ignoreCase = true)
-            }
-            val allCategoryNames = (systemChips + topicNames).distinct()
+
 
             if (isSearchExpanded && searchTextFieldValue.text.isNotEmpty()) {
                 // Sleek Cursor Navigation & Precision Control Strip
@@ -1126,90 +1164,6 @@ fun HomeScreen(
                                 modifier = Modifier.testTag("time_filter_chip_$filter")
                             )
                         }
-                    }
-                }
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Category Chips (Monochrome Black & White Styling)
-                    items(allCategoryNames) { category ->
-                        val isSelected = category.equals(selectedCategory, ignoreCase = true)
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                dismissKeyboard()
-                                onCategorySelected(category)
-                                if (selectedSubscribedChannel.isNotBlank()) {
-                                    onSubscribedChannelSelected("")
-                                }
-                            },
-                            label = { 
-                                Text(
-                                    text = category, 
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) Color.White else Color(0xFFCCCCCC)
-                                ) 
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0xFF2A2A2A),
-                                selectedLabelColor = Color.White,
-                                containerColor = Color(0xFF141414),
-                                labelColor = Color(0xFFCCCCCC)
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = Color(0xFF333333),
-                                selectedBorderColor = Color.White,
-                                borderWidth = 1.dp,
-                                selectedBorderWidth = 1.5.dp
-                            ),
-                            modifier = Modifier.testTag("category_chip_$category")
-                        )
-                    }
-
-                    item {
-                        FilterChip(
-                            selected = false,
-                            onClick = { onOpenManageTopicsAndCreators(1) },
-                            label = { Text("+ Add Topic", fontWeight = FontWeight.SemiBold, color = YouTubeRed) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color(0xFF1C1C1E),
-                                labelColor = YouTubeRed
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = false,
-                                borderColor = YouTubeRed.copy(alpha = 0.5f),
-                                selectedBorderColor = YouTubeRed,
-                                borderWidth = 1.dp,
-                                selectedBorderWidth = 1.dp
-                            )
-                        )
-                    }
-
-                    item {
-                        FilterChip(
-                            selected = false,
-                            onClick = { onOpenManageTopicsAndCreators(1) },
-                            label = { Text("✏️ Edit Topics", fontWeight = FontWeight.SemiBold, color = Color.White) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color(0xFF141414),
-                                labelColor = Color.White
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = false,
-                                borderColor = Color(0xFF333333),
-                                selectedBorderColor = Color.White,
-                                borderWidth = 1.dp,
-                                selectedBorderWidth = 1.dp
-                            )
-                        )
                     }
                 }
             }

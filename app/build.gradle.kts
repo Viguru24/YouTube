@@ -29,8 +29,8 @@ android {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 36
-    versionName = "1.9.8"
+    versionCode = 37
+    versionName = "1.9.9"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -43,7 +43,7 @@ android {
   androidComponents {
     onVariants { variant ->
       variant.outputs.forEach { output ->
-        output.outputFileName.set("Vixz-YouTube-Player-v1.9.8.apk")
+        output.outputFileName.set("Vixz-YouTube-Player-v1.9.9.apk")
       }
     }
   }

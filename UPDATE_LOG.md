@@ -57,6 +57,17 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🚀 Release v1.9.9 (September 30, 2026)
+
+### 📊 1. Live Channel Subscriber Counts & View Count Parser Restoration
+- **Live Channel Subscriber Count:** Added live channel subscriber counts directly into the portrait video player header (e.g. `1.75M subscribers • 138K views • 1 day ago`), matching the official YouTube layout.
+- **In-Memory Zero-Lag Subscriber Cache:** Live subscriber counts are extracted directly from creator channel page headers during existing video fetches without adding any network latency.
+- **Asynchronous Stats Resolver:** If a video was opened with missing subscriber or view count metadata, an asynchronous background task resolves and updates the counts without interrupting video playback.
+- **Modern YouTube View Count Parser:** Upgraded `lockupViewModel` parsing in `YouTubeLiveSearchService` to recognize YouTube's updated view count format (e.g. `"138K"`, `"1.2M"` and accessibility labels), ensuring view counts never disappear.
+- **Zero-Migration Database Safety:** Retained strict database schema stability with zero Room migrations required, preserving all existing user favorites, history, and notes.
+
+---
+
 ## 🚀 Release v1.9.8 (September 28, 2026)
 
 ### ⚡ 1. Shorts Feed Engine Overhaul & True Latest Sorting
