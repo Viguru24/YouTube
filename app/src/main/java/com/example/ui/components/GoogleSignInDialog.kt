@@ -82,6 +82,7 @@ fun GoogleSignInDialog(
             initialEmail = emailInput,
             onDismiss = { showWebSignInDialog = false },
             onSuccess = { name, email, cookies, avatarUrl ->
+                com.example.util.CookieHelper.syncAndPersistCookies(context)
                 com.example.data.remote.NPDownloader.savedCookies = cookies
                 nameInput = name
                 emailInput = email
@@ -90,9 +91,8 @@ fun GoogleSignInDialog(
                 onDismiss()
             }
         )
-    }
-
-    AlertDialog(
+    } else {
+        AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
@@ -155,7 +155,7 @@ fun GoogleSignInDialog(
                             .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (account.avatarUrl.isNotBlank()) {
+                        if (account.avatarUrl.isNotBlank() && !account.avatarUrl.contains("no-rj") && !account.avatarUrl.contains("s88-c")) {
                             AsyncImage(
                                 model = account.avatarUrl,
                                 contentDescription = "Profile Photo",
@@ -173,7 +173,7 @@ fun GoogleSignInDialog(
                                 Box(contentAlignment = Alignment.Center) {
                                     if (account.isSignedIn && account.avatarInitials.isNotBlank()) {
                                         Text(
-                                            text = account.avatarInitials,
+                                            text = account.avatarInitials.ifBlank { "LO" },
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 18.sp
@@ -314,49 +314,101 @@ fun GoogleSignInDialog(
                     }
                 }
 
-                // Web Browser Sign-In Button (Primary YouTube Link)
-                Button(
-                    onClick = { showWebSignInDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("google_web_sign_in_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Language,
-                        contentDescription = "Sign-In via YouTube",
-                        tint = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "🌐 Sign In via YouTube / Google Web",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = Color.White
-                    )
-                }
+                if (account.isSignedIn) {
+                    // 1. Sync Playlists & Subscriptions Button
+                    Button(
+                        onClick = {
+                            onSyncPlaylists()
+                            Toast.makeText(context, "Syncing YouTube playlists and subscriptions... 🔄", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "🔄 Sync Playlists & Subscriptions", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                    }
 
-                // Direct Cookie Import Option
-                OutlinedButton(
-                    onClick = { showPasteCookiesDialog = true },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ContentPaste,
-                        contentDescription = "Paste Cookies",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "📋 Paste YouTube Cookies Directly",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
+                    // 2. Switch / Re-link Account
+                    OutlinedButton(
+                        onClick = { showWebSignInDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                    ) {
+                        Icon(imageVector = Icons.Filled.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "🌐 Switch or Re-authenticate Account", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+
+                    // 3. Sign Out Button
+                    TextButton(
+                        onClick = {
+                            onSignOut()
+                            Toast.makeText(context, "Signed out / Guest mode active", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text("Sign Out / Switch to Guest Mode", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
+                } else {
+                    // Guest Mode: Prominent Sign-In Action
+                    Button(
+                        onClick = { showWebSignInDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("google_web_sign_in_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Language,
+                            contentDescription = "Sign-In via YouTube",
+                            tint = Color.White
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "🌐 Sign In via YouTube / Google Web",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color.White
+                        )
+                    }
+
+                    // Collapsible Advanced Option
+                    var showAdvanced by remember { mutableStateOf(false) }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                            Text(
+                                text = if (showAdvanced) "▲ Hide Advanced Options" else "▼ Advanced: Import Cookies Manually",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (showAdvanced) {
+                            OutlinedButton(
+                                onClick = { showPasteCookiesDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(40.dp)
+                            ) {
+                                Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("📋 Paste Cookies Manually", fontSize = 12.sp)
+                            }
+                        }
+                    }
                 }
 
                 if (showPasteCookiesDialog) {
@@ -372,7 +424,7 @@ fun GoogleSignInDialog(
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
-                                    text = "If Google restricts in-app sign-in on your device, you can paste your exported browser cookies (containing LOGIN_INFO, SID, SAPISID, etc.) below:",
+                                    text = "If Google restricts in-app sign-in on your device, paste your exported browser cookies below:",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -394,24 +446,13 @@ fun GoogleSignInDialog(
                                     val raw = cookiesInput.trim()
                                     if (raw.isNotBlank()) {
                                         com.example.data.remote.NPDownloader.savedCookies = raw
-                                        val cookieManager = android.webkit.CookieManager.getInstance()
-                                        cookieManager.setAcceptCookie(true)
-                                        raw.split(";").forEach { part ->
-                                            val cookie = part.trim()
-                                            if (cookie.isNotEmpty()) {
-                                                cookieManager.setCookie("https://www.youtube.com", cookie)
-                                                cookieManager.setCookie("https://accounts.google.com", cookie)
-                                            }
-                                        }
-                                        cookieManager.flush()
-
-                                        val prefs = context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
-                                        prefs.edit().putString("youtube_cookies", raw).apply()
+                                        com.example.util.CookieHelper.injectCookies(raw)
+                                        com.example.util.CookieHelper.syncAndPersistCookies(context)
 
                                         val finalName = deriveCleanName(nameInput, emailInput).ifBlank { "YouTube User" }
                                         val finalEmail = emailInput.ifBlank { "google.user@vixz.app" }
 
-                                        onSignIn(finalName, finalEmail, account.avatarUrl)
+                                        onSignIn(finalName, finalEmail, "")
                                         Toast.makeText(context, "Cookies imported! Welcome, $finalName 🟢", Toast.LENGTH_SHORT).show()
                                         showPasteCookiesDialog = false
                                         onDismiss()
@@ -431,93 +472,6 @@ fun GoogleSignInDialog(
                         }
                     )
                 }
-
-                HorizontalDivider()
-
-                Text(
-                    text = "OR ENTER PROFILE MANUALLY",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                OutlinedTextField(
-                    value = emailInput,
-                    onValueChange = { newEmail ->
-                        emailInput = newEmail
-                        if (nameInput.isBlank() || nameInput == initialName) {
-                            val derived = deriveCleanName("", newEmail)
-                            if (derived.isNotBlank()) nameInput = derived
-                        }
-                    },
-                    label = { Text("Email Address") },
-                    placeholder = { Text("your.name@gmail.com") },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Filled.Email, contentDescription = null)
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("google_email_input")
-                )
-
-                OutlinedTextField(
-                    value = nameInput,
-                    onValueChange = { nameInput = it },
-                    label = { Text("Display Name") },
-                    placeholder = { Text("e.g. Joe Black") },
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(imageVector = Icons.Filled.Person, contentDescription = null)
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("google_name_input")
-                )
-
-                OutlinedButton(
-                    onClick = {
-                        val finalEmail = emailInput.trim()
-                        val finalName = deriveCleanName(nameInput, finalEmail).ifBlank {
-                            if (finalEmail.isNotBlank()) finalEmail.substringBefore("@") else "User"
-                        }
-                        onSignIn(finalName, finalEmail, account.avatarUrl)
-                        Toast.makeText(context, "Profile Saved as $finalName 🟢", Toast.LENGTH_SHORT).show()
-                        onDismiss()
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .testTag("save_local_profile_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = "Save Profile",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "💾 Save Custom Profile",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
-                    )
-                }
-
-                if (account.isSignedIn) {
-                    TextButton(
-                        onClick = {
-                            onSignOut()
-                            Toast.makeText(context, "Signed out / Guest profile active", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Text("Sign Out / Switch to Guest Mode", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                    }
-                }
             }
         },
         confirmButton = {
@@ -526,4 +480,5 @@ fun GoogleSignInDialog(
             }
         }
     )
+    }
 }

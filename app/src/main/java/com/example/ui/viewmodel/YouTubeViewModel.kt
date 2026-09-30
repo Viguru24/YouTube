@@ -637,9 +637,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             val cached = repository.getAllVideosDirect()
             if (cached.isNotEmpty()) {
                 val subscribedSet = _subscribedCreators.value.map { it.lowercase().trim() }.toSet()
+                // Only filter by subscription when the user actually has subscriptions set up.
+                // With an empty subscription list (fresh install / no creators added yet) we keep
+                // everything in the DB so the feed isn't erroneously wiped on first launch.
+                val hasSubscriptions = subscribedSet.isNotEmpty()
+
                 val (keepVideos, junkVideos) = cached.partition { video ->
                     val ch = video.channelName.lowercase().trim()
-                    val isSub = subscribedSet.any { sub -> ch.contains(sub) || sub.contains(ch) }
+                    val isSub = !hasSubscriptions || subscribedSet.any { sub -> ch.contains(sub) || sub.contains(ch) }
                     val isUserSaved = video.isFavorite || video.isWatchLater || video.lastWatchedTimestamp > 0L || video.lastPositionSeconds > 0
                     !YouTubeUtils.isForeignLanguageContent(video.title, video.channelName) && (isSub || isUserSaved)
                 }
@@ -652,8 +657,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val valid = keepVideos.filter {
                     it.youtubeId !in _dislikedVideoIds.value &&
                     it.youtubeId !in watched &&
-                    it.lastWatchedTimestamp == 0L &&
-                    it.lastPositionSeconds == 0
+                    // Only treat as "fully watched" if actually watched for >30s.
+                    // A position of 0–30s means the video was barely opened (accidental tap,
+                    // buffering test, etc.) and should still show in the feed.
+                    !(it.lastWatchedTimestamp > 0L && it.lastPositionSeconds > 30)
                 }
                 if (valid.isNotEmpty()) {
                     _categoryVideos.value = valid

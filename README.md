@@ -19,7 +19,7 @@
 
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android** | `APK (v1.9.9)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v1.9.9/Vixz-YouTube-Player-v1.9.9.apk) |
+| 📱 **Android** | `APK (v2.0.0)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.0.0/Vixz-YouTube-Player-v2.0.0.apk) |
 | 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
 | 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
@@ -83,7 +83,7 @@ Prefer watching on your laptop or desktop? Experience **[Vixz Desktop](https://g
 ## ⚡ Quick Install Guide
 
 ### Option A: Direct APK Install
-1. **[📥 Download the Latest Vixz APK (v1.9.9)](https://github.com/Viguru24/YouTube/releases/download/v1.9.9/Vixz-YouTube-Player-v1.9.9.apk)** directly to your Android device.
+1. **[📥 Download the Latest Vixz APK (v2.0.0)](https://github.com/Viguru24/YouTube/releases/download/v2.0.0/Vixz-YouTube-Player-v2.0.0.apk)** directly to your Android device.
 2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!

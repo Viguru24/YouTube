@@ -112,21 +112,28 @@ object YouTubeStreamExtractor {
 
     private fun fetchInnertubePlayer(videoId: String, clientName: String = "ANDROID_VR"): org.json.JSONObject? {
         try {
+            val visitorData = fetchVisitorData()
+            val visitorDataField = if (!visitorData.isNullOrBlank()) """, "visitorData": "$visitorData"""" else ""
+
             val (clientObj, userAgent) = when (clientName) {
                 "IOS" -> Pair(
-                    """{"clientName":"IOS","clientVersion":"19.29.1","deviceModel":"iPhone16,2","hl":"en","gl":"US"}""",
+                    """{"clientName":"IOS","clientVersion":"19.29.1","deviceModel":"iPhone16,2","hl":"en","gl":"US"$visitorDataField}""",
                     "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; US)"
                 )
                 "TVHTML5" -> Pair(
-                    """{"clientName":"TVHTML5","clientVersion":"7.20240820.01.00","hl":"en","gl":"US"}""",
+                    """{"clientName":"TVHTML5","clientVersion":"7.20240820.01.00","hl":"en","gl":"US"$visitorDataField}""",
                     "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
                 )
+                "WEB" -> Pair(
+                    """{"clientName":"WEB","clientVersion":"2.20240820.01.00","hl":"en","gl":"US"$visitorDataField}""",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                )
                 "ANDROID" -> Pair(
-                    """{"clientName":"ANDROID","clientVersion":"19.09.37","androidSdkVersion":34,"hl":"en","gl":"US"}""",
+                    """{"clientName":"ANDROID","clientVersion":"19.09.37","androidSdkVersion":34,"hl":"en","gl":"US"$visitorDataField}""",
                     "com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip"
                 )
                 else -> Pair(
-                    """{"clientName":"ANDROID_VR","clientVersion":"1.61.48","hl":"en","gl":"US"}""",
+                    """{"clientName":"ANDROID_VR","clientVersion":"1.61.48","hl":"en","gl":"US"$visitorDataField}""",
                     "Mozilla/5.0 (Linux; Android 12; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/34.0.0.36.41 SamsungBrowser/4.0 Chrome/124.0.6367.207 Mobile VR Safari/537.36"
                 )
             }
@@ -141,14 +148,28 @@ object YouTubeStreamExtractor {
             """.trimIndent()
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
-            val request = Request.Builder()
+            val reqBuilder = Request.Builder()
                 .url("https://www.youtube.com/youtubei/v1/player")
                 .post(payload.toRequestBody(mediaType))
                 .addHeader("User-Agent", userAgent)
                 .addHeader("Content-Type", "application/json")
-                .build()
+                .addHeader("Origin", "https://www.youtube.com")
 
-            client.newCall(request).execute().use { response ->
+            val cookieHeader = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
+                com.example.data.remote.NPDownloader.savedCookies
+            }
+            if (cookieHeader.isNotBlank()) {
+                reqBuilder.addHeader("Cookie", cookieHeader)
+                val sapisid = com.example.util.CookieHelper.extractSapisid(cookieHeader)
+                if (!sapisid.isNullOrBlank()) {
+                    val auth = com.example.util.CookieHelper.generateSapisidHash(sapisid)
+                    if (auth.isNotBlank()) {
+                        reqBuilder.addHeader("Authorization", auth)
+                    }
+                }
+            }
+
+            client.newCall(reqBuilder.build()).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return null
                     return org.json.JSONObject(body)
@@ -179,68 +200,70 @@ object YouTubeStreamExtractor {
         var bestAudioUrl: String? = null
         var bestCombinedUrl: String? = null
 
-        // 1. PRIMARY: NewPipe Extractor (Resolves direct Apple HLS Master Playlist & adaptive streams without bot blocks)
+        // 1. PRIMARY: NewPipe Extractor (Resolves direct Apple HLS Master Playlist & adaptive streams)
         try {
-            logD("YouTubeStreamExtractor", "[NewPipe] Extracting streams for videoId: $videoId")
-            val service = org.schabi.newpipe.extractor.ServiceList.YouTube
-            val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
-            extractor.fetchPage()
+            kotlinx.coroutines.withTimeout(3500L) {
+                logD("YouTubeStreamExtractor", "[NewPipe] Extracting streams for videoId: $videoId")
+                val service = org.schabi.newpipe.extractor.ServiceList.YouTube
+                val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+                extractor.fetchPage()
 
-            val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
-            val sortedAudioStreams = audioStreams.filter { !it.content.isNullOrBlank() }.sortedWith { a, b ->
-                fun score(s: org.schabi.newpipe.extractor.stream.AudioStream): Int {
-                    var score = 100
-                    val lang = s.audioLocale?.language?.lowercase().orEmpty()
-                    val trackName = s.audioTrackName?.lowercase().orEmpty()
-                    val trackType = try { s.audioTrackType?.name?.uppercase().orEmpty() } catch (e: Throwable) { "" }
-                    val fmt = s.format?.name?.uppercase().orEmpty()
-                    if (lang == "en" || lang.startsWith("en-") || trackName.contains("english")) score += 500
-                    if (trackType == "ORIGINAL" || trackName.contains("original") || trackName.contains("default")) score += 300
-                    if (fmt.contains("M4A") || fmt.contains("AAC") || fmt.contains("MP4")) score += 50
-                    score += (s.averageBitrate / 10).coerceIn(0, 30)
-                    return score
-                }
-                score(b).compareTo(score(a))
-            }
-            if (bestAudioUrl == null) {
-                bestAudioUrl = sortedAudioStreams.firstOrNull()?.content
-            }
-
-            val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
-            for (s in videoStreams) {
-                if (!s.isVideoOnly && !s.content.isNullOrBlank()) {
-                    val r = s.resolution?.trim()
-                    if (!r.isNullOrBlank()) {
-                        val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
-                        if (!qualityMap.containsKey(key)) {
-                            qualityMap[key] = s.content
-                            muxedUrls.add(s.content)
-                            if (bestCombinedUrl == null) bestCombinedUrl = s.content
-                        }
+                val audioStreams = try { extractor.audioStreams } catch (e: Exception) { emptyList() }
+                val sortedAudioStreams = audioStreams.filter { !it.content.isNullOrBlank() }.sortedWith { a, b ->
+                    fun score(s: org.schabi.newpipe.extractor.stream.AudioStream): Int {
+                        var score = 100
+                        val lang = s.audioLocale?.language?.lowercase().orEmpty()
+                        val trackName = s.audioTrackName?.lowercase().orEmpty()
+                        val trackType = try { s.audioTrackType?.name?.uppercase().orEmpty() } catch (e: Throwable) { "" }
+                        val fmt = s.format?.name?.uppercase().orEmpty()
+                        if (lang == "en" || lang.startsWith("en-") || trackName.contains("english")) score += 500
+                        if (trackType == "ORIGINAL" || trackName.contains("original") || trackName.contains("default")) score += 300
+                        if (fmt.contains("M4A") || fmt.contains("AAC") || fmt.contains("MP4")) score += 50
+                        score += (s.averageBitrate / 10).coerceIn(0, 30)
+                        return score
                     }
+                    score(b).compareTo(score(a))
                 }
-            }
+                if (bestAudioUrl == null) {
+                    bestAudioUrl = sortedAudioStreams.firstOrNull()?.content
+                }
 
-            if (!bestAudioUrl.isNullOrBlank()) {
-                val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
-                for (s in videoOnlyStreams) {
-                    if (!s.content.isNullOrBlank()) {
+                val videoStreams = try { extractor.videoStreams } catch (e: Exception) { emptyList() }
+                for (s in videoStreams) {
+                    if (!s.isVideoOnly && !s.content.isNullOrBlank()) {
                         val r = s.resolution?.trim()
                         if (!r.isNullOrBlank()) {
                             val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
                             if (!qualityMap.containsKey(key)) {
                                 qualityMap[key] = s.content
-                                videoOnlyQualities.add(key)
-                                videoOnlyUrls.add(s.content)
+                                muxedUrls.add(s.content)
+                                if (bestCombinedUrl == null) bestCombinedUrl = s.content
                             }
                         }
                     }
                 }
-            }
-            val hlsUrl = try { extractor.hlsUrl } catch (e: Exception) { null }
-            if (!hlsUrl.isNullOrBlank() && hlsUrl.startsWith("http")) {
-                qualityMap["HLS"] = hlsUrl
-                logD("YouTubeStreamExtractor", "[NewPipe] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
+
+                if (!bestAudioUrl.isNullOrBlank()) {
+                    val videoOnlyStreams = try { extractor.videoOnlyStreams } catch (e: Exception) { emptyList() }
+                    for (s in videoOnlyStreams) {
+                        if (!s.content.isNullOrBlank()) {
+                            val r = s.resolution?.trim()
+                            if (!r.isNullOrBlank()) {
+                                val key = if (r.endsWith("p", ignoreCase = true)) r.lowercase() else "${r}p"
+                                if (!qualityMap.containsKey(key)) {
+                                    qualityMap[key] = s.content
+                                    videoOnlyQualities.add(key)
+                                    videoOnlyUrls.add(s.content)
+                                }
+                            }
+                        }
+                    }
+                }
+                val hlsUrl = try { extractor.hlsUrl } catch (e: Exception) { null }
+                if (!hlsUrl.isNullOrBlank() && hlsUrl.startsWith("http")) {
+                    qualityMap["HLS"] = hlsUrl
+                    logD("YouTubeStreamExtractor", "[NewPipe] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
+                }
             }
         } catch (e: Exception) {
             val errMsg = e.message.orEmpty()
@@ -262,7 +285,7 @@ object YouTubeStreamExtractor {
 
         // 2. SECONDARY: Innertube Fallback
         if (qualityMap.isEmpty()) {
-            val clients = listOf("ANDROID_VR")
+            val clients = listOf("WEB", "ANDROID_VR", "ANDROID", "TVHTML5")
             for (c in clients) {
                 try {
                     val playerJson = fetchInnertubePlayer(videoId, c)

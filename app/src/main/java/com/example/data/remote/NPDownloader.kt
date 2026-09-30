@@ -22,18 +22,22 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
             }
         }
 
-        val liveCookies = try {
-            android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
-        } catch (e: Throwable) { "" }
-
-        val cookieHeader = if (liveCookies.isNotBlank() && (liveCookies.contains("LOGIN_INFO") || liveCookies.contains("SID") || liveCookies.contains("SAPISID") || liveCookies.contains("VISITOR_INFO1_LIVE"))) {
-            liveCookies
-        } else {
+        val cookieHeader = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
             savedCookies
         }
 
         if (cookieHeader.isNotBlank() && (url.contains("youtube.com") || url.contains("googlevideo.com"))) {
             builder.header("Cookie", cookieHeader)
+
+            // Attach SAPISIDHASH Authorization header for YouTube API endpoints to authenticate requests
+            val sapisid = com.example.util.CookieHelper.extractSapisid(cookieHeader)
+            if (!sapisid.isNullOrBlank() && url.contains("youtube.com")) {
+                val auth = com.example.util.CookieHelper.generateSapisidHash(sapisid)
+                if (auth.isNotBlank()) {
+                    builder.header("Authorization", auth)
+                    builder.header("X-Origin", "https://www.youtube.com")
+                }
+            }
         }
 
         val requestBody = dataToSend?.let {

@@ -107,6 +107,18 @@ class MainActivity : ComponentActivity() {
             // Ignore if OS blocks intent
         }
 
+        // Synchronize and restore YouTube auth cookies across CookieManager & SharedPreferences
+        // BEFORE NewPipe init, so authenticated requests work immediately on cold start.
+        try {
+            val effectiveCookies = com.example.util.CookieHelper.syncAndPersistCookies(this)
+            if (effectiveCookies.isNotBlank()) {
+                com.example.data.remote.NPDownloader.savedCookies = effectiveCookies
+                android.util.Log.d("MainActivity", "Active YouTube auth session verified (${effectiveCookies.length} chars)")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Cookie sync failed: ${e.message}")
+        }
+
         // Initialize NewPipe Extractor for native YouTube stream extraction
         try {
             org.schabi.newpipe.extractor.NewPipe.init(

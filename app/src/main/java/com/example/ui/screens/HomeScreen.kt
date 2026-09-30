@@ -711,10 +711,23 @@ fun HomeScreen(
                             Text("🌐", fontSize = 18.sp)
                         }
 
-                        // 3. Profile Button (Opens Settings & Full Menu Options)
+                        // 2.5 Dedicated Settings Button ⚙️
+                        IconButton(
+                            onClick = onOpenSettings,
+                            modifier = Modifier.testTag("top_settings_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = strings.settingsTitle,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // 3. Profile Button (Opens Google & YouTube Account Dialog)
                         Box {
                             IconButton(
-                                onClick = { showProfileMenu = true },
+                                onClick = onOpenGoogleAuth,
                                 modifier = Modifier.testTag("top_ls_gear_btn")
                             ) {
                                 Box(contentAlignment = Alignment.BottomEnd) {
@@ -725,7 +738,7 @@ fun HomeScreen(
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             if (googleAccount.isSignedIn) {
-                                                if (googleAccount.avatarUrl.isNotBlank()) {
+                                                if (googleAccount.avatarUrl.isNotBlank() && !googleAccount.avatarUrl.contains("no-rj") && !googleAccount.avatarUrl.contains("s88-c")) {
                                                     AsyncImage(
                                                         model = googleAccount.avatarUrl,
                                                         contentDescription = "Profile",
@@ -736,7 +749,7 @@ fun HomeScreen(
                                                     )
                                                 } else {
                                                     Text(
-                                                        text = googleAccount.avatarInitials.ifBlank { "U" },
+                                                        text = googleAccount.avatarInitials.ifBlank { "LO" },
                                                         color = Color.White,
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 13.sp
@@ -751,19 +764,6 @@ fun HomeScreen(
                                                 )
                                             }
                                         }
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(13.dp)
-                                            .background(Color.Black, shape = CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Settings,
-                                            contentDescription = "Menu",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(10.dp)
-                                        )
                                     }
                                 }
                             }

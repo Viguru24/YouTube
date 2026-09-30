@@ -26,9 +26,11 @@ import android.net.Uri
 import android.webkit.WebSettings
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -60,13 +62,18 @@ fun YouTubeWebSignInDialog(
     val context = LocalContext.current
     var isLoading by remember { mutableStateOf(true) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var currentUrl by remember { mutableStateOf("https://m.youtube.com/signin") }
+    val initialHasAuth = remember {
+        val cookies = com.example.util.CookieHelper.getAggregatedCookies()
+        com.example.util.CookieHelper.hasAuthCookies(cookies)
+    }
+    var currentUrl by remember { mutableStateOf(if (initialHasAuth) "https://m.youtube.com/" else "https://m.youtube.com/signin") }
 
     var detectedName by remember { mutableStateOf(initialName) }
     var detectedEmail by remember { mutableStateOf(initialEmail) }
     var detectedAvatarUrl by remember { mutableStateOf("") }
-    var hasAuthSession by remember { mutableStateOf(false) }
+    var hasAuthSession by remember { mutableStateOf(initialHasAuth) }
     var showPasteCookiesDialog by remember { mutableStateOf(false) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
     var cookiesInput by remember { mutableStateOf("") }
 
     fun deriveName(rawName: String, rawEmail: String): String {
@@ -127,11 +134,8 @@ fun YouTubeWebSignInDialog(
                     }
 
                     var img = document.querySelector('img[src*="googleusercontent.com"], img[src*="yt3.ggpht.com"], ytm-profile-icon img, #avatar-btn img');
-                    if (img) {
-                        r.avatarUrl = img.src || '';
-                        if (!r.name && img.alt && !img.alt.includes('Avatar') && !img.alt.includes('profile')) {
-                            r.name = img.alt.trim();
-                        }
+                    if (img && !r.name && img.alt && !img.alt.includes('Avatar') && !img.alt.includes('profile')) {
+                        r.name = img.alt.trim();
                     }
                 } catch(e) {}
                 return JSON.stringify(r);
@@ -188,14 +192,18 @@ fun YouTubeWebSignInDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Google & YouTube Sign-In",
+                                    text = "Sign In to YouTube",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = if (hasAuthSession) "🟢 Verified Session Ready" else "Official Google Authentication",
+                                    text = if (hasAuthSession) "🟢 Verified Account Active" else "Secure Google Authentication",
                                     fontSize = 11.sp,
-                                    color = if (hasAuthSession) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (hasAuthSession) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -206,21 +214,57 @@ fun YouTubeWebSignInDialog(
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showPasteCookiesDialog = true }) {
-                            Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = "Paste Cookies")
-                        }
-                        IconButton(onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl.ifBlank { "https://m.youtube.com/signin" }))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Could not open external browser", Toast.LENGTH_SHORT).show()
-                            }
-                        }) {
-                            Icon(imageVector = Icons.Filled.OpenInBrowser, contentDescription = "Open in Browser")
-                        }
                         IconButton(onClick = { webViewRef?.reload() }) {
                             Icon(imageVector = Icons.Filled.Refresh, contentDescription = "Reload")
+                        }
+                        Box {
+                            IconButton(onClick = { showOptionsMenu = true }) {
+                                Icon(imageVector = Icons.Filled.MoreVert, contentDescription = "Options")
+                            }
+                            DropdownMenu(
+                                expanded = showOptionsMenu,
+                                onDismissRequest = { showOptionsMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("🧹 Clear Cookies & Reset") },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        val cm = CookieManager.getInstance()
+                                        cm.removeAllCookies {
+                                            cm.flush()
+                                            val prefs = context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
+                                            prefs.edit().remove("youtube_cookies").apply()
+                                            com.example.data.remote.NPDownloader.savedCookies = ""
+                                            webViewRef?.clearCache(true)
+                                            webViewRef?.clearHistory()
+                                            hasAuthSession = false
+                                            Toast.makeText(context, "🧹 Cookies cleared! Reloading clean sign-in...", Toast.LENGTH_SHORT).show()
+                                            val cleanUrl = "https://m.youtube.com/signin"
+                                            currentUrl = cleanUrl
+                                            webViewRef?.loadUrl(cleanUrl)
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("📋 Paste Cookies Manually") },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        showPasteCookiesDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🌐 Open in External Browser") },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl.ifBlank { "https://m.youtube.com" }))
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -337,17 +381,8 @@ fun YouTubeWebSignInDialog(
                                 cacheMode = WebSettings.LOAD_DEFAULT
                                 mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
 
-                                // 3. Clean Mobile Chrome User-Agent: strip '; wv' and 'Version/X.X'
-                                // Using a desktop Windows User-Agent on Android fails Google's platform fingerprint checks!
-                                val defaultUa = userAgentString
-                                val cleanUa = if (defaultUa.contains("; wv") || defaultUa.contains("Version/")) {
-                                    defaultUa.replace("; wv", "").replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
-                                } else if (defaultUa.contains("Windows NT")) {
-                                    "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
-                                } else {
-                                    defaultUa
-                                }
-                                userAgentString = cleanUa
+                                // Clean Mobile Chrome User-Agent: standard Chrome Mobile without webview or OS build tokens
+                                userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
                             }
 
                             val cookieManager = CookieManager.getInstance()
@@ -388,25 +423,14 @@ fun YouTubeWebSignInDialog(
                                     val checkedUrl = url ?: return
                                     currentUrl = checkedUrl
 
-                                    val cookies = cookieManager.getCookie("https://www.youtube.com") ?: ""
-                                    val googleCookies = cookieManager.getCookie("https://accounts.google.com") ?: ""
-                                    val allCookies = if (cookies.isNotBlank()) cookies else googleCookies
-
-                                    // Check if user has authenticated
-                                    val hasAuth = allCookies.contains("LOGIN_INFO") ||
-                                            allCookies.contains("SID") ||
-                                            allCookies.contains("SSID") ||
-                                            allCookies.contains("SAPISID") ||
-                                            allCookies.contains("APISID")
-
+                                    val allCookies = com.example.util.CookieHelper.getAggregatedCookies()
+                                    val hasAuth = com.example.util.CookieHelper.hasAuthCookies(allCookies)
                                     hasAuthSession = hasAuth
 
                                     if (hasAuth) {
                                         view?.let { extractAccountDetails(it) }
-
-                                        // Persist cookies immediately
-                                        val prefs = ctx.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
-                                        prefs.edit().putString("youtube_cookies", allCookies).apply()
+                                        com.example.util.CookieHelper.syncAndPersistCookies(ctx)
+                                        com.example.data.remote.NPDownloader.savedCookies = allCookies
                                     }
                                 }
 
@@ -423,23 +447,23 @@ fun YouTubeWebSignInDialog(
                     }
                 )
 
-                // Bottom Action Bar
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
-                    modifier = Modifier.fillMaxWidth()
+                // Bottom Action Bar - Only displays once genuine authenticated session is detected
+                AnimatedVisibility(
+                    visible = hasAuthSession,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 })
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        val finalDisplayName = deriveName(detectedName, detectedEmail)
-
-                        AnimatedVisibility(
-                            visible = hasAuthSession || detectedEmail.isNotBlank(),
-                            enter = fadeIn() + slideInVertically()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            val finalDisplayName = deriveName(detectedName, detectedEmail)
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -455,29 +479,18 @@ fun YouTubeWebSignInDialog(
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (detectedAvatarUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = detectedAvatarUrl,
-                                        contentDescription = "Profile",
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = YouTubeRed,
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = finalDisplayName.take(2).uppercase().ifEmpty { "U" },
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White,
-                                                fontSize = 14.sp
-                                            )
-                                        }
+                                Surface(
+                                    shape = CircleShape,
+                                    color = YouTubeRed,
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = finalDisplayName.take(2).uppercase().ifEmpty { "U" },
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontSize = 14.sp
+                                        )
                                     }
                                 }
 
@@ -501,54 +514,50 @@ fun YouTubeWebSignInDialog(
                                 }
 
                                 Text(
-                                    text = "🟢 Active",
+                                    text = "🟢 Signed In",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF4CAF50)
                                 )
                             }
-                        }
 
-                        Button(
-                            onClick = {
-                                val cookieManager = CookieManager.getInstance()
-                                val cookies = cookieManager.getCookie("https://www.youtube.com") ?: ""
-                                val googleCookies = cookieManager.getCookie("https://accounts.google.com") ?: ""
-                                val allCookies = if (cookies.isNotBlank()) cookies else googleCookies
+                            Button(
+                                onClick = {
+                                    val allCookies = com.example.util.CookieHelper.getAggregatedCookies()
+                                    if (allCookies.isNotBlank()) {
+                                        com.example.util.CookieHelper.syncAndPersistCookies(context)
+                                        com.example.data.remote.NPDownloader.savedCookies = allCookies
+                                    }
 
-                                val prefs = context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE)
-                                if (allCookies.isNotBlank()) {
-                                    prefs.edit().putString("youtube_cookies", allCookies).apply()
-                                }
+                                    val resolvedName = deriveName(detectedName, detectedEmail)
+                                    val resolvedEmail = if (detectedEmail.isNotBlank()) detectedEmail else "google.user@vixz.app"
 
-                                val resolvedName = deriveName(detectedName, detectedEmail)
-                                val resolvedEmail = if (detectedEmail.isNotBlank()) detectedEmail else "google.user@vixz.app"
-
-                                Toast.makeText(context, "Welcome, $resolvedName! 🟢", Toast.LENGTH_SHORT).show()
-                                onSuccess(resolvedName, resolvedEmail, allCookies, detectedAvatarUrl)
-                                onDismiss()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (hasAuthSession && detectedName.isNotBlank()) "✓ Use Account: $finalDisplayName" else "✓ Use This Google Account / Finish Sign-In",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                                    Toast.makeText(context, "Welcome, $resolvedName! 🟢", Toast.LENGTH_SHORT).show()
+                                    onSuccess(resolvedName, resolvedEmail, allCookies, "")
+                                    onDismiss()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "✓ Continue as $finalDisplayName",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

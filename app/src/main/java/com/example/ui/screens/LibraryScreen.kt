@@ -105,7 +105,7 @@ fun LibraryScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             if (googleAccount.isSignedIn) {
-                                if (googleAccount.avatarUrl.isNotBlank()) {
+                                if (googleAccount.avatarUrl.isNotBlank() && !googleAccount.avatarUrl.contains("no-rj") && !googleAccount.avatarUrl.contains("s88-c")) {
                                     AsyncImage(
                                         model = googleAccount.avatarUrl,
                                         contentDescription = "Profile",
@@ -116,7 +116,7 @@ fun LibraryScreen(
                                     )
                                 } else {
                                     Text(
-                                        text = googleAccount.avatarInitials.ifBlank { "U" },
+                                        text = googleAccount.avatarInitials.ifBlank { "LO" },
                                         color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 12.sp

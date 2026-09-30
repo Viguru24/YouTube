@@ -57,6 +57,22 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🚀 Release v2.0.0 — Authentication & Navigation Redesign (September 30, 2026)
+
+### 🔐 1. Full-Screen Web Sign-In & Authentication Overhaul
+- **Full-Screen Unobstructed Login:** `YouTubeWebSignInDialog` now presents a responsive full-screen experience with clean headers ("Sign In to YouTube"), eliminating cramped toolbars and truncated buttons.
+- **Unobstructed Interaction:** Removed the floating confirmation button that blocked Google's login fields. The confirmation card now smoothly slides up only once authentication is verified.
+- **Unified Cookie Engine:** Created `CookieHelper` to automatically aggregate, deduplicate, and validate critical session tokens across all YouTube and Google authentication domains (`LOGIN_INFO`, `SID`, `SAPISID`, `__Secure-*`), eliminating cookie-check failures.
+- **Clean Overflow Menu:** Integrated an overflow menu (`⋮`) for advanced operations ("Clear Cookies & Reset", "Paste Cookies Manually", "Open in External Browser"), keeping the main screen distraction-free.
+
+### 👤 2. Avatar Branding & Guest Flow Perfection
+- **Accurate Initials Avatar:** Removed faulty third-party channel letter image scraping that was overriding the user's avatar. Genuine initials (`LO`) now render consistently with a gradient badge.
+- **Dedicated Settings Navigation:** Replaced the overlapping settings badge on the avatar with a dedicated Settings icon button in the top navigation bar. Direct tap on the avatar opens account management immediately.
+- **Zero Developer Clutter:** Eliminated raw text inputs ("ENTER PROFILE MANUALLY", raw cookie text areas) from the primary login modal for a seamless out-of-the-box user experience.
+- **100% Clean Slate for Fresh Installs:** Fresh installs start with empty subscriptions, zero cookies, and a pure guest feed ready for immediate playback without requiring a sign-in.
+
+---
+
 ## 🚀 Release v1.9.9 (September 30, 2026)
 
 ### 📊 1. Live Channel Subscriber Counts & View Count Parser Restoration

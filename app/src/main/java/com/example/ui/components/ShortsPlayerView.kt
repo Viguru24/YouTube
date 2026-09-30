@@ -283,7 +283,7 @@ fun ShortsPlayerView(
                 return@LaunchedEffect
             }
 
-            val result = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+            val result = kotlinx.coroutines.withTimeoutOrNull(5000L) {
                 YouTubeStreamExtractor.extractVideoStreams(videoId)
             }
             val directUrl = if (selectedQuality != "Auto" && result?.qualityUrlMap?.containsKey(selectedQuality) == true) {
@@ -298,9 +298,9 @@ fun ShortsPlayerView(
                 val isVideoOnly = result?.isVideoOnlyStream(directUrl, selectedQuality) == true ||
                         (!audioUrl.isNullOrBlank() && directUrl != result?.combinedMuxedUrl && !directUrl.contains(".m3u8") && !directUrl.startsWith("file://") && !directUrl.startsWith("/"))
 
-                val liveCookies = try {
-                    android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
-                } catch (e: Throwable) { "" }
+                val liveCookies = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
+                    com.example.data.remote.NPDownloader.savedCookies
+                }
 
                 val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
                     .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
@@ -407,8 +407,17 @@ fun ShortsPlayerView(
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
 
-                        webChromeClient = android.webkit.WebChromeClient()
-                        webViewClient = android.webkit.WebViewClient()
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                android.util.Log.d("ShortsWebPlayer", "[Console] ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
+                                return true
+                            }
+                        }
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                                android.util.Log.e("ShortsWebPlayer", "onReceivedError: ${error?.description} for ${request?.url}")
+                            }
+                        }
 
                         val embedHtml = """
                             <!DOCTYPE html>
@@ -417,17 +426,38 @@ fun ShortsPlayerView(
                               <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                               <style>
                                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-                                iframe { border: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+                                #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
                               </style>
                             </head>
                             <body>
-                              <iframe
-                                id="player"
-                                src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&controls=0&loop=1&playlist=$videoId&origin=https://www.youtube.com"
-                                referrerpolicy="strict-origin-when-cross-origin"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowfullscreen>
-                              </iframe>
+                              <div id="player"></div>
+                              <script src="https://www.youtube.com/iframe_api"></script>
+                              <script>
+                                var player;
+                                function onYouTubeIframeAPIReady() {
+                                  player = new YT.Player('player', {
+                                    videoId: '$videoId',
+                                    host: 'https://www.youtube.com',
+                                    playerVars: {
+                                      'autoplay': 1,
+                                      'playsinline': 1,
+                                      'controls': 0,
+                                      'loop': 1,
+                                      'playlist': '$videoId',
+                                      'rel': 0,
+                                      'enablejsapi': 1,
+                                      'origin': 'https://www.youtube.com',
+                                      'widget_referrer': 'https://www.youtube.com/'
+                                    },
+                                    events: {
+                                      'onReady': function(e) {
+                                        try { e.target.unMute(); } catch(err) {}
+                                        try { e.target.playVideo(); } catch(err) {}
+                                      }
+                                    }
+                                  });
+                                }
+                              </script>
                             </body>
                             </html>
                         """.trimIndent()

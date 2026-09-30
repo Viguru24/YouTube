@@ -503,7 +503,7 @@ fun YouTubePlayerView(
 
         // 2. Otherwise extract online stream & all available resolutions
         addLog("Extracting direct stream URL & available qualities for videoId: $videoId")
-        val result = kotlinx.coroutines.withTimeoutOrNull(15000L) {
+        val result = kotlinx.coroutines.withTimeoutOrNull(6000L) {
             YouTubeStreamExtractor.extractVideoStreams(videoId)
         }
         if (result != null && result.isMembersOnly) {
@@ -565,11 +565,9 @@ fun YouTubePlayerView(
                 val isVideoOnly = streamResult?.isVideoOnlyStream(url, selectedQuality) == true ||
                         (!audioUrl.isNullOrBlank() && url != streamResult?.combinedMuxedUrl && !url.contains(".m3u8"))
 
-                val liveCookies = try {
-                    android.webkit.CookieManager.getInstance().getCookie("https://www.youtube.com") ?: ""
-                } catch (e: Throwable) { "" }
-                val savedCookies = playerPrefs.getString("youtube_cookies", "") ?: ""
-                val effectiveCookies = if (liveCookies.isNotBlank() && (liveCookies.contains("LOGIN_INFO") || liveCookies.contains("SID") || liveCookies.contains("SAPISID"))) liveCookies else savedCookies
+                val effectiveCookies = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
+                    playerPrefs.getString("youtube_cookies", "") ?: ""
+                }
 
                 val requestProps = mutableMapOf(
                     "Referer" to "https://www.youtube.com/",
@@ -739,8 +737,17 @@ fun YouTubePlayerView(
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
 
-                        webChromeClient = android.webkit.WebChromeClient()
-                        webViewClient = android.webkit.WebViewClient()
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
+                                android.util.Log.d("WebViewPlayer", "[Console] ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
+                                return true
+                            }
+                        }
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                                android.util.Log.e("WebViewPlayer", "onReceivedError: ${error?.description} for ${request?.url}")
+                            }
+                        }
 
                         // Use strict-origin-when-cross-origin and load with youtube.com base URL to eliminate Error 153
                         val embedHtml = """
@@ -750,32 +757,40 @@ fun YouTubePlayerView(
                               <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                               <style>
                                 html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-                                iframe { border: none; width: 100%; height: 100%; position: absolute; top: 0; left: 0; }
+                                #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
                               </style>
                             </head>
                             <body>
-                              <iframe
-                                id="player"
-                                src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&playsinline=1&enablejsapi=1&origin=https://www.youtube.com"
-                                referrerpolicy="strict-origin-when-cross-origin"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowfullscreen>
-                              </iframe>
+                              <div id="player"></div>
+                              <script src="https://www.youtube.com/iframe_api"></script>
                               <script>
-                                function post(action, val) {
-                                  var iframe = document.getElementById('player');
-                                  if (iframe && iframe.contentWindow) {
-                                    iframe.contentWindow.postMessage(JSON.stringify({
-                                      'event': 'command',
-                                      'func': action,
-                                      'args': val ? [val] : []
-                                    }), '*');
-                                  }
+                                var player;
+                                function onYouTubeIframeAPIReady() {
+                                  player = new YT.Player('player', {
+                                    videoId: '$videoId',
+                                    host: 'https://www.youtube.com',
+                                    playerVars: {
+                                      'autoplay': 1,
+                                      'playsinline': 1,
+                                      'controls': 1,
+                                      'rel': 0,
+                                      'fs': 1,
+                                      'enablejsapi': 1,
+                                      'origin': 'https://www.youtube.com',
+                                      'widget_referrer': 'https://www.youtube.com/'
+                                    },
+                                    events: {
+                                      'onReady': function(e) {
+                                        try { e.target.unMute(); } catch(err) {}
+                                        try { e.target.playVideo(); } catch(err) {}
+                                      }
+                                    }
+                                  });
                                 }
-                                function pauseVideo() { post('pauseVideo'); }
-                                function playVideo() { post('playVideo'); }
-                                function seekToSeconds(sec) { post('seekTo', [sec, true]); }
-                                function setPlaybackRate(rate) { post('setPlaybackRate', [rate]); }
+                                function pauseVideo() { if (player && player.pauseVideo) player.pauseVideo(); }
+                                function playVideo() { if (player && player.playVideo) player.playVideo(); }
+                                function seekToSeconds(sec) { if (player && player.seekTo) player.seekTo(sec, true); }
+                                function setPlaybackRate(rate) { if (player && player.setPlaybackRate) player.setPlaybackRate(rate); }
                               </script>
                             </body>
                             </html>
