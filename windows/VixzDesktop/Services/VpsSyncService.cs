@@ -211,6 +211,9 @@ namespace VixzDesktop.Services
                         }
                     }
 
+                    // Auto-remove any newly synced watched videos from Watch Later
+                    StorageService.Settings.WatchLater.RemoveAll(v => existingHistoryIds.Contains(v.Id));
+
                     if (StorageService.Settings.WatchHistory.Count > 250)
                     {
                         StorageService.Settings.WatchHistory = StorageService.Settings.WatchHistory.Take(250).ToList();

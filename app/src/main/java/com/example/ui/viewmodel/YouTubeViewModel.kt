@@ -801,20 +801,12 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 5. VPS Cross-Device Cloud Sync on Startup
+        // 5. VPS Cross-Device Cloud Sync on Startup & Background Periodic Sync
+        triggerVpsSync()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                if (com.example.data.remote.VpsSyncManager.isSyncEnabled(getApplication()) &&
-                    com.example.data.remote.VpsSyncManager.getServerUrl(getApplication()).isNotBlank()) {
-                    com.example.data.remote.VpsSyncManager.syncWithServer(
-                        context = getApplication(),
-                        videoDao = db.videoDao(),
-                        subscribedChannels = _subscribedCreators.value,
-                        onSubscriptionsUpdated = { mergeIncomingSubscriptions(it) }
-                    )
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("YouTubeViewModel", "Initial VPS sync failed: ${e.message}")
+            while (isActive) {
+                kotlinx.coroutines.delay(180_000L) // Auto-sync every 3 minutes
+                triggerVpsSync()
             }
         }
 
@@ -1125,23 +1117,37 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         historyIds + inMemory
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
-    fun markVideoAsWatched(youtubeId: String, positionSeconds: Int = 0) {
+    fun markVideoAsWatched(
+        youtubeId: String,
+        positionSeconds: Int = 0,
+        title: String = "",
+        channel: String = "",
+        duration: String = "",
+        thumbnail: String = ""
+    ) {
         if (youtubeId.isBlank()) return
-        _inMemoryWatchedIds.value = _inMemoryWatchedIds.value + youtubeId
-        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != youtubeId }
-        _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != youtubeId }
-        _shortsQueue.value = _shortsQueue.value.filter { it.youtubeId != youtubeId }
+        val cleanId = youtubeId.trim()
+        _inMemoryWatchedIds.value = _inMemoryWatchedIds.value + cleanId
+        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId != cleanId }
+        _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId != cleanId }
+        _shortsQueue.value = _shortsQueue.value.filter { it.youtubeId != cleanId }
+        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId != cleanId }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                repository.updatePlaybackPosition(youtubeId, positionSeconds)
-                val vid = repository.getVideoDirect(youtubeId)
+                repository.updatePlaybackPosition(cleanId, positionSeconds)
+                repository.updateWatchLater(cleanId, false)
+                val vid = repository.getVideoDirect(cleanId)
+                val finalTitle = title.ifBlank { vid?.title ?: "" }
+                val finalChannel = channel.ifBlank { vid?.channelName ?: "" }
+                val finalDuration = duration.ifBlank { vid?.durationText ?: "" }
+                val finalThumb = thumbnail.ifBlank { vid?.thumbnailUrl ?: "" }
                 com.example.data.remote.VpsSyncManager.notifyWatched(
                     context = getApplication(),
-                    youtubeId = youtubeId,
-                    title = vid?.title ?: "",
-                    channel = vid?.channelName ?: "",
-                    duration = vid?.durationText ?: "",
-                    thumbnail = vid?.thumbnailUrl ?: "",
+                    youtubeId = cleanId,
+                    title = finalTitle,
+                    channel = finalChannel,
+                    duration = finalDuration,
+                    thumbnail = finalThumb,
                     positionSeconds = positionSeconds
                 )
                 if (_algorithmSettings.value.autoDeleteDownloads.equals("Watched", ignoreCase = true)) {
@@ -1176,12 +1182,25 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 context = getApplication(),
                 videoDao = db.videoDao(),
                 subscribedChannels = _subscribedCreators.value,
-                onSubscriptionsUpdated = { mergeIncomingSubscriptions(it) }
+                onSubscriptionsUpdated = { mergeIncomingSubscriptions(it) },
+                onWatchedIdsMerged = { mergedIds ->
+                    if (mergedIds.isNotEmpty()) {
+                        _inMemoryWatchedIds.value = _inMemoryWatchedIds.value + mergedIds
+                        _categoryVideos.value = _categoryVideos.value.filter { it.youtubeId !in mergedIds }
+                        _feedBuffer.value = _feedBuffer.value.filter { it.youtubeId !in mergedIds }
+                        _shortsQueue.value = _shortsQueue.value.filter { it.youtubeId !in mergedIds }
+                        _liveSearchResults.value = _liveSearchResults.value.filter { it.youtubeId !in mergedIds }
+                    }
+                }
             )
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 onResult(res.first, res.second)
             }
         }
+    }
+
+    fun triggerVpsSync() {
+        syncWithVps()
     }
 
     // Active playing video state & Shorts mode tracking
@@ -1259,7 +1278,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
 
         // Immediately filter out from active feed lists and background buffer so returning to feed shows it removed
-        markVideoAsWatched(video.youtubeId, video.lastPositionSeconds)
+        markVideoAsWatched(
+            youtubeId = video.youtubeId,
+            positionSeconds = video.lastPositionSeconds,
+            title = video.title,
+            channel = video.channelName,
+            duration = video.durationText,
+            thumbnail = video.thumbnailUrl
+        )
 
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val now = System.currentTimeMillis()
@@ -1277,6 +1303,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     _activeVideo.value = _activeVideo.value?.copy(
                         lastPositionSeconds = posToKeep,
+                        isWatchLater = false,
                         isDownloaded = isDownloadedState,
                         localFilePath = localPathToKeep,
                         downloadSizeMb = sizeMbToKeep,
@@ -1288,6 +1315,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             val updated = (existing ?: video).copy(
                 lastWatchedTimestamp = now,
                 lastPositionSeconds = posToKeep,
+                isWatchLater = false,
                 isDownloaded = isDownloadedState,
                 localFilePath = localPathToKeep,
                 downloadSizeMb = sizeMbToKeep,
@@ -1301,7 +1329,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun playShort(video: VideoEntity) {
         android.util.Log.d("YouTubeViewModel", "playShort called: id=${video.youtubeId}, title=${video.title}")
-        markVideoAsWatched(video.youtubeId, 0)
+        markVideoAsWatched(
+            youtubeId = video.youtubeId,
+            positionSeconds = 0,
+            title = video.title,
+            channel = video.channelName,
+            duration = video.durationText,
+            thumbnail = video.thumbnailUrl
+        )
         val shortVid = video.copy(category = "Shorts")
 
         // Record in session history
@@ -1619,6 +1654,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun refreshFeed() {
+        triggerVpsSync()
         val cat = selectedCategory.value
         if (cat == "All" || cat.contains("Latest", ignoreCase = true)) {
             refreshTrendingFeed()

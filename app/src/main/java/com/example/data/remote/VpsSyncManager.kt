@@ -55,7 +55,7 @@ object VpsSyncManager {
 
     fun isSyncEnabled(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_SYNC_ENABLED, false)
+        return prefs.getBoolean(KEY_SYNC_ENABLED, true)
     }
 
     fun setSyncEnabled(context: Context, enabled: Boolean) {
@@ -144,7 +144,8 @@ object VpsSyncManager {
         context: Context,
         videoDao: VideoDao,
         subscribedChannels: List<String> = emptyList(),
-        onSubscriptionsUpdated: ((List<String>) -> Unit)? = null
+        onSubscriptionsUpdated: ((List<String>) -> Unit)? = null,
+        onWatchedIdsMerged: ((Set<String>) -> Unit)? = null
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         if (!isSyncEnabled(context)) {
             return@withContext Pair(false, "VPS Sync is disabled in settings.")
@@ -214,6 +215,7 @@ object VpsSyncManager {
                 val respJson = JSONObject(respStr)
 
                 var mergedCount = 0
+                val mergedWatchedIds = mutableSetOf<String>()
                 val serverWatched = respJson.optJSONArray("watched")
                 if (serverWatched != null) {
                     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).apply {
@@ -221,8 +223,9 @@ object VpsSyncManager {
                     }
                     for (i in 0 until serverWatched.length()) {
                         val item = serverWatched.optJSONObject(i) ?: continue
-                        val vid = item.optString("video_id")
+                        val vid = item.optString("video_id").trim()
                         if (vid.isBlank()) continue
+                        mergedWatchedIds.add(vid)
 
                         val pos = item.optInt("position", 0)
                         val rawWatchedAt = item.optString("watched_at", "")
@@ -250,6 +253,9 @@ object VpsSyncManager {
                             val newTimestamp = maxOf(existing.lastWatchedTimestamp, watchedAt)
                             val newPos = if (pos > 0) maxOf(existing.lastPositionSeconds, pos) else existing.lastPositionSeconds
                             videoDao.updateWatchHistory(vid, newTimestamp, newPos)
+                            if (existing.isWatchLater) {
+                                videoDao.updateWatchLater(vid, false)
+                            }
                         } else {
                             videoDao.insertVideo(
                                 VideoEntity(
@@ -259,11 +265,15 @@ object VpsSyncManager {
                                     thumbnailUrl = thumb,
                                     durationText = duration,
                                     lastWatchedTimestamp = watchedAt,
-                                    lastPositionSeconds = pos
+                                    lastPositionSeconds = pos,
+                                    isWatchLater = false
                                 )
                             )
                             mergedCount++
                         }
+                    }
+                    if (mergedWatchedIds.isNotEmpty()) {
+                        onWatchedIdsMerged?.invoke(mergedWatchedIds)
                     }
                 }
 

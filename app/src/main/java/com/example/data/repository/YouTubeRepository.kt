@@ -153,6 +153,15 @@ class YouTubeRepository(
         }
     }
 
+    suspend fun updateWatchLater(youtubeId: String, isWatchLater: Boolean) {
+        val existing = videoDao.getVideoById(youtubeId)
+        if (existing != null) {
+            videoDao.insertVideo(existing.copy(isWatchLater = isWatchLater))
+        } else {
+            videoDao.updateWatchLater(youtubeId, isWatchLater)
+        }
+    }
+
     suspend fun updateWatchHistory(youtubeId: String, lastPosSeconds: Int) {
         val existing = videoDao.getVideoById(youtubeId)
         val posToSave = if (lastPosSeconds > 0) lastPosSeconds else (existing?.lastPositionSeconds ?: 0)

@@ -160,12 +160,16 @@ namespace VixzDesktop.Services
 
         public static void AddHistory(VideoItem video)
         {
-            Settings.WatchHistory.RemoveAll(v => v.Id == video.Id);
+            if (video == null || string.IsNullOrWhiteSpace(video.Id)) return;
+            Settings.WatchHistory.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
             Settings.WatchHistory.Insert(0, video);
             if (Settings.WatchHistory.Count > 100)
             {
                 Settings.WatchHistory.RemoveAt(Settings.WatchHistory.Count - 1);
             }
+            // Auto-remove watched video from Watch Later
+            Settings.WatchLater.RemoveAll(v => v.Id.Equals(video.Id, StringComparison.OrdinalIgnoreCase));
+            video.IsWatchLater = false;
             Save();
 
             _ = VpsSyncService.NotifyWatchedAsync(video);

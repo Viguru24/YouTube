@@ -93,14 +93,19 @@ namespace VixzDesktop
             VpsSyncService.InitializeAutoSync();
             VpsSyncService.OnSyncCompleted += () =>
             {
-                if (FeedTitleText?.Text == "🏠 Home Feed" && _currentFeed != null)
+                var title = FeedTitleText?.Text ?? "";
+                if (title != "📜 Watch History" && title != "💾 Downloaded Videos & Audio")
                 {
                     var watchedIds = new HashSet<string>(StorageService.Settings.WatchHistory.Select(v => v.Id), StringComparer.OrdinalIgnoreCase);
-                    var removed = _currentFeed.RemoveAll(v => watchedIds.Contains(v.Id));
-                    if (removed > 0 && VideoItemsControl != null)
+                    _rawUnfilteredFeed?.RemoveAll(v => watchedIds.Contains(v.Id));
+                    if (_currentFeed != null)
                     {
-                        VideoItemsControl.ItemsSource = null;
-                        VideoItemsControl.ItemsSource = _currentFeed;
+                        var removed = _currentFeed.RemoveAll(v => watchedIds.Contains(v.Id));
+                        if (removed > 0 && VideoItemsControl != null)
+                        {
+                            VideoItemsControl.ItemsSource = null;
+                            VideoItemsControl.ItemsSource = _currentFeed;
+                        }
                     }
                 }
             };
@@ -1265,7 +1270,7 @@ namespace VixzDesktop
         {
             _feedBatchIndex = 0;
             _currentSearchQuery = null;
-            _isDiscoveryFeed = false;
+            _isDiscoveryFeed = true;
             SwitchToFeedView();
             await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync());
         }
@@ -4374,7 +4379,7 @@ namespace VixzDesktop
                 if (folderName == "All")
                 {
                     SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
-                    _isDiscoveryFeed = false;
+                    _isDiscoveryFeed = true;
                     SwitchToFeedView();
                     await LoadFeedAsync("🔔 Subscriptions Feed", () => YouTubeService.GetSubscribedFeedAsync(forceRefresh: true));
                 }
@@ -4389,7 +4394,7 @@ namespace VixzDesktop
                         matched = channels;
                     }
                     SubscribedChannelsList.ItemsSource = matched;
-                    _isDiscoveryFeed = false;
+                    _isDiscoveryFeed = true;
                     SwitchToFeedView();
                     await LoadFeedAsync($"📁 {folderName} Feed", () => YouTubeService.FetchSubscribedProfileFeedAsync(matched, 0, 150, forceRefresh: true));
                 }

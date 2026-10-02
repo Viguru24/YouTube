@@ -1275,7 +1275,7 @@ fun HomeScreen(
                         }
                         .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
-                    if (withinHour.isNotEmpty()) withinHour else allCandidate.take(25)
+                    if (withinHour.isNotEmpty()) withinHour else allCandidate.filter { !isVideoHidden(it) }.take(25)
                 } else if (selectedCategory.contains("week", ignoreCase = true)) {
                     val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
                     val withinWeek = allCandidate
