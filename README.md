@@ -19,7 +19,7 @@
 
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android** | `APK (v2.0.0)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.0.0/Vixz-YouTube-Player-v2.0.0.apk) |
+| 📱 **Android** | `APK (v2.2.0)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.2.0/Vixz-YouTube-Player-v2.2.0.apk) |
 | 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
 | 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
-  <a href="#-whats-new-in-v210">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v220">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -38,15 +38,17 @@
 
 ---
 
-## 🆕 What's New in v2.1.0
+## 🆕 What's New in v2.2.0
 
-- ⚡ **TypeSafe AI Jev System-One Engine:** Ultra-fast (70–300ms) autonomous decision model powers three new intelligent features — completely optional, requires a free API key from [console.typesafe.ai](https://console.typesafe.ai) (\$5 free credit on signup).
-- 🔐 **Autonomous Auth Resolver:** Jev automatically identifies and clicks the correct account chooser button and dismisses cookie consent walls during Google sign-in — zero user taps.
-- 📺 **Smart Viewport Quality Arbitrator:** Jev dynamically selects the optimal stream quality for your current window size before every video load.
-- 🎵 **Autonomous AI DJ / Content Curator:** Jev curates the best next video from your feed based on what you're watching — toasted as "⚡ Jev AI DJ: Playing '...'"
-- 🔐 **Authentication & Session Rebuild (v2.0.0):** Event-driven sign-in detection, cookie clearing on sign-out, and separated sign-in wall vs. embedding error handling.
-- 🛡️ **Zero-Loop Embed Error Handling:** `_fallbackFired` guards prevent repeated YouTube Error 150 spam loops.
-- 📦 **Self-Contained MSIX & Portable EXE:** Fully bundled installers — no .NET runtime needed. See [`UPDATE_LOG.md`](UPDATE_LOG.md) for full details.
+- 🚀 **Sovereign Over-The-Air (OTA) Updates:** YouTube for Android (Vixz) now receives seamless, direct Over-The-Air updates straight from your self-hosted Sovereign VPS update server (`https://api.cosmowhisper.com/updates/youtube/`).
+  - **In-App OTA Engine:** Automatic background startup check, streaming progress bar, and 1-tap native package installer via secure `FileProvider`.
+  - **Glassmorphic OTA Dialog:** Rich dark UI dialog comparing builds and presenting release notes.
+  - **Settings Integration:** Dedicated "Check for Updates Now" card inside the Settings panel.
+  - **1-Click Publisher:** Automated compilation, version bumping, and VPS deployment via `publish-update.ps1` and desktop batch shortcut.
+- 🔍 **Live Search & Content Extraction Overhaul:** Rewritten live search service for robust channel metadata, subscriber counts, accurate view counts, and uninterrupted stream playback.
+- 🖥️ **Windows Desktop (VixzDesktop) Architectural Modularization:** Refactored monolithic codebase into dedicated partial classes (`Playback`, `Navigation`, `Downloads`, `AiCopilot`, `Account`, `Series`, `Social`, `UIControls`) and standalone services (`DownloadQueueService`, `SeriesDetectionService`, `TranscriptService`).
+- 🔄 **Cross-Device Cloud Sync & Watched Content Filter:** Seamless watch history, category, and playlist sync between Android and Windows PC, automatically filtering already-watched videos from feeds.
+- ⚡ **TypeSafe AI Jev System-One Engine:** Autonomous auth resolving, smart viewport quality arbitration, and AI DJ autoplay curation.
 
 ---
 
@@ -83,7 +85,7 @@ Prefer watching on your laptop or desktop? Experience **[Vixz Desktop](https://g
 ## ⚡ Quick Install Guide
 
 ### Option A: Direct APK Install
-1. **[📥 Download the Latest Vixz APK (v2.0.0)](https://github.com/Viguru24/YouTube/releases/download/v2.0.0/Vixz-YouTube-Player-v2.0.0.apk)** directly to your Android device.
+1. **[📥 Download the Latest Vixz APK (v2.2.0)](https://github.com/Viguru24/YouTube/releases/download/v2.2.0/Vixz-YouTube-Player-v2.2.0.apk)** directly to your Android device.
 2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!

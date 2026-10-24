@@ -6,6 +6,7 @@ import com.example.data.dao.VideoNoteDao
 import com.example.data.model.PlaylistCategoryEntity
 import com.example.data.model.VideoEntity
 import com.example.data.model.VideoNoteEntity
+import com.example.util.YouTubeUtils
 import kotlinx.coroutines.flow.Flow
 
 class YouTubeRepository(
@@ -110,7 +111,31 @@ class YouTubeRepository(
     }
 
     suspend fun saveVideos(videos: List<VideoEntity>) {
-        videos.forEach { saveVideo(it) }
+        if (videos.isEmpty()) return
+        val filtered = videos.filter { !isChannelBlocked(it.channelName) }
+        if (filtered.isEmpty()) return
+        val existingMap = try {
+            videoDao.getAllVideosDirect().associateBy { it.youtubeId }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+        val toInsert = filtered.map { video ->
+            val existing = existingMap[video.youtubeId]
+            if (existing != null) {
+                video.copy(
+                    lastPositionSeconds = if (video.lastPositionSeconds > 0) video.lastPositionSeconds else existing.lastPositionSeconds,
+                    lastWatchedTimestamp = if (video.lastWatchedTimestamp > 0) video.lastWatchedTimestamp else existing.lastWatchedTimestamp,
+                    isFavorite = existing.isFavorite,
+                    isWatchLater = existing.isWatchLater,
+                    isDownloaded = existing.isDownloaded,
+                    localFilePath = existing.localFilePath,
+                    downloadSizeMb = existing.downloadSizeMb
+                )
+            } else {
+                video
+            }
+        }
+        videoDao.insertVideos(toInsert)
     }
 
     suspend fun updatePlaybackPosition(youtubeId: String, positionSeconds: Int) {
@@ -133,14 +158,38 @@ class YouTubeRepository(
         }
     }
 
+    suspend fun toggleFavorite(video: VideoEntity) {
+        val existing = videoDao.getVideoById(video.youtubeId)
+        val target = if (existing != null) !existing.isFavorite else !video.isFavorite
+        val toSave = (existing ?: video).copy(isFavorite = target)
+        videoDao.insertVideo(toSave)
+    }
+
     suspend fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {
         val target = !currentFavorite
         val existing = videoDao.getVideoById(youtubeId)
         if (existing != null) {
             videoDao.insertVideo(existing.copy(isFavorite = target))
         } else {
-            videoDao.updateFavorite(youtubeId, target)
+            videoDao.insertVideo(
+                VideoEntity(
+                    youtubeId = youtubeId,
+                    title = "YouTube Video",
+                    channelName = "YouTube",
+                    thumbnailUrl = YouTubeUtils.getThumbnailUrl(youtubeId),
+                    durationText = "",
+                    category = "YouTube",
+                    isFavorite = target
+                )
+            )
         }
+    }
+
+    suspend fun toggleWatchLater(video: VideoEntity) {
+        val existing = videoDao.getVideoById(video.youtubeId)
+        val target = if (existing != null) !existing.isWatchLater else !video.isWatchLater
+        val toSave = (existing ?: video).copy(isWatchLater = target)
+        videoDao.insertVideo(toSave)
     }
 
     suspend fun toggleWatchLater(youtubeId: String, currentWatchLater: Boolean) {
@@ -149,7 +198,17 @@ class YouTubeRepository(
         if (existing != null) {
             videoDao.insertVideo(existing.copy(isWatchLater = target))
         } else {
-            videoDao.updateWatchLater(youtubeId, target)
+            videoDao.insertVideo(
+                VideoEntity(
+                    youtubeId = youtubeId,
+                    title = "YouTube Video",
+                    channelName = "YouTube",
+                    thumbnailUrl = YouTubeUtils.getThumbnailUrl(youtubeId),
+                    durationText = "",
+                    category = "YouTube",
+                    isWatchLater = target
+                )
+            )
         }
     }
 

@@ -422,13 +422,17 @@ fun HomeScreen(
 
                             // Persistent Recency / Time Filter Button (Always on Top-Left, Defaults to Latest)
                             var showRecencyMenu by remember { mutableStateOf(false) }
-                            val is24hActive = selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true)
-                            val isHourActive = selectedCategory.contains("hour", ignoreCase = true)
-                            val isWeekActive = selectedCategory.contains("week", ignoreCase = true)
-                            val isMonthActive = selectedCategory.contains("month", ignoreCase = true)
-                            val isLatestActive = selectedCategory.contains("Latest", ignoreCase = true) || (!is24hActive && !isHourActive && !isWeekActive && !isMonthActive && selectedCategory == "All")
+                            val isFavActive = selectedCategory.contains("Favorite", ignoreCase = true) || selectedCategory.contains("Star", ignoreCase = true)
+                            val isWlActive = selectedCategory.contains("Watch Later", ignoreCase = true)
+                            val is24hActive = !isFavActive && !isWlActive && (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true))
+                            val isHourActive = !isFavActive && !isWlActive && selectedCategory.contains("hour", ignoreCase = true)
+                            val isWeekActive = !isFavActive && !isWlActive && selectedCategory.contains("week", ignoreCase = true)
+                            val isMonthActive = !isFavActive && !isWlActive && selectedCategory.contains("month", ignoreCase = true)
+                            val isLatestActive = !isFavActive && !isWlActive && (selectedCategory.contains("Latest", ignoreCase = true) || (!is24hActive && !isHourActive && !isWeekActive && !isMonthActive && selectedCategory == "All"))
 
                             val recencyLabel = when {
+                                isFavActive -> "⭐ Star"
+                                isWlActive -> "⏰ Later"
                                 is24hActive -> "24h"
                                 isHourActive -> "1h"
                                 isWeekActive -> "Week"
@@ -543,6 +547,29 @@ fun HomeScreen(
                                             showRecencyMenu = false
                                             dismissKeyboard()
                                             onCategorySelected("All")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("⭐ Starred / Favorites", fontWeight = if (isFavActive) FontWeight.Bold else FontWeight.Normal, color = if (isFavActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("⭐ Favorites")
+                                            if (selectedSubscribedChannel.isNotBlank()) {
+                                                onSubscribedChannelSelected("")
+                                            }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⏰ Watch Later", fontWeight = if (isWlActive) FontWeight.Bold else FontWeight.Normal, color = if (isWlActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = {
+                                            showRecencyMenu = false
+                                            dismissKeyboard()
+                                            onCategorySelected("⏰ Watch Later")
                                             if (selectedSubscribedChannel.isNotBlank()) {
                                                 onSubscribedChannelSelected("")
                                             }
@@ -703,31 +730,10 @@ fun HomeScreen(
                             Icon(imageVector = Icons.Filled.Mic, contentDescription = "Voice Search", tint = MaterialTheme.colorScheme.onSurface)
                         }
 
-                        // 2. Direct 1-Click Language Switcher 🌐
-                        IconButton(
-                            onClick = { showLanguageDialog = true },
-                            modifier = Modifier.testTag("top_language_btn")
-                        ) {
-                            Text("🌐", fontSize = 18.sp)
-                        }
-
-                        // 2.5 Dedicated Settings Button ⚙️
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier.testTag("top_settings_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = strings.settingsTitle,
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-
-                        // 3. Profile Button (Opens Google & YouTube Account Dialog)
+                        // 2. Profile Button (Opens Quick Menu: Account, Settings, Language, Sort, Manage)
                         Box {
                             IconButton(
-                                onClick = onOpenGoogleAuth,
+                                onClick = { showProfileMenu = true },
                                 modifier = Modifier.testTag("top_ls_gear_btn")
                             ) {
                                 Box(contentAlignment = Alignment.BottomEnd) {
@@ -918,7 +924,6 @@ fun HomeScreen(
                     }
                 }
             }
-
 
 
             if (isSearchExpanded && searchTextFieldValue.text.isNotEmpty()) {
@@ -1246,6 +1251,12 @@ fun HomeScreen(
                          (vCh.contains("youtube") && subSet.any { sub -> vTitle.contains(sub) })) &&
                         !isVideoHidden(video)
                     }.distinctBy { it.youtubeId }
+                } else if (selectedCategory.contains("Favorite", ignoreCase = true) || selectedCategory.contains("Star", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    allCandidate.filter { it.isFavorite && !isVideoHidden(it) }
+                } else if (selectedCategory.contains("Watch Later", ignoreCase = true)) {
+                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    allCandidate.filter { it.isWatchLater && !isVideoHidden(it) }
                 } else if (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("24 hours", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true) || selectedCategory.equals("Today", ignoreCase = true)) {
                     val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
                     val within24h = allCandidate
@@ -1354,31 +1365,37 @@ fun HomeScreen(
                 )
 
                 if (searchQuery.isNotBlank()) {
+                    val pubSecMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    val viewCountMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
                     when (searchSortOption) {
                         "Most Popular" -> timeFilteredList.sortedWith(
-                            compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
-                                .thenBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            compareByDescending<VideoEntity> { viewCountMap[it.youtubeId] ?: 0L }
+                                .thenBy { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                         )
                         "Relevance" -> timeFilteredList
                         else -> timeFilteredList.sortedWith( // "Latest" (Default)
-                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                                 .thenByDescending { it.addedTimestamp }
                         )
                     }
                 } else if (selectedSubscribedChannel.isNotBlank()) {
+                    val pubSecMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                     timeFilteredList.sortedWith(
-                        compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                             .thenByDescending { it.addedTimestamp }
                     )
                 } else when (selectedSort) {
-                    "Oldest" -> rankedDisplayList.sortedWith(
-                        compareByDescending<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                            .thenBy { it.addedTimestamp }
-                    )
-                    else -> {
-                        // Default & Newest both strictly prioritize newest uploads first (minutes, hours, days ago)
+                    "Oldest" -> {
+                        val pubSecMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         rankedDisplayList.sortedWith(
-                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                            compareByDescending<VideoEntity> { pubSecMap[it.youtubeId] ?: 0L }
+                                .thenBy { it.addedTimestamp }
+                        )
+                    }
+                    else -> {
+                        val pubSecMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        rankedDisplayList.sortedWith(
+                            compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                                 .thenByDescending { it.addedTimestamp }
                         )
                     }
@@ -1484,15 +1501,15 @@ fun HomeScreen(
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        columns = GridCells.Fixed(1),
                         state = gridState,
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 88.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 88.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                     if (selectedSubscribedChannel.isNotBlank() && searchQuery.isBlank()) {
-                        item(span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(1) }) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1530,7 +1547,7 @@ fun HomeScreen(
                             }
                         }
                     } else if (searchQuery.isNotEmpty()) {
-                        item(span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(1) }) {
                             Text(
                                 text = "Search Results for '$searchQuery'",
                                 style = MaterialTheme.typography.titleMedium,
@@ -1539,7 +1556,7 @@ fun HomeScreen(
                             )
                         }
                     } else if (selectedCategory != "All") {
-                        item(span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(1) }) {
                             Text(
                                 text = "$selectedCategory Videos",
                                 style = MaterialTheme.typography.titleMedium,
@@ -1551,7 +1568,7 @@ fun HomeScreen(
 
                     // 1. Horizontal Shorts Reel Section (If Shorts exist)
                     if (shortsList.isNotEmpty()) {
-                        item(span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(1) }) {
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1629,7 +1646,7 @@ fun HomeScreen(
 
                     // Bottom loading indicator & infinite scroll anchor
                     if (mainVideosList.isNotEmpty()) {
-                        item(span = { GridItemSpan(2) }) {
+                        item(span = { GridItemSpan(1) }) {
                             LaunchedEffect(Unit) {
                                 onLoadMore()
                             }

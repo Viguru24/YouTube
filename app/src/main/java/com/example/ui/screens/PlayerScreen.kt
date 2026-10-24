@@ -82,6 +82,7 @@ fun PlayerScreen(
     onPermanentlyDeleteChannel: (String) -> Unit = {},
     onSelectChannel: (String) -> Unit = {},
     onPositionUpdate: (Int) -> Unit = {},
+    onLoadMore: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var webViewInstance by remember { mutableStateOf<Any?>(null) }
@@ -251,15 +252,26 @@ fun PlayerScreen(
 
     val handleNextVideo: () -> Unit = {
         val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-        val next = if (currentIndex != -1 && currentIndex < playlistVideos.size - 1) {
-            playlistVideos[currentIndex + 1]
-        } else {
-            otherVideos.firstOrNull() ?: playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+        val next = when {
+            currentIndex != -1 && currentIndex < playlistVideos.size - 1 -> {
+                playlistVideos[currentIndex + 1]
+            }
+            otherVideos.isNotEmpty() -> {
+                otherVideos.first()
+            }
+            playlistVideos.size > 1 -> {
+                playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+            }
+            else -> null
         }
         if (next != null) {
+            if (currentIndex >= playlistVideos.size - 3 || playlistVideos.size <= 2) {
+                onLoadMore()
+            }
             onSelectOtherVideo(next)
         } else {
-            android.widget.Toast.makeText(context, "No next video in feed", android.widget.Toast.LENGTH_SHORT).show()
+            onLoadMore()
+            android.widget.Toast.makeText(context, "Fetching next videos...", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -382,6 +394,7 @@ fun PlayerScreen(
                         onDeleteDownloadClick = onDeleteDownloadClick,
                         onAiSummaryClick = { showAiSummaryModal = true },
                         videoTitle = video.title,
+                        videoDurationText = video.durationText,
                         viewCountText = com.example.util.YouTubeUtils.formatViewCountText(liveViewCountText.ifBlank { video.viewCountText }),
                         publishedTimeText = video.publishedTimeText,
                         isFullscreen = isFullscreen,
@@ -975,24 +988,27 @@ private fun PlaylistQueueItem(
                         contentScale = ContentScale.Crop
                     )
 
-                    // Top Left Overlay Badge: Published Age (Always present, compact: 6H, 1D, 2M, or Latest)
+                    // Top Left Overlay Badge: Published Age (compact: 1S, 5M, 9H, 1D, LIVE 🔴)
                     val compactTime = remember(video.publishedTimeText) {
-                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "Latest")
+                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "")
                     }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(Color.Black.copy(alpha = 0.8f))
-                            .padding(horizontal = 3.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = compactTime,
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (compactTime.isNotBlank()) {
+                        val isLive = compactTime.equals("LIVE", ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(3.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(if (isLive) Color(0xFFCC0000) else Color.Black.copy(alpha = 0.8f))
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = if (isLive) "LIVE 🔴" else compactTime,
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
 
                     // Bottom Right Overlay Badge: Video Duration

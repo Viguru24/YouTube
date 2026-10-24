@@ -493,20 +493,20 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadSubscribedCreators(): List<String> {
         val prefs = getApplication<android.app.Application>().getSharedPreferences("creator_prefs", android.content.Context.MODE_PRIVATE)
-        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
-        val limit = algoPrefs.getInt("subscription_limit", 20)
 
         val saved = prefs.getStringSet("subscribed_creators", null)
         val ordered = mutableListOf<String>()
 
-        if (saved != null) {
+        if (saved != null && saved.isNotEmpty()) {
             saved.forEach { ch ->
                 val trimmed = ch.trim()
                 if (trimmed.isNotBlank() && !ordered.any { it.equals(trimmed, ignoreCase = true) }) {
                     ordered.add(trimmed)
                 }
             }
-        } else {
+        }
+
+        if (ordered.isEmpty()) {
             val assetDefaults = loadDefaultSubscriptionsFromAssets()
             assetDefaults.forEach { ch ->
                 val trimmed = ch.trim()
@@ -516,16 +516,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        val limited = if (limit > 0 && ordered.size > limit) {
-            ordered.take(limit)
-        } else {
-            ordered
-        }
-
         com.example.data.model.UserProfileData.clearAllSubscribedChannels()
-        limited.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
-        saveSubscribedCreators(limited)
-        return limited
+        ordered.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
+        saveSubscribedCreators(ordered)
+        return ordered
     }
 
     private val _subscribedCreators = MutableStateFlow<List<String>>(loadSubscribedCreators())
@@ -578,8 +572,12 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     private fun replenishFeedBufferAsync() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                feedBatchIndex++
-                val profileBatch = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = feedBatchIndex, batchSize = 30, forceRefresh = false)
+                val profileBatch = com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(
+                    subscribedChannels = _subscribedCreators.value,
+                    batchIndex = 0,
+                    batchSize = 30,
+                    forceRefresh = false
+                )
                 val discoveryBatch = com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value)
                 val combined = (profileBatch + discoveryBatch)
 
@@ -595,8 +593,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     val currentIds = _categoryVideos.value.map { it.youtubeId }.toSet()
                     val newUnique = fresh.filter { it.youtubeId !in currentIds }
                     if (newUnique.isNotEmpty()) {
-                        _categoryVideos.value = (_categoryVideos.value + newUnique).distinctBy { it.youtubeId }
-                        newUnique.forEach { repository.saveVideo(it) }
+                        _categoryVideos.value = (_categoryVideos.value + newUnique).distinctBy { it.youtubeId }.take(150)
+                        repository.saveVideos(newUnique)
                     }
                 }
             } catch (e: Exception) {
@@ -681,7 +679,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         }
                     }
                 } catch (e: Exception) { }
-                kotlinx.coroutines.delay(30_000L) // check every 30s in background
+                kotlinx.coroutines.delay(60_000L) // check every 60s in background
             }
         }
 
@@ -690,13 +688,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             kotlinx.coroutines.flow.combine(
                 searchQuery.debounce(100L),
-                searchSortOption
-            ) { query, sort -> Pair(query, sort) }
-                .collectLatest { (query, sort) ->
+                searchSortOption,
+                selectedTimeFilter
+            ) { query, sort, timeFilter -> Triple(query, sort, timeFilter) }
+                .collectLatest { (query, sort, timeFilter) ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
                         currentSearchBatchIndex = 0
-                        val cacheKey = "${trimmed.lowercase()}:$sort"
+                        val cacheKey = "${trimmed.lowercase()}:$sort:$timeFilter"
 
                         // Step 0: Check Instant In-Memory Cache first (<1ms)
                         val memoryCached = _searchCache[cacheKey]
@@ -715,14 +714,15 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                             val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(
                                 query = trimmed,
                                 sortByUploadDate = (sort == "Latest"),
-                                forceRefresh = true,
-                                sortOption = sort
+                                forceRefresh = false,
+                                sortOption = sort,
+                                timeFilter = timeFilter
                             )
                             if (realVideos.isNotEmpty()) {
                                 val sorted = sortVideos(realVideos.distinctBy { it.youtubeId }, sort)
                                 _liveSearchResults.value = sorted
                                 _searchCache[cacheKey] = sorted
-                                sorted.forEach { v -> repository.saveVideo(v) }
+                                repository.saveVideos(sorted)
                                 sorted.firstOrNull()?.let { top ->
                                     com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
                                 }
@@ -758,8 +758,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         it.youtubeId !in watched &&
                         it.lastWatchedTimestamp == 0L &&
                         it.lastPositionSeconds == 0 &&
+                        !it.publishedTimeText.equals("Latest", ignoreCase = true) &&
                         !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
-                    }
+                    }.sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                     if (category != "All" || validCached.isNotEmpty()) {
                         _categoryVideos.value = validCached
                     }
@@ -816,7 +817,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val existing = repository.getAllVideosDirect()
                 for (v in existing) {
                     val isStaleShort = v.category == "Shorts" && com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(v.publishedTimeText) > 180L * 86400L
-                    if (!v.isFavorite && !v.isWatchLater && !v.isDownloaded &&
+                    val hasBogusLatest = v.publishedTimeText.equals("Latest", ignoreCase = true)
+                    if (hasBogusLatest) {
+                        if (v.isFavorite || v.isWatchLater || v.isDownloaded) {
+                            repository.saveVideo(v.copy(publishedTimeText = ""))
+                        } else {
+                            repository.deleteVideoById(v.youtubeId)
+                        }
+                    } else if (!v.isFavorite && !v.isWatchLater && !v.isDownloaded &&
                         (isStaleShort ||
                          com.example.util.YouTubeUtils.isForeignLanguageContent(v.title, v.channelName) ||
                          (v.category == "Shorts" && _subscribedCreators.value.isNotEmpty() && _subscribedCreators.value.none { v.channelName.contains(it, ignoreCase = true) || v.title.contains(it, ignoreCase = true) }))
@@ -1159,20 +1167,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun mergeIncomingSubscriptions(incoming: List<String>) {
         if (incoming.isEmpty()) return
-        val algoPrefs = getApplication<android.app.Application>().getSharedPreferences("algo_prefs", android.content.Context.MODE_PRIVATE)
-        val limit = algoPrefs.getInt("subscription_limit", 20)
 
         val current = _subscribedCreators.value
         val ordered = mutableListOf<String>()
         current.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
         incoming.forEach { ch -> if (!ordered.any { it.equals(ch, ignoreCase = true) }) ordered.add(ch) }
 
-        val limited = if (limit > 0 && ordered.size > limit) ordered.take(limit) else ordered
-        if (limited != current) {
-            _subscribedCreators.value = limited
-            saveSubscribedCreators(limited)
-            com.example.data.model.UserProfileData.clearAllSubscribedChannels()
-            limited.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
+        if (ordered != current) {
+            _subscribedCreators.value = ordered
+            saveSubscribedCreators(ordered)
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                com.example.data.model.UserProfileData.clearAllSubscribedChannels()
+                ordered.forEach { com.example.data.model.UserProfileData.addSubscribedChannel(it) }
+            }
         }
     }
 
@@ -1576,29 +1583,77 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {
+    fun toggleFavorite(video: VideoEntity) {
+        val target = !video.isFavorite
+        _categoryVideos.value = _categoryVideos.value.map {
+            if (it.youtubeId == video.youtubeId) it.copy(isFavorite = target) else it
+        }
+        _liveSearchResults.value = _liveSearchResults.value.map {
+            if (it.youtubeId == video.youtubeId) it.copy(isFavorite = target) else it
+        }
+        val current = _activeVideo.value
+        if (current != null && current.youtubeId == video.youtubeId) {
+            _activeVideo.value = current.copy(isFavorite = target)
+        }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.toggleFavorite(video.copy(isFavorite = target))
+        }
+    }
+
+    fun toggleFavorite(youtubeId: String, currentFavorite: Boolean) {
+        val found = _categoryVideos.value.find { it.youtubeId == youtubeId }
+            ?: _liveSearchResults.value.find { it.youtubeId == youtubeId }
+            ?: _activeVideo.value?.takeIf { it.youtubeId == youtubeId }
+        if (found != null) {
+            toggleFavorite(found)
+        } else {
             val target = !currentFavorite
-            val current = _activeVideo.value
-            if (current != null && current.youtubeId == youtubeId) {
-                val updated = current.copy(isFavorite = target)
-                _activeVideo.value = updated
-                repository.saveVideo(updated)
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val current = _activeVideo.value
+                if (current != null && current.youtubeId == youtubeId) {
+                    val updated = current.copy(isFavorite = target)
+                    _activeVideo.value = updated
+                    repository.saveVideo(updated)
+                }
+                repository.toggleFavorite(youtubeId, currentFavorite)
             }
-            repository.toggleFavorite(youtubeId, currentFavorite)
+        }
+    }
+
+    fun toggleWatchLater(video: VideoEntity) {
+        val target = !video.isWatchLater
+        _categoryVideos.value = _categoryVideos.value.map {
+            if (it.youtubeId == video.youtubeId) it.copy(isWatchLater = target) else it
+        }
+        _liveSearchResults.value = _liveSearchResults.value.map {
+            if (it.youtubeId == video.youtubeId) it.copy(isWatchLater = target) else it
+        }
+        val current = _activeVideo.value
+        if (current != null && current.youtubeId == video.youtubeId) {
+            _activeVideo.value = current.copy(isWatchLater = target)
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            repository.toggleWatchLater(video.copy(isWatchLater = target))
         }
     }
 
     fun toggleWatchLater(youtubeId: String, currentWatchLater: Boolean) {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        val found = _categoryVideos.value.find { it.youtubeId == youtubeId }
+            ?: _liveSearchResults.value.find { it.youtubeId == youtubeId }
+            ?: _activeVideo.value?.takeIf { it.youtubeId == youtubeId }
+        if (found != null) {
+            toggleWatchLater(found)
+        } else {
             val target = !currentWatchLater
-            val current = _activeVideo.value
-            if (current != null && current.youtubeId == youtubeId) {
-                val updated = current.copy(isWatchLater = target)
-                _activeVideo.value = updated
-                repository.saveVideo(updated)
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                val current = _activeVideo.value
+                if (current != null && current.youtubeId == youtubeId) {
+                    val updated = current.copy(isWatchLater = target)
+                    _activeVideo.value = updated
+                    repository.saveVideo(updated)
+                }
+                repository.toggleWatchLater(youtubeId, currentWatchLater)
             }
-            repository.toggleWatchLater(youtubeId, currentWatchLater)
         }
     }
 

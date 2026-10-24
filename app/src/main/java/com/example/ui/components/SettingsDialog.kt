@@ -48,6 +48,7 @@ fun SettingsDialog(
     onUnmuteChannel: (String) -> Unit = {},
     onOpenManageTopicsAndCreators: () -> Unit = {},
     onResetAlgorithm: () -> Unit = {},
+    onOpenOtaUpdates: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1435,6 +1436,69 @@ fun SettingsDialog(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(if (isVpsTesting) "Syncing..." else "⚡ Test Connection & Sync", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+                }
+
+                // 8. Sovereign Over-The-Air (OTA) Updates Card
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF14131E).copy(alpha = 0.85f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2C283E)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = YouTubeRed.copy(alpha = 0.15f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.CloudSync,
+                                        contentDescription = null,
+                                        tint = YouTubeRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Column {
+                                Text(
+                                    text = "Sovereign Over-The-Air Updates",
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                )
+                                Text(
+                                    text = "Direct updates from your self-hosted Sovereign VPS",
+                                    style = MaterialTheme.typography.bodySmall.copy(
+                                        color = Color(0xFFA09BAF),
+                                        fontSize = 11.5.sp
+                                    )
+                                )
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = { onOpenOtaUpdates() },
+                            modifier = Modifier.fillMaxWidth().height(40.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                        ) {
+                            Icon(Icons.Filled.RocketLaunch, contentDescription = null, modifier = Modifier.size(16.dp), tint = YouTubeRed)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Check for Updates Now", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }

@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -171,6 +172,11 @@ fun VideoCard(
                         val isLeftEdge = startX <= edgeThresholdPx
                         val isRightEdge = startX >= (cardWidth - edgeThresholdPx)
 
+                        // Never intercept touches in the top-right button area (Star & Watch Later)
+                        if (startX >= (cardWidth - 55f * density) && down.position.y <= 35f * density) {
+                            return@awaitEachGesture
+                        }
+
                         // If touch didn't start at the outer edges, do not intercept -> allow 100% fluid vertical scrolling
                         if (!isLeftEdge && !isRightEdge) {
                             return@awaitEachGesture
@@ -249,12 +255,18 @@ fun VideoCard(
         ) {
             val isShort = com.example.util.YouTubeUtils.isShortVideo(video)
 
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Thumbnail container with Duration Overlay
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                // 1. Thumbnail on the LEFT (16:9 ratio, width = 138.dp, height = 78.dp)
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .width(if (isShort) 84.dp else 138.dp)
                         .aspectRatio(if (isShort) 9f / 16f else 16f / 9f)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(Color.Black)
                 ) {
                     val sanitizedThumb = remember(video.youtubeId, video.thumbnailUrl) {
@@ -278,26 +290,29 @@ fun VideoCard(
                         contentScale = ContentScale.Crop
                     )
 
-                    // Published Time / Recency Badge Top Left (Always present, compact: 6H, 1D, 2M, or Latest)
+                    // Published Time / Recency Badge Top Left (e.g. 1S, 5M, 9H, 1D, LIVE 🔴)
                     val compactTime = remember(video.publishedTimeText) {
-                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "Latest")
+                        com.example.util.YouTubeUtils.formatCompactTime(video.publishedTimeText, defaultIfMissing = "")
                     }
-                    Box(
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .align(Alignment.TopStart)
-                            .background(
-                                Color.Black.copy(alpha = 0.75f),
-                                RoundedCornerShape(4.dp)
+                    if (compactTime.isNotBlank()) {
+                        val isLive = compactTime.equals("LIVE", ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .padding(3.dp)
+                                .align(Alignment.TopStart)
+                                .background(
+                                    if (isLive) YouTubeRed.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.75f),
+                                    RoundedCornerShape(3.dp)
+                                )
+                                .padding(horizontal = 3.5.dp, vertical = 1.5.dp)
+                        ) {
+                            Text(
+                                text = if (isLive) "LIVE 🔴" else compactTime,
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = compactTime,
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        }
                     }
 
                     // Watched progress bar along bottom edge of thumbnail
@@ -318,18 +333,18 @@ fun VideoCard(
                     if (video.durationText.isNotBlank()) {
                         Box(
                             modifier = Modifier
-                                .padding(end = 4.dp, bottom = if (progressFraction > 0f) 7.dp else 4.dp)
+                                .padding(end = 3.dp, bottom = if (progressFraction > 0f) 5.dp else 3.dp)
                                 .align(Alignment.BottomEnd)
                                 .background(
-                                    Color.Black.copy(alpha = 0.75f),
-                                    RoundedCornerShape(4.dp)
+                                    Color.Black.copy(alpha = 0.8f),
+                                    RoundedCornerShape(3.dp)
                                 )
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .padding(horizontal = 4.dp, vertical = 1.5.dp)
                         ) {
                             Text(
                                 text = video.durationText,
                                 color = Color.White,
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -339,7 +354,7 @@ fun VideoCard(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(3.dp)
+                                .height(2.5.dp)
                                 .align(Alignment.BottomStart)
                                 .background(Color.White.copy(alpha = 0.25f))
                         ) {
@@ -351,126 +366,101 @@ fun VideoCard(
                             )
                         }
                     }
+                }
 
-                    // Top Right Quick Actions (Favorite & Watch Later) - Minimalist & Tiny (exact icon size)
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // 2. Video Info on the RIGHT
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(top = 1.dp)
+                ) {
+                    Text(
+                        text = video.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    Text(
+                        text = formatDisplayChannelName(video.channelName),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (onChannelClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium,
+                        modifier = if (onChannelClick != null) {
+                            Modifier.clickable { onChannelClick(video.channelName) }
+                        } else {
+                            Modifier
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
                     Row(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .clickable { onWatchLaterToggle(video) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (video.isWatchLater) Icons.Filled.WatchLater else Icons.Outlined.WatchLater,
-                                contentDescription = "Watch Later",
-                                tint = if (video.isWatchLater) YouTubeRed else Color.White,
-                                modifier = Modifier.size(14.dp)
+                        if (video.viewCountText.isNotBlank()) {
+                            Text(
+                                text = com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
                         }
-                        Box(
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .clickable { onFavoriteToggle(video) },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                                contentDescription = "Favorite",
-                                tint = if (video.isFavorite) GoldStar else Color.White,
-                                modifier = Modifier.size(14.dp)
+                        if (video.viewCountText.isNotBlank() && video.publishedTimeText.isNotBlank() && !video.publishedTimeText.equals("Latest", ignoreCase = true)) {
+                            Text(
+                                text = "•",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        if (video.publishedTimeText.isNotBlank() && !video.publishedTimeText.equals("Latest", ignoreCase = true)) {
+                            Text(
+                                text = video.publishedTimeText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (recommendationReason.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = recommendationReason,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = YouTubeRed,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 10.sp
+                        )
                     }
                 }
 
-                // Video Meta Section
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 6.dp, vertical = 5.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                // 3. Right side Actions (3-dots menu & quick Favorite star)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = video.title,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            lineHeight = 16.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = formatDisplayChannelName(video.channelName),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (onChannelClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontWeight = FontWeight.Medium,
-                                modifier = if (onChannelClick != null) {
-                                    Modifier.clickable { onChannelClick(video.channelName) }
-                                } else {
-                                    Modifier
-                                }
-                            )
-
-                            if (video.viewCountText.isNotBlank()) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = com.example.util.YouTubeUtils.formatViewCountText(video.viewCountText),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
-                            }
-
-                            if (video.publishedTimeText.isNotBlank()) {
-                                Text(
-                                    text = "•",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = video.publishedTimeText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    // 3-Dots Dropdown Menu
                     Box {
                         IconButton(
                             onClick = { showMenu = true },
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.MoreVert,
                                 contentDescription = "More Options",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(19.dp)
                             )
                         }
 
@@ -535,6 +525,23 @@ fun VideoCard(
                                 }
                             )
                         }
+                    }
+
+                    // Quick Favorite Star Toggle
+                    IconButton(
+                        onClick = {
+                            onFavoriteToggle(video)
+                            val msg = if (!video.isFavorite) "Saved to Favorites ⭐" else "Removed from Favorites"
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (video.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                            contentDescription = "Favorite",
+                            tint = if (video.isFavorite) GoldStar else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(17.dp)
+                        )
                     }
                 }
             }

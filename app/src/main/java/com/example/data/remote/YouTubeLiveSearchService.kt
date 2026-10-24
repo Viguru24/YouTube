@@ -9,6 +9,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -17,6 +19,11 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 object YouTubeLiveSearchService {
+
+    @Volatile
+    private var lastSearchContinuationToken: String? = null
+    @Volatile
+    private var innerTubeApiKey: String = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -76,7 +83,89 @@ object YouTubeLiveSearchService {
         "mark rober" to listOf("MarkRober"),
         "colin and samir" to listOf("ColinandSamir"),
         "gordon ramsay" to listOf("gordonramsay"),
-        "bbc news" to listOf("bbcnews", "BBCNews")
+        "bbc news" to listOf("bbcnews", "BBCNews"),
+        "lex fridman" to listOf("lexfridman"),
+        "the joe rogan experience" to listOf("joerogan"),
+        "joe rogan" to listOf("joerogan"),
+        "huberman lab" to listOf("hubermanlab"),
+        "andrew huberman" to listOf("hubermanlab"),
+        "timcast irl" to listOf("TimcastIRL"),
+        "matthew berman" to listOf("matthew_berman"),
+        "world of ai" to listOf("WorldofAI"),
+        "worldofai" to listOf("WorldofAI"),
+        "theprimetime" to listOf("ThePrimeTimeagen"),
+        "david ondrej" to listOf("davidondrej"),
+        "dwarkesh patel" to listOf("dwarkeshpatel"),
+        "lofi girl" to listOf("LofiGirl"),
+        "chilledcow" to listOf("LofiGirl"),
+        "sabine hossenfelder" to listOf("SabineHossenfelder"),
+        "unherd" to listOf("UnHerd"),
+        "triggernometry" to listOf("triggernometry"),
+        "valuetainment" to listOf("VALUETAINMENT"),
+        "two bit da vinci" to listOf("TwoBitdaVinci"),
+        "xiaomanyc" to listOf("xiaomanyc"),
+        "yannic kilcher" to listOf("YannicKilcher"),
+        "right side broadcasting network" to listOf("RSBN"),
+        "turning point usa" to listOf("turningpointusa"),
+        "benny johnson" to listOf("BennyJohnson"),
+        "alex ziskind" to listOf("AlexZiskind"),
+        "anastasi in tech" to listOf("AnastasiInTech"),
+        "gameranx" to listOf("gameranxTV"),
+        "ign" to listOf("IGN"),
+        "digital foundry" to listOf("DigitalFoundry"),
+        "doctor alekseev" to listOf("DoctorAlekseev"),
+        "doug in exile" to listOf("DougInExile"),
+        "dr. steve turley" to listOf("DrSteveTurley"),
+        "steve turley" to listOf("DrSteveTurley"),
+        "france 24 english" to listOf("France24_en"),
+        "firstpost" to listOf("Firstpost"),
+        "fox news clips" to listOf("FoxNews"),
+        "gbnews" to listOf("GBNewsOnline"),
+        "the rubin report" to listOf("RubinReport"),
+        "the podcast of the lotus eaters" to listOf("thepodcastofthelotuseaters"),
+        "liberal hivemind" to listOf("LiberalHivemind"),
+        "redacted" to listOf("RedactedNews"),
+        "peter h. diamandis" to listOf("peterhdiamandis"),
+        "julian goldie seo" to listOf("JulianGoldieSEO"),
+        "solving the money problem" to listOf("SolvingTheMoneyProblem"),
+        "stephen gardner" to listOf("StephenGardnerShow"),
+        "tousi tv" to listOf("TousiTV"),
+        "trish regan" to listOf("Trish_Regan"),
+        "ticker symbol: you" to listOf("tickersymbolyou"),
+        "ai revolution" to listOf("AIRevolution"),
+        "ai samson" to listOf("AISamson"),
+        "amala ekpunobi" to listOf("AmalaEkpunobi"),
+        "bestintesla" to listOf("BestInTESLA"),
+        "business basics" to listOf("BusinessBasics"),
+        "better stack" to listOf("BetterStack"),
+        "brandon lehman" to listOf("BrandonLehman"),
+        "house of el" to listOf("HouseOfEl"),
+        "jcristina" to listOf("JCristina"),
+        "jack roberts" to listOf("JackRoberts"),
+        "jane zhang" to listOf("JaneZhang"),
+        "jazzy skye" to listOf("JazzySkye"),
+        "jeff taylor" to listOf("JeffTaylor"),
+        "julia mccoy" to listOf("JuliaMcCoy"),
+        "larry with larry elder" to listOf("larryelder"),
+        "larry elder" to listOf("larryelder"),
+        "landeur" to listOf("Landeur"),
+        "lauren jumps" to listOf("laurenjumps"),
+        "logically answered" to listOf("LogicallyAnswered"),
+        "magnus midtbø" to listOf("magnusmidtbo"),
+        "magnus midtbo" to listOf("magnusmidtbo"),
+        "ncs" to listOf("NoCopyrightSounds"),
+        "news24" to listOf("News24"),
+        "oriental pearl" to listOf("OrientalPearl"),
+        "pearl" to listOf("justpearlythings"),
+        "professor nez" to listOf("ProfessorNez"),
+        "sadhguru" to listOf("sadhguru"),
+        "tina huang" to listOf("TinaHuang1"),
+        "warren smith - secret scholar" to listOf("SecretScholarSociety"),
+        "what lurks beneath" to listOf("WhatLurksBeneath"),
+        "sakitech" to listOf("sakitech"),
+        "ai news & strategy" to listOf("AINewsAndStrategy", "ainewsstrategy"),
+        "andré duqum" to listOf("andreduqum"),
+        "andre duqum" to listOf("andreduqum")
     )
 
     private val channelHandleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -227,7 +316,7 @@ object YouTubeLiveSearchService {
                                 category = "Shorts",
                                 channelName = trimmed,
                                 durationText = if (it.durationText.isBlank() || it.durationText == "10:00") "0:45" else it.durationText,
-                                publishedTimeText = if (it.publishedTimeText.isBlank()) "Latest" else it.publishedTimeText
+                                publishedTimeText = if (it.publishedTimeText.equals("Latest", ignoreCase = true)) "" else it.publishedTimeText
                             )
                         }
                     list.addAll(parsed)
@@ -259,35 +348,59 @@ object YouTubeLiveSearchService {
             com.example.data.model.UserProfileData.subscribedChannels.toList()
         } else {
             emptyList()
-        }
+        }.filter { it.isNotBlank() }
 
         if (channels.isEmpty()) {
             return@withContext emptyList()
         }
 
-        val cacheKey = "feed:profile:${channels.hashCode()}:$batchIndex:$batchSize"
+        val cacheKey = "feed:profile:${channels.hashCode()}"
         if (!forceRefresh) {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
-        val channelSemaphore = Semaphore(8)
+        val channelSemaphore = Semaphore(4) // 4 parallel requests to prevent network & OkHttp thread congestion
 
-        val targetChannels = if (channels.size > 20) {
-            val startIndex = (batchIndex * 20) % channels.size
-            (0 until 20.coerceAtMost(channels.size)).map { channels[(startIndex + it) % channels.size] }
-        } else {
-            channels
+        // Fast-path: Check per-channel cache first without network call
+        val uncachedChannels = mutableListOf<String>()
+        for (channel in channels) {
+            val chanCache = if (!forceRefresh) getCached("channel:${channel.trim()}") else null
+            if (!chanCache.isNullOrEmpty()) {
+                results.addAll(chanCache.take(15))
+            } else {
+                uncachedChannels.add(channel)
+            }
         }
 
-        val jobs = targetChannels.map { channel ->
+        // If all channels were in cache, return immediately (0ms instant startup)
+        if (uncachedChannels.isEmpty() && results.isNotEmpty()) {
+            val cachedConsolidated = results
+                .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                .distinctBy { it.youtubeId }
+                .sortedWith(
+                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenByDescending { it.addedTimestamp }
+                )
+            putCache(cacheKey, cachedConsolidated)
+            return@withContext cachedConsolidated
+        }
+
+        // Process uncached channels (batching up to 12 channels per refresh cycle to stay blazing fast)
+        val channelsToFetch = if (uncachedChannels.size > 12 && !forceRefresh) {
+            uncachedChannels.take(12)
+        } else {
+            uncachedChannels
+        }
+
+        val jobs = channelsToFetch.map { channel ->
             async {
                 channelSemaphore.withPermit {
                     try {
-                        val fetched = kotlinx.coroutines.withTimeoutOrNull(4000L) {
+                        val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
                             fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
                         } ?: emptyList()
-                        results.addAll(fetched.take(20))
+                        results.addAll(fetched.take(15))
                     } catch (t: Throwable) {
                         logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${t.message}")
                     }
@@ -311,11 +424,76 @@ object YouTubeLiveSearchService {
      * Searches YouTube for any query using parallel standard relevance search, date-filtered search,
      * creator channel inspection, and NewPipe. Strictly defaults to "Latest" uploads first.
      */
+    private fun findContinuationToken(obj: Any?): String? {
+        if (obj == null) return null
+        if (obj is org.json.JSONObject) {
+            val cmd = obj.optJSONObject("continuationCommand")
+            val tok = cmd?.optString("token", "") ?: ""
+            if (tok.isNotBlank()) return tok
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val found = findContinuationToken(obj.opt(k))
+                if (!found.isNullOrBlank()) return found
+            }
+        } else if (obj is org.json.JSONArray) {
+            for (i in 0 until obj.length()) {
+                val found = findContinuationToken(obj.opt(i))
+                if (!found.isNullOrBlank()) return found
+            }
+        }
+        return null
+    }
+
+    suspend fun fetchSearchContinuationBatch(token: String, seenIds: MutableSet<String>, maxResults: Int = 35): List<VideoEntity> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<VideoEntity>()
+        try {
+            val url = "https://www.youtube.com/youtubei/v1/search?key=$innerTubeApiKey&prettyPrint=false"
+            val bodyObj = org.json.JSONObject().apply {
+                put("context", org.json.JSONObject().apply {
+                    put("client", org.json.JSONObject().apply {
+                        put("clientName", "WEB")
+                        put("clientVersion", "2.20240901.01.00")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+                put("continuation", token)
+            }
+            val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(url)
+                .post(requestBody)
+                .header("X-YouTube-Client-Name", "1")
+                .header("X-YouTube-Client-Version", "2.20240901.01.00")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val jsonStr = response.body?.string() ?: ""
+                    val jsonObj = org.json.JSONObject(jsonStr)
+                    lastSearchContinuationToken = findContinuationToken(jsonObj)
+                    walkJsonTree(jsonObj, seenIds, "YouTube", results, depth = 0)
+                }
+            }
+        } catch (e: Exception) {
+            logD("YouTubeLiveSearchService", "Continuation fetch error: ${e.message}")
+        }
+        results
+    }
+
+    /**
+     * Searches YouTube for any query using parallel standard relevance search, date-filtered search,
+     * upload-date filters (Today/Last Hour), creator channel inspection, and InnerTube continuations.
+     * Guaranteed to bring in the latest videos under a day.
+     */
     suspend fun searchRealYouTubeVideos(
         query: String,
         sortByUploadDate: Boolean = true,
         forceRefresh: Boolean = false,
-        sortOption: String = "Latest"
+        sortOption: String = "Latest",
+        timeFilter: String = "Any Time"
     ): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
@@ -327,48 +505,24 @@ object YouTubeLiveSearchService {
             else -> "Latest" // Default is strictly "Latest"
         }
 
-        val cacheKey = "search:$trimmed:$effectiveSort"
+        val cacheKey = "search:$trimmed:$effectiveSort:$timeFilter"
         if (!forceRefresh) {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
 
-        // 1. Parallel Searches across multiple YouTube endpoints to guarantee brand-new uploads are never dropped:
+        val isTodayRequested = timeFilter.contains("24h", ignoreCase = true) || 
+                              timeFilter.contains("today", ignoreCase = true) || 
+                              timeFilter.contains("last 24", ignoreCase = true)
+        val isHourRequested = timeFilter.contains("hour", ignoreCase = true)
+        val isWeekRequested = timeFilter.contains("week", ignoreCase = true)
+        val isMonthRequested = timeFilter.contains("month", ignoreCase = true)
+
         val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
-        // Job A: Standard Search (high relevance + always includes the creator's latest uploads from hours ago!)
-        jobs.add(async {
-            try {
-                val std = searchWebHtml(trimmed, sortByUploadDate = false)
-                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                results.addAll(std)
-            } catch (e: Exception) {
-                logD("YouTubeLiveSearchService", "Std search error: ${e.message}")
-            }
-        })
-
-        // Job B: Date-Sorted Search (&sp=CAISAhAB)
-        jobs.add(async {
-            try {
-                val dateSorted = searchWebHtml(trimmed, sortByUploadDate = true)
-                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                results.addAll(dateSorted)
-            } catch (e: Exception) {
-                logD("YouTubeLiveSearchService", "Date search error: ${e.message}")
-            }
-        })
-
-        // Job B1: YouTube Last Hour Filter (&sp=EgIIAQ%253D%253D) to guarantee sub-60-minute uploads
-        if (effectiveSort == "Latest") {
-            jobs.add(async {
-                try {
-                    val lastHour = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAQ%253D%253D")
-                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
-                    results.addAll(lastHour)
-                } catch (e: Exception) { }
-            })
-            // Job B2: YouTube Today Filter (&sp=EgIIAg%253D%253D)
+        if (isTodayRequested) {
+            // Priority: YouTube Today filter (&sp=EgIIAg%253D%253D) and Today + Upload Date (&sp=CAISBBABGAE%253D)
             jobs.add(async {
                 try {
                     val today = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAg%253D%253D")
@@ -376,24 +530,49 @@ object YouTubeLiveSearchService {
                     results.addAll(today)
                 } catch (e: Exception) { }
             })
-        }
-
-        // Job C: Channel upload search if query matches known creator or contains 1-3 words
-        val lower = trimmed.lowercase()
-        val isLikelyCreator = VERIFIED_HANDLES.containsKey(lower) || trimmed.split("\\s+".toRegex()).size <= 3
-        if (isLikelyCreator) {
             jobs.add(async {
                 try {
-                    val ch = fetchChannelLatestVideos(trimmed, forceRefresh = forceRefresh)
-                    results.addAll(ch)
+                    val todaySorted = searchWebHtml(trimmed, customSortParam = "&sp=CAISBBABGAE%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(todaySorted)
+                } catch (e: Exception) { }
+            })
+        } else if (isHourRequested) {
+            jobs.add(async {
+                try {
+                    val lastHour = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAQ%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(lastHour)
+                } catch (e: Exception) { }
+            })
+        } else if (isWeekRequested) {
+            jobs.add(async {
+                try {
+                    val thisWeek = searchWebHtml(trimmed, customSortParam = "&sp=EgIIAw%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(thisWeek)
+                } catch (e: Exception) { }
+            })
+        } else if (isMonthRequested) {
+            jobs.add(async {
+                try {
+                    val thisMonth = searchWebHtml(trimmed, customSortParam = "&sp=EgIIBA%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(thisMonth)
+                } catch (e: Exception) { }
+            })
+        } else if (effectiveSort == "Latest") {
+            // Ultra-fast targeted query: single upload-date sorted search provides the freshest videos without flooding the network
+            jobs.add(async {
+                try {
+                    val dateSorted = searchWebHtml(trimmed, sortByUploadDate = true)
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(dateSorted)
                 } catch (e: Exception) {
-                    logD("YouTubeLiveSearchService", "Channel search error: ${e.message}")
+                    logD("YouTubeLiveSearchService", "Date search error: ${e.message}")
                 }
             })
-        }
-
-        // Job D: If "Most Popular" is selected, fetch with view count parameter
-        if (effectiveSort == "Most Popular") {
+        } else if (effectiveSort == "Most Popular") {
             jobs.add(async {
                 try {
                     val pop = searchWebHtml(trimmed, customSortParam = "&sp=CAMSAhAB")
@@ -403,9 +582,52 @@ object YouTubeLiveSearchService {
                     logD("YouTubeLiveSearchService", "Popular search error: ${e.message}")
                 }
             })
+        } else {
+            jobs.add(async {
+                try {
+                    val std = searchWebHtml(trimmed, sortByUploadDate = false)
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(std)
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Std search error: ${e.message}")
+                }
+            })
+        }
+
+        // Job C: Channel upload search ONLY if query explicitly targets a known handle or starts with '@'
+        val lower = trimmed.lowercase()
+        val isLikelyCreator = trimmed.startsWith("@") || VERIFIED_HANDLES.containsKey(lower)
+        if (isLikelyCreator) {
+            jobs.add(async {
+                try {
+                    val ch = fetchChannelLatestVideos(trimmed.removePrefix("@"), forceRefresh = forceRefresh)
+                    results.addAll(ch)
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Channel search error: ${e.message}")
+                }
+            })
         }
 
         jobs.forEach { it.join() }
+
+        // Fast fallback: If date sort returned very few results, supplement with standard search
+        if (results.size < 8 && effectiveSort == "Latest") {
+            try {
+                val stdFallback = searchWebHtml(trimmed, sortByUploadDate = false)
+                    .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                results.addAll(stdFallback)
+            } catch (e: Exception) { }
+        }
+
+        // If continuation token was saved and we need more videos, fetch continuation batch to fill up to 60+ items
+        val token = lastSearchContinuationToken
+        if (results.size < 40 && !token.isNullOrBlank()) {
+            try {
+                val seenSet = results.map { it.youtubeId }.toMutableSet()
+                val contBatch = fetchSearchContinuationBatch(token, seenSet, maxResults = 35)
+                results.addAll(contBatch)
+            } catch (e: Exception) { }
+        }
 
         // Fallback: If still few results, try NewPipe
         if (results.size < 5) {
@@ -589,7 +811,12 @@ object YouTubeLiveSearchService {
         val targetHandles = if (knownHandles.isNotEmpty()) {
             knownHandles.take(2)
         } else {
-            listOf(trimmed.replace(" ", "").lowercase())
+            val cleanHandle = java.text.Normalizer.normalize(trimmed, java.text.Normalizer.Form.NFD)
+                .replace("\\p{InCombiningDiacriticalMarks}+".toRegex(), "")
+                .replace("&", "And")
+                .replace("[^a-zA-Z0-9_.-]".toRegex(), "")
+                .lowercase()
+            listOf(cleanHandle)
         }
 
         for (handle in targetHandles) {
@@ -632,6 +859,7 @@ object YouTubeLiveSearchService {
         if (accumulated.size < 5) {
             try {
                 val sortedWeb = searchWebHtml(trimmed, sortByUploadDate = true)
+                    .map { if (it.channelName.isBlank() || it.channelName == "YouTube") it.copy(channelName = trimmed) else it }
                     .filter { isMatchingChannel(it, trimmed) || it.title.lowercase().contains(baseTrimmed.lowercase()) }
                 accumulated.addAll(sortedWeb)
             } catch (e: Exception) { }
@@ -711,18 +939,25 @@ object YouTubeLiveSearchService {
     suspend fun searchRealYouTubeVideosBatch(query: String, batchIndex: Int = 0): List<VideoEntity> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
+
+        val token = lastSearchContinuationToken
+        if (!token.isNullOrBlank()) {
+            val seenIds = mutableSetOf<String>()
+            val continuationBatch = fetchSearchContinuationBatch(token, seenIds, maxResults = 35)
+            if (continuationBatch.isNotEmpty()) {
+                return continuationBatch.filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+            }
+        }
+
         val targetQuery = if (batchIndex <= 0) {
             trimmed
         } else {
             val variations = listOf(
-                "$trimmed full video",
                 "$trimmed 2026",
-                "best $trimmed",
-                "$trimmed HD",
-                "$trimmed official",
                 "latest $trimmed",
-                "$trimmed channel",
-                "$trimmed review"
+                "$trimmed today",
+                "$trimmed official",
+                "$trimmed channel"
             )
             variations[(batchIndex - 1) % variations.size]
         }
@@ -898,7 +1133,7 @@ object YouTubeLiveSearchService {
         "topbar", "header", "actions", "annotations", "endpoint", "command",
         "accessibility", "accessibilityData", "icon", "thumbnail", "thumbnails",
         "navigationEndpoint", "serviceEndpoint", "clientData", "adSlotRenderer",
-        "compactPromotedVideoRenderer", "playerOverlays", "searchEndpoint", "continuationCommand"
+        "compactPromotedVideoRenderer", "playerOverlays", "searchEndpoint"
     )
 
     private fun walkJsonTree(
@@ -908,7 +1143,7 @@ object YouTubeLiveSearchService {
         results: MutableList<VideoEntity>,
         depth: Int = 0
     ) {
-        if (depth > 12 || results.size >= 35 || obj == null) return
+        if (depth > 22 || results.size >= 100 || obj == null) return
 
         if (obj is org.json.JSONObject) {
             // Skip secondary shelves / recommendations that inject unrelated older videos
@@ -925,6 +1160,8 @@ object YouTubeLiveSearchService {
                 if (id.length == 11 && !seenIds.contains(id)) {
                     // Check for invalid/members-only badges WITHOUT allocating full JSON string
                     var isInvalid = r.has("upcomingEventData")
+                    var isLive = false
+                    var isNewBadge = false
                     val badges = r.optJSONArray("badges")
                     if (!isInvalid && badges != null) {
                         for (b in 0 until badges.length()) {
@@ -933,6 +1170,12 @@ object YouTubeLiveSearchService {
                             if (label.contains("Members only", ignoreCase = true) || label.contains("sponsor", ignoreCase = true)) {
                                 isInvalid = true
                                 break
+                            }
+                            if (label.contains("LIVE", ignoreCase = true)) {
+                                isLive = true
+                            }
+                            if (label.contains("New", ignoreCase = true)) {
+                                isNewBadge = true
                             }
                         }
                     }
@@ -946,24 +1189,36 @@ object YouTubeLiveSearchService {
                         ?: defaultCategory
 
                     var dur = extractJsonText(r.opt("lengthText")) ?: ""
-                    if (dur.isBlank()) {
-                        val overlays = r.optJSONArray("thumbnailOverlays")
-                        if (overlays != null) {
-                            for (j in 0 until overlays.length()) {
-                                val ov = overlays.optJSONObject(j) ?: continue
-                                val timeStatus = ov.optJSONObject("thumbnailOverlayTimeStatusRenderer")
-                                if (timeStatus != null) {
-                                    val t = extractJsonText(timeStatus.opt("text"))
-                                    if (!t.isNullOrBlank()) {
-                                        dur = t
-                                        break
+                    val overlays = r.optJSONArray("thumbnailOverlays")
+                    if (overlays != null) {
+                        for (j in 0 until overlays.length()) {
+                            val ov = overlays.optJSONObject(j) ?: continue
+                            val timeStatus = ov.optJSONObject("thumbnailOverlayTimeStatusRenderer")
+                            if (timeStatus != null) {
+                                val style = timeStatus.optString("style", "")
+                                if (style.contains("LIVE", ignoreCase = true)) {
+                                    isLive = true
+                                }
+                                val t = extractJsonText(timeStatus.opt("text"))
+                                if (!t.isNullOrBlank()) {
+                                    dur = t
+                                    if (t.contains("LIVE", ignoreCase = true)) {
+                                        isLive = true
                                     }
+                                    break
                                 }
                             }
                         }
                     }
 
-                    val publishedText = extractJsonText(r.opt("publishedTimeText")) ?: ""
+                    var publishedText = extractJsonText(r.opt("publishedTimeText")) ?: ""
+                    if (isLive || publishedText.contains("live", ignoreCase = true)) {
+                        publishedText = "LIVE"
+                        if (dur.isBlank()) dur = "LIVE"
+                    } else if (publishedText.isBlank() && isNewBadge) {
+                        publishedText = "Today"
+                    }
+
                     val rawViews = extractJsonText(r.opt("shortViewCountText"))
                         ?: extractJsonText(r.opt("viewCountText"))
                         ?: ""
@@ -1001,6 +1256,7 @@ object YouTubeLiveSearchService {
                         val channel = defaultCategory
 
                         var dur = ""
+                        var isLive = false
                         val img = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")
                         val overlays = img?.optJSONArray("overlays")
                         if (overlays != null) {
@@ -1011,6 +1267,9 @@ object YouTubeLiveSearchService {
                                     val t = extractJsonText(timeOv.opt("text"))
                                     if (!t.isNullOrBlank()) {
                                         dur = t
+                                        if (t.contains("LIVE", ignoreCase = true)) {
+                                            isLive = true
+                                        }
                                         break
                                     }
                                 }
@@ -1023,6 +1282,8 @@ object YouTubeLiveSearchService {
                                         if (t.isNotBlank() && t.contains(":")) {
                                             dur = t
                                             break
+                                        } else if (t.contains("LIVE", ignoreCase = true)) {
+                                            isLive = true
                                         }
                                     }
                                 }
@@ -1045,11 +1306,23 @@ object YouTubeLiveSearchService {
                                     if (txt.contains("view", ignoreCase = true) || accessLabel.contains("view", ignoreCase = true) || txt.matches(Regex("""^[\d,\.]+\s*[KMB]?$""", RegexOption.IGNORE_CASE))) {
                                         val candidate = if (txt.isNotBlank() && (txt.contains("view", ignoreCase = true) || txt.matches(Regex("""^[\d,\.]+\s*[KMB]?$""", RegexOption.IGNORE_CASE)))) txt else accessLabel
                                         viewText = com.example.util.YouTubeUtils.formatViewCountText(candidate)
-                                    } else if (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true)) {
-                                        publishedText = txt
+                                    } else {
+                                        val candidateTime = if (accessLabel.isNotBlank() && (accessLabel.contains("ago", ignoreCase = true) || accessLabel.contains("stream", ignoreCase = true) || accessLabel.contains("yesterday", ignoreCase = true) || accessLabel.contains("today", ignoreCase = true))) {
+                                            accessLabel
+                                        } else if (txt.isNotBlank() && (txt.contains("ago", ignoreCase = true) || txt.contains("stream", ignoreCase = true) || txt.contains("yesterday", ignoreCase = true) || txt.contains("today", ignoreCase = true) || Regex("""\b\d+\s*[smhdw]\b""", RegexOption.IGNORE_CASE).containsMatchIn(txt))) {
+                                            txt
+                                        } else ""
+                                        if (candidateTime.isNotBlank()) {
+                                            publishedText = candidateTime
+                                        }
                                     }
                                 }
                             }
+                        }
+
+                        if (isLive || publishedText.contains("live", ignoreCase = true)) {
+                            publishedText = "LIVE"
+                            if (dur.isBlank()) dur = "LIVE"
                         }
 
                         if (title.isNotBlank() && title != "YouTube Video" && !YouTubeUtils.isForeignLanguageContent(title, channel)) {
@@ -1110,7 +1383,7 @@ object YouTubeLiveSearchService {
                                 thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
                                 durationText = "0:45",
                                 category = "Shorts",
-                                publishedTimeText = "Latest",
+                                publishedTimeText = "",
                                 viewCountText = viewText
                             )
                         )
@@ -1126,7 +1399,7 @@ object YouTubeLiveSearchService {
                 }
             }
         } else if (obj is org.json.JSONArray) {
-            val len = obj.length().coerceAtMost(25)
+            val len = obj.length().coerceAtMost(100)
             for (i in 0 until len) {
                 walkJsonTree(obj.opt(i), seenIds, defaultCategory, results, depth + 1)
             }
@@ -1139,12 +1412,17 @@ object YouTubeLiveSearchService {
 
         // 1. Try parsing ytInitialData JSON if size is safe (< 1.8 MB)
         try {
+            val keyMatch = Pattern.compile(""""INNERTUBE_API_KEY":\s*"([^"]+)"""").matcher(html)
+            if (keyMatch.find()) {
+                innerTubeApiKey = keyMatch.group(1) ?: innerTubeApiKey
+            }
             val initialDataPattern = Pattern.compile("""(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)""")
             val matcher = initialDataPattern.matcher(html)
             if (matcher.find()) {
                 val jsonStr = matcher.group(1)
                 if (!jsonStr.isNullOrBlank() && jsonStr.length < 1_800_000) {
                     val jsonObj = org.json.JSONObject(jsonStr)
+                    lastSearchContinuationToken = findContinuationToken(jsonObj)
                     walkJsonTree(jsonObj, seenIds, defaultCategory, results, depth = 0)
                     if (results.isNotEmpty()) {
                         return results
@@ -1236,7 +1514,7 @@ object YouTubeLiveSearchService {
                                     thumbnailUrl = YouTubeUtils.getThumbnailUrl(id),
                                     durationText = "0:45",
                                     category = "Shorts",
-                                    publishedTimeText = "Latest",
+                                    publishedTimeText = "",
                                     viewCountText = viewText
                                 )
                             )
@@ -1351,7 +1629,7 @@ object YouTubeLiveSearchService {
                             .distinctBy { it.youtubeId }
                             .filter {
                                 val elapsedSec = YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
-                                elapsedSec <= maxAgeSeconds || it.publishedTimeText == "Latest" || it.publishedTimeText.isBlank()
+                                elapsedSec <= maxAgeSeconds || it.publishedTimeText.isBlank()
                             }
                             .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
 

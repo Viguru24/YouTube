@@ -28,6 +28,28 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+def sanitize_channel_name(name: str) -> str:
+    if not name:
+        return ""
+    s = name.strip()
+    if "Jane Zhang" in s:
+        return "Jane Zhang"
+    if s.startswith("Xiaomanyc"):
+        return "Xiaomanyc"
+    if s.startswith("Magnus Midtb"):
+        return "Magnus Midtbø"
+    if s.startswith("Andr") and s.endswith("Duqum"):
+        return "André Duqum"
+    if s.startswith("THEE Sama"):
+        return "THEE Sama Sambit"
+    if s.startswith("AI News & Strategy"):
+        return "AI News & Strategy Daily | Nate B Jones"
+    if s.startswith("Zubair Trabzada"):
+        return "Zubair Trabzada | AI Workshop"
+    if "iQIYI" in s:
+        return "iQIYI 潮综艺 - Get the iQIYI APP"
+    return s
+
 def init_db():
     with get_db() as conn:
         conn.execute("""
@@ -84,6 +106,29 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Safe cleanup: normalize and deduplicate existing subscribed_channels
+        try:
+            cur_subs = conn.execute("SELECT channel_name FROM subscribed_channels").fetchall()
+            for r in cur_subs:
+                raw_name = r["channel_name"]
+                clean_name = sanitize_channel_name(raw_name)
+                if clean_name != raw_name:
+                    conn.execute("DELETE FROM subscribed_channels WHERE channel_name = ?", (raw_name,))
+                    if clean_name:
+                        conn.execute("INSERT INTO subscribed_channels (channel_name) VALUES (?) ON CONFLICT(channel_name) DO NOTHING", (clean_name,))
+            # Clean disliked channels
+            cur_dis = conn.execute("SELECT channel_name FROM disliked_channels").fetchall()
+            for r in cur_dis:
+                raw_name = r["channel_name"]
+                clean_name = sanitize_channel_name(raw_name)
+                if clean_name == "Jane Zhang":
+                    conn.execute("DELETE FROM disliked_channels WHERE channel_name = ?", (raw_name,))
+                elif clean_name != raw_name:
+                    conn.execute("DELETE FROM disliked_channels WHERE channel_name = ?", (raw_name,))
+                    if clean_name:
+                        conn.execute("INSERT INTO disliked_channels (channel_name) VALUES (?) ON CONFLICT(channel_name) DO NOTHING", (clean_name,))
+        except Exception:
+            pass
         conn.commit()
 
 class SyncRequestHandler(BaseHTTPRequestHandler):
@@ -157,10 +202,20 @@ class SyncRequestHandler(BaseHTTPRequestHandler):
 
         favorite_ids = [r["video_id"] for r in fav_rows]
         disliked_ids = [r["video_id"] for r in disliked_rows]
-        disliked_channels = [r["channel_name"] for r in disliked_channel_rows]
+        disliked_channels = []
+        for r in disliked_channel_rows:
+            c = sanitize_channel_name(r["channel_name"])
+            if c and c != "Jane Zhang" and c not in disliked_channels:
+                disliked_channels.append(c)
 
         sub_rows = conn.execute("SELECT channel_name FROM subscribed_channels ORDER BY added_at DESC").fetchall()
-        subscribed_list = [r["channel_name"] for r in sub_rows]
+        seen_subs = set()
+        subscribed_list = []
+        for r in sub_rows:
+            clean_ch = sanitize_channel_name(r["channel_name"])
+            if clean_ch and clean_ch.lower() not in seen_subs:
+                seen_subs.add(clean_ch.lower())
+                subscribed_list.append(clean_ch)
 
         return {
             "success": True,
@@ -314,7 +369,9 @@ class SyncRequestHandler(BaseHTTPRequestHandler):
                 client_subscribed = req_data.get("subscribed_channels") or req_data.get("subscribedChannels") or []
                 for s in client_subscribed:
                     if isinstance(s, str) and s.strip():
-                        conn.execute("INSERT INTO subscribed_channels (channel_name) VALUES (?) ON CONFLICT(channel_name) DO NOTHING", (s.strip(),))
+                        clean_ch = sanitize_channel_name(s)
+                        if clean_ch:
+                            conn.execute("INSERT INTO subscribed_channels (channel_name) VALUES (?) ON CONFLICT(channel_name) DO NOTHING", (clean_ch,))
 
                 conn.commit()
                 response_data = self._build_sync_payload(conn)

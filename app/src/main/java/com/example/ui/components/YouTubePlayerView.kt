@@ -72,6 +72,7 @@ fun YouTubePlayerView(
     onDownloadClick: () -> Unit = {},
     onDeleteDownloadClick: () -> Unit = {},
     videoTitle: String = "Video",
+    videoDurationText: String = "",
     viewCountText: String = "",
     publishedTimeText: String = "",
     isFullscreen: Boolean = false,
@@ -114,7 +115,10 @@ fun YouTubePlayerView(
     var isPlayingState by remember { mutableStateOf(true) }
     var isMutedState by remember { mutableStateOf(false) }
     var currentPosMs by remember { mutableLongStateOf(0L) }
-    var totalDurationMs by remember { mutableLongStateOf(0L) }
+    var totalDurationMs by remember(videoId) {
+        val parsedSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(videoDurationText)
+        mutableLongStateOf(if (parsedSec > 0) parsedSec * 1000L else 0L)
+    }
 
     // SponsorBlock In-Video Sponsor Skip State
     var sponsorSegments by remember(videoId) { mutableStateOf<List<SponsorSegment>>(emptyList()) }
@@ -352,11 +356,10 @@ fun YouTubePlayerView(
         }
     }
 
-    // Auto-hide utility controls and pause options: auto-hide after 3 seconds of inactivity ONLY when actively playing.
-    // When paused, controls and bottom menu remain visible indefinitely so the user can configure resolution, speed, etc.
-    // If the user selects anything while paused, it will not vanish or go back to anything else.
+    // Auto-hide utility controls and pause options: auto-hide after 3 seconds of inactivity whether playing or paused.
+    // When a dialog or menu is open, the timer is suspended until dismissed.
     LaunchedEffect(areControlsVisible, isPlayingState, isDraggingScrubber, showSleepTimerDialog, showScreenshotFolderDialog, showDebugConsole, showSettingsMenu, controlsKeepAliveTrigger) {
-        if (isPlayingState && areControlsVisible && !isDraggingScrubber && !showSleepTimerDialog && !showScreenshotFolderDialog && !showDebugConsole && !showSettingsMenu) {
+        if (areControlsVisible && !isDraggingScrubber && !showSleepTimerDialog && !showScreenshotFolderDialog && !showDebugConsole && !showSettingsMenu) {
             delay(3000L)
             areControlsVisible = false
         }
@@ -736,6 +739,17 @@ fun YouTubePlayerView(
                         val cookieManager = android.webkit.CookieManager.getInstance()
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
+                        val aggregatedCookies = com.example.util.CookieHelper.getAggregatedCookies()
+                        if (aggregatedCookies.isNotBlank()) {
+                            for (cookie in aggregatedCookies.split(";")) {
+                                val trimmed = cookie.trim()
+                                if (trimmed.isNotEmpty()) {
+                                    cookieManager.setCookie("https://youtube.com", trimmed)
+                                    cookieManager.setCookie("https://m.youtube.com", trimmed)
+                                }
+                            }
+                            cookieManager.flush()
+                        }
 
                         webChromeClient = object : android.webkit.WebChromeClient() {
                             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
@@ -747,56 +761,91 @@ fun YouTubePlayerView(
                             override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                                 android.util.Log.e("WebViewPlayer", "onReceivedError: ${error?.description} for ${request?.url}")
                             }
+
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                isFirstFrameRendered = true
+                                view?.evaluateJavascript("""
+                                    (function() {
+                                        if (!document.getElementById('vixz-mobile-cleaner')) {
+                                            var style = document.createElement('style');
+                                            style.id = 'vixz-mobile-cleaner';
+                                            style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay, ytm-promoted-sparkles-web-renderer, ytm-promoted-video-renderer, .video-ads, .ytp-ad-module, .ytp-ad-player-overlay, .ytp-ad-image-overlay, .ytp-ad-overlay-container, .ad-showing .ytp-ad-text { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
+                                            document.head.appendChild(style);
+                                        }
+
+                                        function skipMobileAds() {
+                                            var player = document.querySelector('.html5-video-player');
+                                            var isAd = (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) || document.querySelector('.ad-showing, .ad-interrupting, .video-ads');
+                                            var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, button[id^="skip-button:"], .ytp-ad-overlay-close-button');
+                                            for (var i = 0; i < skipBtns.length; i++) {
+                                                try { skipBtns[i].click(); } catch(e) {}
+                                            }
+                                            var v = document.querySelector('video');
+                                            if (isAd && v) {
+                                                try {
+                                                    v.muted = true;
+                                                    v.playbackRate = 16.0;
+                                                    if (isFinite(v.duration) && v.duration > 0) {
+                                                        v.currentTime = v.duration - 0.1;
+                                                    }
+                                                } catch(e) {}
+                                            } else if (!isAd && v && v.playbackRate > 2.0) {
+                                                try {
+                                                    v.playbackRate = 1.0;
+                                                    v.muted = false;
+                                                } catch(e) {}
+                                            }
+                                        }
+
+                                        var v = document.querySelector('video');
+                                        if (v) {
+                                            v.muted = false;
+                                            if (v.paused) {
+                                                try { v.play(); } catch(e) {}
+                                            }
+                                            if (!v._vixzHooked) {
+                                                v._vixzHooked = true;
+                                                v.addEventListener('timeupdate', skipMobileAds);
+                                            }
+                                        }
+                                        skipMobileAds();
+
+                                        var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
+                                        if (playBtn) {
+                                            try { playBtn.click(); } catch(e) {}
+                                        }
+                                        var confirmBtn = document.querySelector('button[aria-label*="proceed" i], button.eom-button-row button');
+                                        if (confirmBtn) {
+                                            try { confirmBtn.click(); } catch(e) {}
+                                        }
+                                        window.pauseVideo = function() { var v = document.querySelector('video'); if (v) v.pause(); };
+                                        window.playVideo = function() { var v = document.querySelector('video'); if (v) v.play(); };
+                                        window.seekToSeconds = function(sec) { var v = document.querySelector('video'); if (v) v.currentTime = sec; };
+                                        window.setPlaybackRate = function(rate) { var v = document.querySelector('video'); if (v) v.playbackRate = rate; };
+
+                                        if (!window._vixzMobileInterval) {
+                                            window._vixzMobileInterval = setInterval(function() {
+                                                skipMobileAds();
+                                                var cb = document.querySelector('button[aria-label*="proceed" i], button.eom-button-row button');
+                                                if (cb) try { cb.click(); } catch(e) {}
+                                            }, 200);
+                                        }
+                                    })();
+                                """.trimIndent(), null)
+                            }
+
+                            override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                val u = request?.url?.toString() ?: ""
+                                if (u.contains("youtube.com/watch")) {
+                                    return false
+                                }
+                                return true
+                            }
                         }
 
-                        // Use strict-origin-when-cross-origin and load with youtube.com base URL to eliminate Error 153
-                        val embedHtml = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                              <style>
-                                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-                                #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
-                              </style>
-                            </head>
-                            <body>
-                              <div id="player"></div>
-                              <script src="https://www.youtube.com/iframe_api"></script>
-                              <script>
-                                var player;
-                                function onYouTubeIframeAPIReady() {
-                                  player = new YT.Player('player', {
-                                    videoId: '$videoId',
-                                    host: 'https://www.youtube.com',
-                                    playerVars: {
-                                      'autoplay': 1,
-                                      'playsinline': 1,
-                                      'controls': 1,
-                                      'rel': 0,
-                                      'fs': 1,
-                                      'enablejsapi': 1,
-                                      'origin': 'https://www.youtube.com',
-                                      'widget_referrer': 'https://www.youtube.com/'
-                                    },
-                                    events: {
-                                      'onReady': function(e) {
-                                        try { e.target.unMute(); } catch(err) {}
-                                        try { e.target.playVideo(); } catch(err) {}
-                                      }
-                                    }
-                                  });
-                                }
-                                function pauseVideo() { if (player && player.pauseVideo) player.pauseVideo(); }
-                                function playVideo() { if (player && player.playVideo) player.playVideo(); }
-                                function seekToSeconds(sec) { if (player && player.seekTo) player.seekTo(sec, true); }
-                                function setPlaybackRate(rate) { if (player && player.setPlaybackRate) player.setPlaybackRate(rate); }
-                              </script>
-                            </body>
-                            </html>
-                        """.trimIndent()
-
-                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        val targetUrl = "https://m.youtube.com/watch?v=$videoId" + if (startSeconds > 0) "&t=$startSeconds" else ""
+                        loadUrl(targetUrl)
                         webViewRef = this
                     }
                 },
@@ -891,46 +940,24 @@ fun YouTubePlayerView(
             modifier = Modifier.align(Alignment.Center)
         )
 
-        // 8. White Options Pill when Paused: 👍 | 👎 | ↗️ | ✨ | ⬇️
-        PlayerPauseActionStrip(
-            visible = !isPlayingState && !isInPipMode && areControlsVisible,
-            isFullscreen = isFullscreen,
-            context = context,
-            videoId = videoId,
-            videoTitle = videoTitle,
-            isFavorite = localIsFavorite,
-            isDisliked = localIsDisliked,
-            isDownloaded = isDownloaded,
-            downloadProgress = downloadProgress,
-            onFavoriteToggle = {
-                controlsKeepAliveTrigger = System.currentTimeMillis()
-                localIsFavorite = !localIsFavorite
-                if (localIsFavorite) localIsDisliked = false
-                onFavoriteToggle()
-            },
-            onDislikeToggle = {
-                controlsKeepAliveTrigger = System.currentTimeMillis()
-                localIsDisliked = true
-                localIsFavorite = false
-                onDislikeToggle()
-                onNextVideo()
-            },
-            onAiSummaryClick = {
-                controlsKeepAliveTrigger = System.currentTimeMillis()
-                onAiSummaryClick()
-            },
-            onDownloadClick = {
-                controlsKeepAliveTrigger = System.currentTimeMillis()
-                onDownloadClick()
-            },
-            onDeleteDownloadClick = {
-                controlsKeepAliveTrigger = System.currentTimeMillis()
-                onDeleteDownloadClick()
-            },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .offset(y = if (isFullscreen) 0.dp else (-34).dp)
-        )
+        // 8. Persistent Thin Bottom Scrubber Line when controls auto-hide (like YouTube)
+        if (!shouldShowControls && !isInPipMode && totalDurationMs > 0) {
+            val progress = (currentPosMs.toFloat() / totalDurationMs.toFloat()).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(Color.White.copy(alpha = 0.25f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(progress)
+                        .fillMaxHeight()
+                        .background(YouTubeRed)
+                )
+            }
+        }
 
         // 9. Bottom Utility Bar: Scrubber + Time + Action Buttons + Settings Anchor
         PlayerBottomBar(

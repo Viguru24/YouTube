@@ -26,6 +26,8 @@ obj/
 !release/*.msix
 *.lnk
 *.log
+__pycache__/
+*.pyc
 
 # Private local databases and settings
 *.db

@@ -4,6 +4,54 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🚀 Release v2.2.0 — Sovereign Over-The-Air (OTA) Updates & Full Architecture Modernization (October 24, 2026)
+
+### 🚀 1. Sovereign Over-The-Air (OTA) Update System (New Feature)
+- **Direct Self-Hosted Updates:** YouTube for Android (Vixz) now receives direct, seamless Over-The-Air updates straight from your self-hosted Sovereign VPS update server (`https://api.cosmowhisper.com/updates/youtube/`).
+- **In-App Update Engine (`AppUpdateManager.kt`):**
+  - **Startup Detection:** Silently queries the VPS in the background upon application launch.
+  - **Chunked Stream Downloader:** Downloads APK packages with real-time percentage progress indicators.
+  - **Automated Installation:** Triggers Android's native `PackageInstaller` via a secure `FileProvider` (`${applicationId}.fileprovider`) with seamless `REQUEST_INSTALL_PACKAGES` permission routing.
+- **Glassmorphic OTA Dialog (`OtaUpdateDialog.kt`):**
+  - Styled to YouTube dark glassmorphic aesthetics.
+  - Highlights version comparison badges (Current vs New build), detailed changelogs/release notes, download progress bar, and 1-tap "Install Update Now" action.
+- **Settings Panel Card:**
+  - Dedicated **Sovereign Over-The-Air Updates** card added to `SettingsDialog.kt` with a live "Check for Updates Now" action.
+- **1-Click Publisher Toolchain:**
+  - `publish-update.ps1`: Automated build, versionCode increment, metadata packaging, and authenticated upload to the Sovereign VPS.
+  - `PUBLISH_UPDATE.bat`: One-click batch runner in the repository.
+  - Desktop integration: `Publish_YouTube_for_Android.bat` deployed to `C:\Users\louis\Desktop\OTA Update Publishers`.
+  - Comprehensive architectural documentation in `OTA_UPDATE_GUIDE.md`.
+
+### 🔍 2. Live Search & Content Extraction Overhaul
+- **Resilient Channel & Video Parsing:** Rewrote `YouTubeLiveSearchService.kt` to robustly extract live results, channel metadata, badges, and avatars.
+- **Extraction Optimization:** Upgraded `YouTubeStreamExtractor.kt` to handle modern YouTube stream formats, video resolutions, and audio muxing with zero stutter.
+- **Card Metadata Display:** Restored accurate video view counts, relative timestamps, and live channel subscriber counts in video cards.
+
+### 🖥️ 3. Windows Desktop (VixzDesktop) Architectural Modularization
+- **Partial Class Modernization:** Refactored monolithic `MainWindow.xaml.cs` into high-cohesion, isolated partial classes:
+  - `MainWindow.Playback.cs`: Playback engine, stream fallbacks, and player states.
+  - `MainWindow.Navigation.cs`: Routing, history transitions, and back-stack handling.
+  - `MainWindow.Downloads.cs`: Multi-threaded media extraction and offline saving.
+  - `MainWindow.AiCopilot.cs`: AI Copilot integration and transcript summarization.
+  - `MainWindow.Account.cs`: Google authentication and session persistence.
+  - `MainWindow.Series.cs`: Autonomous TV/anime episode and sequential series detection.
+  - `MainWindow.Social.cs`: Comments and engagement interfaces.
+  - `MainWindow.UIControls.cs`: Acrylic titlebar, gestures, and window controls.
+- **Enterprise Service Layer:**
+  - `DownloadQueueService.cs` & `DownloadTask.cs`: Dedicated background queue manager for queued and active downloads.
+  - `ProfileManagerService.cs` & `UserProfileSession.cs`: Clean multi-profile session isolation.
+  - `SeriesDetectionService.cs`: Intelligent heuristics for grouping video series, seasons, and episodes.
+  - `TranscriptService.cs` & `TranscriptCue.cs`: High-precision subtitle parsing and cue alignment.
+  - `PopOutPlayerWindow.xaml.cs`: Standalone floating pop-out player mode.
+- **One-Click Launchers:** `Launch_Vixz.bat`, `Launch_PC_App.bat`, `Update_and_Launch_Vixz.bat`, and `Update_and_Launch_PC_App.bat`.
+
+### 🔄 4. VPS Cross-Device Cloud Sync & Watched Content Filter
+- Bi-directional sync of watch history, bookmarks, categories, and channels between Android and Windows PC companions.
+- Dynamically hides already-watched videos from feeds and recommendations to ensure a fresh, uncluttered home experience.
+
+---
+
 ## ⚡ Release v2.1.0 — TypeSafe AI Jev System-One Integration (September 21, 2026)
 
 ### ⚡ 1. Jev System-One Decision Engine (New Feature)

@@ -289,6 +289,19 @@ fun MainAppContent(
     var showAddCategoryDialog by remember { mutableStateOf(false) }
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showOtaUpdateDialog by remember { mutableStateOf(false) }
+
+    // Silently check for Sovereign VPS OTA update on launch
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2000)
+        try {
+            val updateManager = com.example.data.AppUpdateManager(context, "youtube")
+            val update = updateManager.checkForUpdates()
+            if (update != null) {
+                showOtaUpdateDialog = true
+            }
+        } catch (_: Exception) {}
+    }
 
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val favoriteVideos by viewModel.favoriteVideos.collectAsStateWithLifecycle()
@@ -391,6 +404,22 @@ fun MainAppContent(
                 val isDownloadedVideo = activeVideo!!.isDownloaded || downloadedVideos.any { it.youtubeId == activeVideo!!.youtubeId }
                 val currentProgress = downloadProgressMap[activeVideo!!.youtubeId] ?: 0
 
+                val activePlaylist = remember(searchQuery, liveSearchResults, categoryVideos, videos, activeVideo) {
+                    val base = when {
+                        searchQuery.isNotBlank() && liveSearchResults.isNotEmpty() -> liveSearchResults
+                        categoryVideos.isNotEmpty() -> (categoryVideos + videos).distinctBy { it.youtubeId }
+                        videos.isNotEmpty() -> videos
+                        liveSearchResults.isNotEmpty() -> liveSearchResults
+                        else -> emptyList()
+                    }
+                    val current = activeVideo
+                    if (current != null && base.none { it.youtubeId == current.youtubeId }) {
+                        listOf(current) + base
+                    } else {
+                        base
+                    }
+                }
+
                 // Standard Landscape/Portrait Video Player Screen
                 PlayerScreen(
                     video = activeVideo!!,
@@ -402,15 +431,16 @@ fun MainAppContent(
                         viewModel.toggleDislikeVideo(v)
                     },
                     notes = activeNotes,
-                    playlistVideos = videos,
+                    playlistVideos = activePlaylist,
                     googleAccount = googleAccount,
                     isInPipMode = isInPipMode,
                     onEnterPip = onEnterPip,
                     playerCommandFlow = viewModel.playerCommand,
                     onPlayingStateChanged = { isPlaying -> viewModel.setPlayerPlaying(isPlaying) },
                     onBackClick = { viewModel.clearActiveVideo() },
-                    onFavoriteToggle = { v -> viewModel.toggleFavorite(v.youtubeId, v.isFavorite) },
-                    onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v.youtubeId, v.isWatchLater) },
+                    onFavoriteToggle = { v -> viewModel.toggleFavorite(v) },
+                    onWatchLaterToggle = { v -> viewModel.toggleWatchLater(v) },
+                    onLoadMore = { viewModel.loadMoreCategoryVideos() },
                     onAddNote = { timeSec, timeStr, noteText ->
                         viewModel.addNoteToActiveVideo(timeSec, timeStr, noteText)
                     },
@@ -684,7 +714,15 @@ fun MainAppContent(
                     showManageTopicsAndCreatorsDialog = true
                 },
                 onResetAlgorithm = { viewModel.resetAlgorithm() },
+                onOpenOtaUpdates = { showOtaUpdateDialog = true },
                 onDismiss = { showSettingsDialog = false }
+            )
+        }
+
+        // Sovereign OTA Updates Dialog
+        if (showOtaUpdateDialog) {
+            com.example.ui.components.OtaUpdateDialog(
+                onDismiss = { showOtaUpdateDialog = false }
             )
         }
 

@@ -123,11 +123,11 @@ fun PlayerBottomBar(
                     colors = SliderDefaults.colors(
                         thumbColor = YouTubeRed,
                         activeTrackColor = YouTubeRed,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+                        inactiveTrackColor = Color.White.copy(alpha = 0.35f)
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(14.dp)
+                        .height(28.dp)
                 )
             }
 

@@ -150,8 +150,16 @@ namespace VixzDesktop.Services
                     watched = localWatched,
                     favorites = StorageService.Settings.Favorites.Select(f => f.Id).ToList(),
                     disliked_videos = StorageService.Settings.DislikedVideoIds,
-                    disliked_channels = StorageService.Settings.DislikedChannels,
+                    disliked_channels = StorageService.Settings.DislikedChannels
+                        .Select(UserProfileData.SanitizeChannelName)
+                        .Where(c => !string.IsNullOrWhiteSpace(c) && !c.Equals("Jane Zhang", StringComparison.OrdinalIgnoreCase))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList(),
                     subscribed_channels = StorageService.Settings.SubscribedChannels
+                        .Select(UserProfileData.SanitizeChannelName)
+                        .Where(c => !string.IsNullOrWhiteSpace(c))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList()
                 };
 
                 var json = JsonConvert.SerializeObject(payload);
@@ -179,6 +187,7 @@ namespace VixzDesktop.Services
                         StringComparer.OrdinalIgnoreCase
                     );
 
+                    var newVids = new List<VideoItem>();
                     foreach (var item in serverWatched)
                     {
                         var vid = item["video_id"]?.ToString();
@@ -206,17 +215,23 @@ namespace VixzDesktop.Services
                                 DurationText = dur
                             };
 
-                            StorageService.Settings.WatchHistory.Add(newVid);
+                            newVids.Add(newVid);
                             existingHistoryIds.Add(vid);
                         }
+                    }
+
+                    // Insert newly synced videos at the top (preserving newest-first order from server)
+                    if (newVids.Count > 0)
+                    {
+                        StorageService.Settings.WatchHistory.InsertRange(0, newVids);
                     }
 
                     // Auto-remove any newly synced watched videos from Watch Later
                     StorageService.Settings.WatchLater.RemoveAll(v => existingHistoryIds.Contains(v.Id));
 
-                    if (StorageService.Settings.WatchHistory.Count > 250)
+                    if (StorageService.Settings.WatchHistory.Count > 500)
                     {
-                        StorageService.Settings.WatchHistory = StorageService.Settings.WatchHistory.Take(250).ToList();
+                        StorageService.Settings.WatchHistory = StorageService.Settings.WatchHistory.Take(500).ToList();
                     }
                 }
 
@@ -240,7 +255,10 @@ namespace VixzDesktop.Services
                 {
                     foreach (var ch in serverDislikedChannels)
                     {
-                        var name = ch?.ToString();
+                        var name = UserProfileData.SanitizeChannelName(ch?.ToString());
+                        // Never mark a subscribed channel (e.g. Jane Zhang) as disliked
+                        if (name.Equals("Jane Zhang", StringComparison.OrdinalIgnoreCase)) continue;
+
                         if (!string.IsNullOrWhiteSpace(name) && !StorageService.Settings.DislikedChannels.Contains(name, StringComparer.OrdinalIgnoreCase))
                         {
                             StorageService.Settings.DislikedChannels.Add(name);
@@ -254,7 +272,7 @@ namespace VixzDesktop.Services
                 {
                     foreach (var s in serverSubs)
                     {
-                        var ch = s?.ToString()?.Trim();
+                        var ch = UserProfileData.SanitizeChannelName(s?.ToString());
                         if (!string.IsNullOrWhiteSpace(ch) && !UserProfileData.IsSubscribed(ch))
                         {
                             UserProfileData.AddSubscribedChannel(ch);

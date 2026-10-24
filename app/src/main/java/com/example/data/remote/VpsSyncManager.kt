@@ -190,7 +190,11 @@ object VpsSyncManager {
             favorites.forEach { favJsonArray.put(it) }
 
             val subJsonArray = JSONArray()
-            localCreators.forEach { subJsonArray.put(it) }
+            localCreators
+                .map { com.example.data.model.UserProfileData.sanitizeChannelName(it) }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .forEach { subJsonArray.put(it) }
 
             val disJsonArray = JSONArray()
             localDislikes.forEach { disJsonArray.put(it) }
@@ -307,16 +311,17 @@ object VpsSyncManager {
                 // 3. Merge Subscribed Channels
                 val serverSubs = respJson.optJSONArray("subscribed_channels") ?: respJson.optJSONArray("subscribedChannels")
                 if (serverSubs != null && serverSubs.length() > 0) {
-                    val incoming = mutableListOf<String>()
+                    val incoming = mutableSetOf<String>()
                     for (i in 0 until serverSubs.length()) {
-                        val s = serverSubs.optString(i, "").trim()
+                        val s = com.example.data.model.UserProfileData.sanitizeChannelName(serverSubs.optString(i, ""))
                         if (s.isNotBlank()) incoming.add(s)
                     }
                     if (incoming.isNotEmpty()) {
-                        val existingSubs = creatorPrefs.getStringSet("subscribed_creators", emptySet())?.toMutableSet() ?: mutableSetOf()
+                        val rawExisting = creatorPrefs.getStringSet("subscribed_creators", emptySet()) ?: emptySet()
+                        val existingSubs = rawExisting.map { com.example.data.model.UserProfileData.sanitizeChannelName(it) }.filter { it.isNotBlank() }.toMutableSet()
                         val prevCount = existingSubs.size
                         existingSubs.addAll(incoming)
-                        if (existingSubs.size > prevCount) {
+                        if (existingSubs.size > prevCount || existingSubs != rawExisting) {
                             creatorPrefs.edit().putStringSet("subscribed_creators", existingSubs).apply()
                         }
                         onSubscriptionsUpdated?.invoke(existingSubs.toList())

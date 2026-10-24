@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using YoutubeExplode;
 using YoutubeExplode.Common;
+using YoutubeExplode.Playlists;
 using YoutubeExplode.Search;
 using YoutubeExplode.Videos.Streams;
 using VixzDesktop.Models;
 
+using System.Net;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -17,9 +19,26 @@ namespace VixzDesktop.Services
     public class YouTubeService
     {
         private static readonly YoutubeClient _client = new YoutubeClient();
+        private static YoutubeClient _authenticatedClient = _client;
         private static readonly HttpClient _httpClient = new HttpClient();
         private static string? _lastContinuationToken;
         private static string _innerTubeApiKey = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
+        public static void SetAuthCookies(IEnumerable<Cookie> cookies)
+        {
+            try
+            {
+                var list = cookies?.ToList();
+                if (list != null && list.Count > 0)
+                {
+                    _authenticatedClient = new YoutubeClient(list);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Vixz] SetAuthCookies error: {ex.Message}");
+            }
+        }
 
         private static string? FindContinuationToken(JToken? token)
         {
@@ -671,6 +690,344 @@ namespace VixzDesktop.Services
             return filtered;
         }
 
+        public static async Task<List<VideoItem>> GetChannelSeriesVideosAsync(string? channelNameOrId, string seriesQuery, string? seasonFilter = null)
+        {
+            if (string.IsNullOrWhiteSpace(seriesQuery))
+            {
+                return new List<VideoItem>();
+            }
+
+            var cleanChannel = channelNameOrId?.Trim() ?? "";
+            var cleanSeries = seriesQuery.Trim();
+            var combinedQuery = !string.IsNullOrWhiteSpace(seasonFilter) ? $"{cleanSeries} {seasonFilter}".Trim() : cleanSeries;
+            var results = new List<VideoItem>();
+            var seenIds = new HashSet<string>();
+
+            if (!string.IsNullOrWhiteSpace(cleanChannel))
+            {
+                // 1. Direct Channel-Scoped Search Endpoint
+                try
+                {
+                    var targetUrls = new List<string>();
+                    if (cleanChannel.StartsWith("UC") && cleanChannel.Length == 24)
+                    {
+                        targetUrls.Add($"https://www.youtube.com/channel/{cleanChannel}/search?query={Uri.EscapeDataString(combinedQuery)}&hl=en&gl=US");
+                    }
+                    else if (cleanChannel.StartsWith("@"))
+                    {
+                        targetUrls.Add($"https://www.youtube.com/{cleanChannel}/search?query={Uri.EscapeDataString(combinedQuery)}&hl=en&gl=US");
+                    }
+                    else
+                    {
+                        var handle = ResolveChannelHandle(cleanChannel);
+                        if (!string.IsNullOrWhiteSpace(handle))
+                        {
+                            targetUrls.Add($"https://www.youtube.com/@{handle}/search?query={Uri.EscapeDataString(combinedQuery)}&hl=en&gl=US");
+                        }
+                    }
+
+                    if (targetUrls.Count > 0)
+                    {
+                        var searchTasks = targetUrls.Select(async url =>
+                        {
+                            try
+                            {
+                                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(6));
+                                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                                req.Headers.Add("Cookie", "PREF=hl=en&gl=US; SOCS=CAI");
+                                var resp = await _httpClient.SendAsync(req, cts.Token);
+                                if (resp.IsSuccessStatusCode)
+                                {
+                                    var html = await resp.Content.ReadAsStringAsync(cts.Token);
+                                    var vm = Regex.Match(html, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                                    if (vm.Success)
+                                    {
+                                        var vObj = JObject.Parse(vm.Groups[1].Value);
+                                        string channelTitle = vObj?["metadata"]?["channelMetadataRenderer"]?["title"]?.ToString() ?? cleanChannel;
+                                        lock (results)
+                                        {
+                                            ExtractChannelVideosFromToken(vObj, results, seenIds, channelTitle);
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        });
+                        await Task.WhenAll(searchTasks);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Channel series search error: {ex.Message}");
+                }
+
+                // 2. Scoped Global YouTube Search targeting channel + series
+                try
+                {
+                    var globalQuery = $"\"{cleanChannel}\" {combinedQuery}";
+                    var searchResults = await SearchVideosAsync(globalQuery, 40);
+                    foreach (var item in searchResults)
+                    {
+                        if (seenIds.Add(item.Id))
+                        {
+                            var isChannelMatch = item.ChannelTitle.IndexOf(cleanChannel, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                 cleanChannel.IndexOf(item.ChannelTitle, StringComparison.OrdinalIgnoreCase) >= 0;
+                            if (isChannelMatch || item.Title.IndexOf(cleanSeries, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                results.Add(item);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Global series search fallback error: {ex.Message}");
+                }
+
+                // 3. Channel upload feed keyword filter fallback if results are low
+                if (results.Count < 6)
+                {
+                    try
+                    {
+                        var channelUploads = await GetChannelVideosFeedAsync(cleanChannel);
+                        var words = cleanSeries.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                               .Where(w => w.Length > 2)
+                                               .ToList();
+
+                        foreach (var up in channelUploads)
+                        {
+                            if (seenIds.Add(up.Id))
+                            {
+                                var titleMatch = words.Count > 0 && words.All(w => up.Title.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0);
+                                var seasonMatch = string.IsNullOrWhiteSpace(seasonFilter) || up.Title.IndexOf(seasonFilter, StringComparison.OrdinalIgnoreCase) >= 0;
+                                if (titleMatch && seasonMatch)
+                                {
+                                    results.Add(up);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                // Global Series Search Across All of YouTube
+                try
+                {
+                    var searchQueries = new List<string>
+                    {
+                        $"{combinedQuery} full episode",
+                        $"{combinedQuery} episode 1",
+                        combinedQuery
+                    };
+
+                    foreach (var sq in searchQueries)
+                    {
+                        var searchResults = await SearchVideosAsync(sq, 30);
+                        foreach (var item in searchResults)
+                        {
+                            if (seenIds.Add(item.Id))
+                            {
+                                results.Add(item);
+                            }
+                        }
+                        if (results.Count >= 40) break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Broad series search error: {ex.Message}");
+                }
+            }
+
+            // 4. Clean & Filter Dislikes/Deleted
+            var filtered = results
+                .Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id))
+                .ToList();
+
+            // 5. Intelligent Ordering: If episode numbers are detected, sort in natural episodic order!
+            var withEp = filtered.Select(v => new {
+                Video = v,
+                Ep = SeriesDetectionService.ExtractEpisodeNumber(v.Title),
+                PubSec = ParsePublishedTimeToSeconds(v.UploadDateText)
+            }).ToList();
+
+            if (withEp.Count(x => x.Ep.HasValue) >= Math.Min(3, Math.Max(1, withEp.Count / 3)))
+            {
+                return withEp.OrderBy(x => x.Ep ?? int.MaxValue).ThenBy(x => x.PubSec).Select(x => x.Video).ToList();
+            }
+
+            return withEp.OrderBy(x => x.PubSec).Select(x => x.Video).ToList();
+        }
+
+        public static async Task<List<VideoItem>> GetChannelPlaylistsAsync(string? channelNameOrId, string? filterQuery = null)
+        {
+            var results = new List<VideoItem>();
+            var seenIds = new HashSet<string>();
+            var cleanChannel = channelNameOrId?.Trim() ?? "";
+
+            if (!string.IsNullOrWhiteSpace(cleanChannel))
+            {
+                try
+                {
+                    var handle = ResolveChannelHandle(cleanChannel);
+                    var targetUrl = !string.IsNullOrWhiteSpace(handle)
+                        ? $"https://www.youtube.com/@{handle}/playlists?hl=en&gl=US"
+                        : $"https://www.youtube.com/results?search_query={Uri.EscapeDataString($"{cleanChannel} {filterQuery} playlist")}&sp=EgIQAw%253D%253D&hl=en&gl=US";
+
+                    using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    var req = new HttpRequestMessage(HttpMethod.Get, targetUrl);
+                    req.Headers.Add("Cookie", "PREF=hl=en&gl=US; SOCS=CAI");
+                    var resp = await _httpClient.SendAsync(req, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var html = await resp.Content.ReadAsStringAsync(cts.Token);
+                        var vm = Regex.Match(html, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                        if (vm.Success)
+                        {
+                            var data = JObject.Parse(vm.Groups[1].Value);
+                            ExtractPlaylistsFromToken(data, results, seenIds, cleanChannel, filterQuery);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Channel playlists extraction error: {ex.Message}");
+                }
+            }
+
+            // Also fallback or search YouTube playlists if results are 0
+            if (results.Count == 0 && !string.IsNullOrWhiteSpace(filterQuery))
+            {
+                try
+                {
+                    var q = !string.IsNullOrWhiteSpace(cleanChannel) ? $"{cleanChannel} {filterQuery} playlist" : $"{filterQuery} playlist";
+                    var searchUrl = $"https://www.youtube.com/results?search_query={Uri.EscapeDataString(q)}&sp=EgIQAw%253D%253D&hl=en&gl=US";
+                    using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(6));
+                    var req = new HttpRequestMessage(HttpMethod.Get, searchUrl);
+                    req.Headers.Add("Cookie", "PREF=hl=en&gl=US; SOCS=CAI");
+                    var resp = await _httpClient.SendAsync(req, cts.Token);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var html = await resp.Content.ReadAsStringAsync(cts.Token);
+                        var vm = Regex.Match(html, @"(?:var\s+ytInitialData\s*=\s*|ytInitialData\s*=\s*)(\{.+?\});(?:</script>|\n)", RegexOptions.Singleline);
+                        if (vm.Success)
+                        {
+                            var data = JObject.Parse(vm.Groups[1].Value);
+                            ExtractPlaylistsFromToken(data, results, seenIds, cleanChannel, filterQuery);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Playlists search fallback error: {ex.Message}");
+                }
+            }
+
+            return results;
+        }
+
+        private static void ExtractPlaylistsFromToken(JToken? token, List<VideoItem> results, HashSet<string> seenIds, string channelTitle, string? filterQuery = null)
+        {
+            if (token == null) return;
+            if (token is JObject jo)
+            {
+                var lum = jo["lockupViewModel"] as JObject;
+                if (lum != null)
+                {
+                    var cid = lum["contentId"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(cid) && (cid.StartsWith("PL") || cid.StartsWith("OLAK5uy_")) && seenIds.Add(cid))
+                    {
+                        var meta = lum["metadata"]?["lockupMetadataViewModel"];
+                        var title = meta?["title"]?["content"]?.ToString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(title))
+                        {
+                            bool isMatch = string.IsNullOrWhiteSpace(filterQuery) || title.IndexOf(filterQuery, StringComparison.OrdinalIgnoreCase) >= 0;
+                            if (!isMatch && !string.IsNullOrWhiteSpace(filterQuery))
+                            {
+                                var qTokens = filterQuery.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                                         .Where(w => w.Length > 2 && !w.Equals("series", StringComparison.OrdinalIgnoreCase) && !w.Equals("tv", StringComparison.OrdinalIgnoreCase) && !w.Equals("playlist", StringComparison.OrdinalIgnoreCase))
+                                                         .ToList();
+                                if (qTokens.Count > 0 && qTokens.Any(w => title.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0))
+                                {
+                                    isMatch = true;
+                                }
+                            }
+
+                            if (isMatch)
+                            {
+                                var sources = lum["contentImage"]?.SelectTokens("..sources[*].url")
+                                    .Concat(lum.SelectTokens("..thumbnails[*].url"))
+                                    .Select(t => t.ToString())
+                                    .Where(u => !string.IsNullOrWhiteSpace(u))
+                                    .ToList();
+                                var thumbUrl = sources?.LastOrDefault() ?? "";
+
+                                var channelFromMeta = meta?["metadata"]?["content"]?.ToString();
+                                var displayAuthor = !string.IsNullOrWhiteSpace(channelTitle) ? channelTitle : (!string.IsNullOrWhiteSpace(channelFromMeta) ? channelFromMeta : "YouTube");
+
+                                results.Add(new VideoItem
+                                {
+                                    Id = cid,
+                                    Title = System.Net.WebUtility.HtmlDecode(title),
+                                    ChannelTitle = displayAuthor,
+                                    ThumbnailUrl = thumbUrl,
+                                    DurationText = "📋 Playlist",
+                                    UploadDateText = "Official Playlist",
+                                    ViewCountText = "Series Collection"
+                                });
+                            }
+                        }
+                    }
+                }
+                foreach (var prop in jo.Properties()) ExtractPlaylistsFromToken(prop.Value, results, seenIds, channelTitle, filterQuery);
+            }
+            else if (token is JArray ja)
+            {
+                foreach (var it in ja) ExtractPlaylistsFromToken(it, results, seenIds, channelTitle, filterQuery);
+            }
+        }
+
+        public static async Task<List<VideoItem>> GetPlaylistVideosFeedAsync(string playlistId)
+        {
+            if (string.IsNullOrWhiteSpace(playlistId)) return new List<VideoItem>();
+
+            var results = new List<VideoItem>();
+            var seenIds = new HashSet<string>();
+
+            try
+            {
+                var videos = _client.Playlists.GetVideosAsync(playlistId);
+                await foreach (var video in videos)
+                {
+                    if (seenIds.Add(video.Id.Value))
+                    {
+                        results.Add(new VideoItem
+                        {
+                            Id = video.Id.Value,
+                            Title = video.Title,
+                            ChannelTitle = video.Author.ChannelTitle,
+                            ChannelId = video.Author.ChannelId.Value,
+                            ThumbnailUrl = video.Thumbnails.OrderByDescending(t => t.Resolution.Area).FirstOrDefault()?.Url ?? $"https://i.ytimg.com/vi/{video.Id.Value}/hqdefault.jpg",
+                            Duration = video.Duration,
+                            DurationText = video.Duration.HasValue ? FormatDuration(video.Duration.Value) : "Video",
+                            UploadDateText = "",
+                            ViewCountText = ""
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error fetching playlist {playlistId}: {ex.Message}");
+            }
+
+            return results
+                .Where(v => !StorageService.IsDisliked(v.Id) && !StorageService.IsDeleted(v.Id))
+                .ToList();
+        }
+
         public static VideoItem? ParseLockupViewModel(JObject lum, HashSet<string> seenIds, string fallbackChannelTitle = "")
         {
             var vid = lum["contentId"]?.ToString();
@@ -946,11 +1303,17 @@ namespace VixzDesktop.Services
             );
         }
 
-        public static async Task<string?> GetStreamUrlAsync(string videoId)
+        public static async Task<string?> GetStreamUrlAsync(string videoId, IEnumerable<Cookie>? cookies = null)
         {
             try
             {
-                var streamManifest = await _client.Videos.Streams.GetManifestAsync(videoId);
+                var client = _authenticatedClient;
+                if (cookies != null && cookies.Any())
+                {
+                    client = new YoutubeClient(cookies.ToList());
+                }
+
+                var streamManifest = await client.Videos.Streams.GetManifestAsync(videoId);
                 
                 // 1. Try muxed streams (combined video + audio)
                 var muxedStreamInfo = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
@@ -963,8 +1326,21 @@ namespace VixzDesktop.Services
                 var videoOnly = streamManifest.GetVideoOnlyStreams().GetWithHighestVideoQuality();
                 return videoOnly?.Url;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[Vixz] GetStreamUrlAsync error: {ex.Message}");
+                // If authenticated client failed, try default client as final effort
+                if (_authenticatedClient != _client)
+                {
+                    try
+                    {
+                        var streamManifest = await _client.Videos.Streams.GetManifestAsync(videoId);
+                        var muxed = streamManifest.GetMuxedStreams().GetWithHighestVideoQuality();
+                        if (muxed != null) return muxed.Url;
+                        return streamManifest.GetVideoOnlyStreams().GetWithHighestVideoQuality()?.Url;
+                    }
+                    catch { }
+                }
                 return null;
             }
         }

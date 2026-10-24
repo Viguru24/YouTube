@@ -18,6 +18,7 @@ namespace VixzDesktop
         private double _currentPosition = 0;
         private DispatcherTimer? _sleepTimer;
         private int _sleepRemainingSeconds = 0;
+        private bool _isDirectWatchMode = false;
 
         public PopOutPlayerWindow(MainWindow mainWindow, VideoItem video, double startPositionSeconds = 0)
         {
@@ -169,7 +170,14 @@ namespace VixzDesktop
                     var vid = MainWindow.ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
+                        if (_video != null && vid == _video.Id)
+                        {
+                            await Dispatcher.InvokeAsync(async () => await PlayDirectWatchPageAsync(vid, 0));
+                            return;
+                        }
+
                         _currentPosition = 0;
+                        _isDirectWatchMode = false;
                         _video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
                             Id = vid,
@@ -180,6 +188,20 @@ namespace VixzDesktop
                         MiniVideoTitle.Text = _video.Title;
                         UpdateFavoriteUi();
                         MiniWebView.CoreWebView2.Navigate($"https://vixz.app/player.html?v={vid}&t=0");
+                        return;
+                    }
+
+                    if (args.Uri.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || args.Uri.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = args.Uri,
+                                UseShellExecute = true
+                            });
+                        }
+                        catch { }
                     }
                 };
 
@@ -188,6 +210,15 @@ namespace VixzDesktop
                     if (args.Uri.StartsWith("https://vixz.app", StringComparison.OrdinalIgnoreCase))
                     {
                         return;
+                    }
+
+                    if (_isDirectWatchMode && args.Uri.Contains("youtube.com/watch"))
+                    {
+                        var targetVid = MainWindow.ExtractYouTubeVideoId(args.Uri);
+                        if (string.IsNullOrEmpty(targetVid) || targetVid == _video?.Id)
+                        {
+                            return;
+                        }
                     }
 
                     args.Cancel = true;
@@ -208,7 +239,14 @@ namespace VixzDesktop
                     var vid = MainWindow.ExtractYouTubeVideoId(args.Uri);
                     if (!string.IsNullOrEmpty(vid))
                     {
+                        if (_video != null && vid == _video.Id)
+                        {
+                            await Dispatcher.InvokeAsync(async () => await PlayDirectWatchPageAsync(vid, 0));
+                            return;
+                        }
+
                         _currentPosition = 0;
+                        _isDirectWatchMode = false;
                         _video = await YouTubeService.GetVideoDetailsAsync(vid) ?? new VideoItem
                         {
                             Id = vid,
@@ -219,6 +257,22 @@ namespace VixzDesktop
                         MiniVideoTitle.Text = _video.Title;
                         UpdateFavoriteUi();
                         MiniWebView.CoreWebView2.Navigate($"https://vixz.app/player.html?v={vid}&t=0");
+                    }
+                };
+
+                MiniWebView.CoreWebView2.DOMContentLoaded += async (s, args) =>
+                {
+                    if (_isDirectWatchMode && MiniWebView.Source?.ToString().Contains("youtube.com/watch") == true)
+                    {
+                        await MiniWebView.ExecuteScriptAsync(MainWindow.WatchPageCleanerScript);
+                    }
+                };
+
+                MiniWebView.CoreWebView2.NavigationCompleted += async (s, args) =>
+                {
+                    if (_isDirectWatchMode && MiniWebView.Source?.ToString().Contains("youtube.com/watch") == true)
+                    {
+                        await MiniWebView.ExecuteScriptAsync(MainWindow.WatchPageCleanerScript);
                     }
                 };
 
@@ -274,10 +328,53 @@ namespace VixzDesktop
                 var cat = msg.Substring("SPONSOR_SKIPPED:".Length);
                 _mainWindow.ShowToast($"⏭️ Skipped {cat} (in-video ad)");
             }
+            else if (msg.StartsWith("PLAYER_STREAM_FALLBACK:") || msg.StartsWith("PLAYER_UNSTARTED:"))
+            {
+                var vid = msg.StartsWith("PLAYER_STREAM_FALLBACK:")
+                    ? msg.Substring("PLAYER_STREAM_FALLBACK:".Length)
+                    : msg.Substring("PLAYER_UNSTARTED:".Length);
+                if (!string.IsNullOrEmpty(vid))
+                {
+                    _ = Dispatcher.InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            var wvCookies = await MiniWebView.CoreWebView2.CookieManager.GetCookiesAsync("https://www.youtube.com");
+                            var netCookies = wvCookies.Select(c => new System.Net.Cookie(c.Name, c.Value, c.Path, c.Domain)).ToList();
+                            YouTubeService.SetAuthCookies(netCookies);
+
+                            var streamUrl = await YouTubeService.GetStreamUrlAsync(vid, netCookies);
+                            if (!string.IsNullOrEmpty(streamUrl))
+                            {
+                                await MiniWebView.ExecuteScriptAsync($"loadLocalVideo('{streamUrl}', {_currentPosition.ToString(System.Globalization.CultureInfo.InvariantCulture)}, '{vid}')");
+                                _mainWindow.ShowToast("🛡️ Restriction bypassed: Playing stream");
+                                return;
+                            }
+
+                            var secInt = Math.Max(0, (int)_currentPosition);
+                            await PlayDirectWatchPageAsync(vid, secInt);
+                        }
+                        catch
+                        {
+                            await PlayDirectWatchPageAsync(vid, 0);
+                        }
+                    });
+                }
+            }
             else if (msg == "VIDEO_ENDED")
             {
                 _mainWindow.PlayNextVideo();
             }
+        }
+
+        public async Task PlayDirectWatchPageAsync(string videoId, double startSec)
+        {
+            _isDirectWatchMode = true;
+            _mainWindow.ShowToast("🛡️ Restriction bypassed: Playing stream");
+            var secInt = Math.Max(0, (int)startSec);
+            var targetUrl = $"https://www.youtube.com/watch?v={videoId}" + (secInt > 3 ? $"&t={secInt}" : "");
+            MiniWebView.CoreWebView2?.Navigate(targetUrl);
+            await Task.CompletedTask;
         }
 
         private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)

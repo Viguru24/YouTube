@@ -273,11 +273,14 @@ object YouTubeStreamExtractor {
                 errMsg.contains("private", ignoreCase = true) ||
                 errMsg.contains("unavailable", ignoreCase = true) ||
                 errMsg.contains("paid", ignoreCase = true) ||
-                errMsg.contains("join this channel", ignoreCase = true)) {
-                logD("YouTubeStreamExtractor", "🔒 Members-only video identified for $videoId - fast failing immediately")
+                errMsg.contains("join this channel", ignoreCase = true) ||
+                errMsg.contains("age", ignoreCase = true) ||
+                errMsg.contains("sign in to confirm", ignoreCase = true)) {
+                val isAge = errMsg.contains("age", ignoreCase = true) || errMsg.contains("sign in to confirm", ignoreCase = true)
+                logD("YouTubeStreamExtractor", if (isAge) "🔞 Age-restricted video identified for $videoId - fast failing to web player immediately" else "🔒 Members-only video identified for $videoId - fast failing immediately")
                 return@withContext StreamExtractionResult(
                     primaryStreamUrl = null,
-                    isMembersOnly = true,
+                    isMembersOnly = !isAge && (errMsg.contains("members", ignoreCase = true) || errMsg.contains("join this channel", ignoreCase = true)),
                     errorMessage = errMsg
                 )
             }
@@ -297,6 +300,15 @@ object YouTubeStreamExtractor {
                             return@withContext StreamExtractionResult(
                                 primaryStreamUrl = null,
                                 isMembersOnly = true,
+                                errorMessage = reason
+                            )
+                        }
+                        if ((status == "LOGIN_REQUIRED" || status == "UNPLAYABLE") &&
+                            (reason.contains("age", ignoreCase = true) || reason.contains("sign in", ignoreCase = true))) {
+                            logD("YouTubeStreamExtractor", "🔞 Age-restricted video ($reason) identified in Innertube - activating web player")
+                            return@withContext StreamExtractionResult(
+                                primaryStreamUrl = null,
+                                isMembersOnly = false,
                                 errorMessage = reason
                             )
                         }

@@ -1,5 +1,6 @@
 @echo off
-title Vixz Desktop - Update, Build and Launch
+setlocal enabledelayedexpansion
+title Vixz Desktop - Update and Launch
 color 0B
 
 echo ========================================================
@@ -7,16 +8,26 @@ echo        Vixz Desktop - Update, Build and Launch
 echo ========================================================
 echo.
 
-set "REPO_DIR=e:\Documents\GitHub\Youtube"
+set "REPO_DIR=%~dp0"
+if "%REPO_DIR:~-1%"=="\" set "REPO_DIR=%REPO_DIR:~0,-1%"
 cd /d "%REPO_DIR%"
 
-REM 1. Terminate any running Vixz and WebView2 processes
-echo [*] Stopping any running Vixz instances...
-taskkill /f /t /im VixzDesktop.exe >nul 2>&1
-taskkill /f /t /im msedgewebview2.exe >nul 2>&1
-timeout /t 1 /nobreak >nul 2>&1
+REM 1. Terminate any running VixzDesktop / sync processes and kill open ports (8088, 31415)
+echo [*] Freeing open ports (8088, 31415) and stopping running instances...
 
-REM 2. Pull latest from GitHub if needed
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& { param([int[]]$ports) foreach ($p in $ports) { Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue | ForEach-Object { try { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } catch {} } } }" -ports 8088,31415 >nul 2>&1
+
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr /r /c:":8088 " /c:":31415 "') do (
+    taskkill /f /pid %%a >nul 2>&1
+)
+
+taskkill /f /t /im VixzDesktop.exe >nul 2>&1
+powershell -NoProfile -Command "Get-Process -Name VixzDesktop -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-CimInstance Win32_Process -Filter \"Name = 'msedgewebview2.exe'\" | Where-Object { $_.CommandLine -like '*VixzDesktop*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*sync_server.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+timeout /t 1 /nobreak >nul 2>&1
+echo [OK] Ports and existing instances cleared.
+echo.
+
+REM 2. Pull latest from GitHub
 echo [*] Checking for updates from GitHub...
 git pull origin main
 if errorlevel 1 (

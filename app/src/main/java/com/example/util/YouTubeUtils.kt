@@ -394,70 +394,95 @@ object YouTubeUtils {
     }
 
     /**
-     * Converts a relative time string like "3 months ago", "Streamed 2 days ago", "Premiered 1 hour ago"
-     * into a compact badge label (e.g. "3M", "2D", "1Y", "5H", "30S", "1W").
-     * Defaults to "Latest" if time is missing, recent, or unparsed.
+     * Converts a relative time string like "3 months ago", "Streamed 2 days ago", "Premiered 1 hour ago", "9h ago", "5m ago"
+     * into a compact badge label (e.g. "3MO", "2D", "1Y", "5H", "30S", "1W", "LIVE", "NOW").
+     * NEVER returns "Latest". Returns defaultIfMissing (empty string by default) if unparsed.
      */
-    fun formatCompactTime(relativeTime: String, defaultIfMissing: String = "Latest"): String {
-        if (relativeTime.isBlank()) return defaultIfMissing
-        val lower = relativeTime.lowercase().trim()
+    fun formatCompactTime(relativeTime: String, defaultIfMissing: String = ""): String {
+        if (relativeTime.isBlank() || relativeTime.equals("Latest", ignoreCase = true)) return defaultIfMissing
+        // Normalize Unicode non-breaking spaces and HTML entities
+        val lower = relativeTime.lowercase()
+            .replace('\u00A0', ' ')
+            .replace('\u202F', ' ')
+            .replace("&nbsp;", " ")
+            .trim()
 
-        val match = Regex("""(\d+)\s*(second|sec|minute|min|hour|hr|day|d|week|wk|month|mo|year|yr)s?\s*(?:ago)?""").find(lower)
+        if (lower.contains("live") && !lower.contains("ago") && !lower.contains("streamed")) {
+            return "LIVE"
+        }
+        if (lower.contains("just now") || lower.contains("moments ago")) {
+            return "NOW"
+        }
+        if (lower.contains("yesterday")) {
+            return "1D"
+        }
+        if (lower.contains("today")) {
+            return "TODAY"
+        }
+
+        val match = Regex("""(\d+)\s*(seconds?|sec|s|minutes?|mins?|min|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|wk|w|months?|mos?|mo|years?|yrs?|yr|y)\b""").find(lower)
         if (match != null) {
             val num = match.groupValues[1]
             val unit = match.groupValues[2]
             val suffix = when {
-                unit.startsWith("s") -> "S"
-                unit.startsWith("min") || unit == "m" -> "MIN"
-                unit.startsWith("h") -> "H"
-                unit.startsWith("d") -> "D"
-                unit.startsWith("w") -> "W"
-                unit.startsWith("mo") || unit == "month" -> "M"
-                unit.startsWith("y") -> "Y"
+                unit == "s" || unit.startsWith("sec") -> "S"
+                unit == "m" || unit.startsWith("min") -> "M"
+                unit == "h" || unit.startsWith("hr") || unit.startsWith("hour") -> "H"
+                unit == "d" || unit.startsWith("day") -> "D"
+                unit == "w" || unit.startsWith("wk") || unit.startsWith("week") -> "W"
+                unit == "mo" || unit.startsWith("month") -> "MO"
+                unit == "y" || unit.startsWith("yr") || unit.startsWith("year") -> "Y"
                 else -> ""
             }
             return "$num$suffix"
         }
 
-        if (lower.contains("just now") || lower.contains("moments ago") || lower.contains("live now") || (lower.contains("live") && !lower.contains("ago"))) return "NOW"
-        if (lower.contains("recent") || lower.contains("risent") || lower.contains("new") || lower.contains("today")) return "Latest"
-
         return defaultIfMissing
     }
 
     /**
-     * Parses a relative publication string (e.g., "2 hours ago", "5 days ago", "1 year ago")
+     * Parses a relative publication string (e.g., "2 hours ago", "5 days ago", "1 year ago", "9h ago", "1 second ago")
      * into estimated elapsed seconds, enabling precise time-based sorting (Newest vs Oldest).
      */
     fun parsePublishedTimeToSeconds(publishedText: String): Long {
-        if (publishedText.isBlank()) return 3L * 86400L // Default to ~3 days (recent) instead of infinity
-        val lower = publishedText.lowercase().trim()
+        if (publishedText.isBlank() || publishedText.equals("Latest", ignoreCase = true)) {
+            return 2L * 86400L // Default to 2 days old (so unparsed videos do not jump ahead of fresh uploads)
+        }
+        // Normalize Unicode non-breaking spaces and HTML entities
+        val normalized = publishedText.lowercase()
+            .replace('\u00A0', ' ')
+            .replace('\u202F', ' ')
+            .replace("&nbsp;", " ")
+            .trim()
 
-        if (lower.contains("live now") || lower.contains("just now") || lower.contains("moments ago") || 
-            (lower.contains("live") && !lower.contains("ago")) || lower.contains("recent") || 
-            lower.contains("risent") || lower.contains("latest") || lower.contains("today")) {
+        if (normalized.contains("live now") || normalized.contains("just now") || normalized.contains("moments ago") || 
+            (normalized.contains("live") && !normalized.contains("ago") && !normalized.contains("streamed")) ||
+            normalized.contains("premiering") || normalized.contains("premieres")) {
             return 0L
         }
-        if (lower.contains("yesterday")) {
-            return 86400L
+        if (normalized.contains("today")) {
+            return 43200L // ~12 hours
+        }
+        if (normalized.contains("yesterday")) {
+            return 86400L // 24 hours
         }
 
-        val match = Regex("""(\d+)\s*(second|sec|minute|min|hour|hr|day|d|week|wk|month|mo|year|yr)s?\s*(?:ago)?""").find(lower)
+        val match = Regex("""(\d+)\s*(seconds?|sec|s|minutes?|mins?|min|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|wk|w|months?|mos?|mo|years?|yrs?|yr|y)\b""").find(normalized)
         if (match != null) {
             val num = match.groupValues[1].toLongOrNull() ?: 1L
             val unit = match.groupValues[2]
             return when {
-                unit.startsWith("s") -> num
-                unit.startsWith("min") || unit == "m" -> num * 60
-                unit.startsWith("h") -> num * 3600
-                unit.startsWith("d") -> num * 86400
-                unit.startsWith("w") -> num * 604800
-                unit.startsWith("mo") || unit == "month" -> num * 2592000
-                unit.startsWith("y") -> num * 31536000
-                else -> 3L * 86400L
+                unit == "s" || unit.startsWith("sec") -> num
+                unit == "m" || unit.startsWith("min") -> num * 60L
+                unit == "h" || unit.startsWith("hr") || unit.startsWith("hour") -> num * 3600L
+                unit == "d" || unit.startsWith("day") -> num * 86400L
+                unit == "w" || unit.startsWith("wk") || unit.startsWith("week") -> num * 604800L
+                unit == "mo" || unit.startsWith("month") -> num * 2592000L
+                unit == "y" || unit.startsWith("yr") || unit.startsWith("year") -> num * 31536000L
+                else -> 2L * 86400L
             }
         }
 
-        return 3L * 86400L
+        return 2L * 86400L
     }
 }

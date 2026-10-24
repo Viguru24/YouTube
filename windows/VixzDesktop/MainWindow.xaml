@@ -15,6 +15,10 @@
         TextOptions.TextRenderingMode="ClearType"
         PreviewKeyDown="Window_PreviewKeyDown">
 
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="0"
                       ResizeBorderThickness="6"
@@ -225,6 +229,14 @@
                     </Border>
                     <!-- Window Action Controls -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- 📥 Download Queue Manager -->
+                        <Button x:Name="DownloadQueueBtn"
+                                Content="📥 Queue"
+                                Style="{StaticResource GlassButton}"
+                                Padding="10,4" Margin="0,0,8,0"
+                                ToolTip="Download Queue &amp; Background Multi-Task Manager"
+                                Click="DownloadQueueBtn_Click"/>
+
                         <!-- ☁️ VPS Cross-Device Sync -->
                         <Button x:Name="SyncStatusBtn"
                                 Content="☁️ Sync"
@@ -322,6 +334,7 @@
                             <Button x:Name="NavHomeBtn" Content="🏠   Home Feed" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavHome_Click"/>
                             <Button x:Name="NavSubscribedBtn" Content="🔔   Subscriptions" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavSubscriptions_Click"/>
                             <Button x:Name="NavTrendingBtn" Content="🔥   Trending" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavTrending_Click"/>
+                            <Button x:Name="NavSeriesBtn" Content="📺   TV Series &amp; Shows" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontWeight="SemiBold" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavSeries_Click"/>
                             <Button x:Name="NavFavBtn" Content="⭐   Favorites" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavFavorites_Click"/>
                             <Button x:Name="NavWatchLaterBtn" Content="🕒   Watch Later" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavWatchLater_Click"/>
                             <Button x:Name="NavHistoryBtn" Content="📜   History" Style="{StaticResource GlassButton}" Margin="0,0,0,5" HorizontalContentAlignment="Left" Click="NavHistory_Click"/>
@@ -394,6 +407,7 @@
                     <Grid x:Name="FeedView" Visibility="Visible" Panel.ZIndex="1">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
@@ -456,9 +470,44 @@
                             </Border>
                         </Grid>
 
-                        <!-- Video Grid Scroll Viewer -->
+                        <!-- Active Channel TV Series Banner Bar -->
+                        <Border x:Name="SeriesBannerBar" Grid.Row="1" Background="#141422" BorderBrush="{StaticResource AccentGold}" BorderThickness="1.5" CornerRadius="14" Padding="16,12" Margin="24,0,24,12" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Top Row: Series Title, Channel Badge, Video Count & Action Buttons -->
+                                <Grid Grid.Row="0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="📺" FontSize="18" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock x:Name="SeriesBannerTitle" Text="Series: Show Title" Foreground="White" FontSize="15" FontWeight="Bold" VerticalAlignment="Center"/>
+                                                <Border Background="#25FFFFFF" BorderBrush="{StaticResource AccentGold}" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock x:Name="SeriesBannerChannel" Text="@Channel" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="SemiBold"/>
+                                                </Border>
+                                                <TextBlock x:Name="SeriesBannerCount" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11.5" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button x:Name="SeriesBannerBackToVideoBtn" Content="◀ Resume Video" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="SemiBold" Padding="10,4" Margin="0,0,8,0" Visibility="Collapsed" Click="SeriesBannerBackToVideo_Click"/>
+                                        <Button x:Name="SeriesBannerSearchBtn" Content="🔍 Refine Series" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,8,0" ToolTip="Edit or search specific series/season" Click="SeriesBannerRefine_Click"/>
+                                        <Button x:Name="SeriesBannerAllChannelBtn" Content="👤 All Channel Videos" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,4" Margin="0,0,8,0" ToolTip="View all video uploads from this channel" Click="SeriesBannerAllChannel_Click"/>
+                                        <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" FontSize="11" ToolTip="Close Series Filter" Click="SeriesBannerClose_Click"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Bottom Row: Interactive Season & Category Quick Filter Pills -->
+                                <WrapPanel x:Name="SeriesBannerPillsPanel" Grid.Row="1" Margin="0,10,0,0" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
                         <!-- Video Grid Scroll Viewer with Auto Infinite Scroll -->
-                        <ScrollViewer x:Name="FeedScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="16,0,8,12" ScrollChanged="FeedScrollViewer_ScrollChanged">
+                        <ScrollViewer x:Name="FeedScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="16,0,8,12" ScrollChanged="FeedScrollViewer_ScrollChanged">
                             <StackPanel>
                                 <ItemsControl x:Name="VideoItemsControl">
                                     <ItemsControl.ItemsPanel>
@@ -472,6 +521,7 @@
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#1C1C26" Foreground="White" BorderBrush="{StaticResource BorderSubtle}">
                                                         <MenuItem Header="▶ Play Video" Click="ContextMenuPlay_Click"/>
+                                                        <MenuItem Header="📺 Find Series Videos (From Channel)" Click="ContextMenuSeries_Click"/>
                                                         <MenuItem Header="👤 View Channel Videos" Click="ContextMenuChannel_Click"/>
                                                         <MenuItem Header="👍 Like Video (+Algorithm Boost)" Click="ContextMenuLike_Click"/>
                                                         <MenuItem Header="👎 Dislike &amp; Remove Video" Click="ContextMenuDislike_Click"/>
@@ -532,8 +582,15 @@
                                                         <!-- Video Title -->
                                                         <TextBlock Grid.Row="0" Text="{Binding Title}" Foreground="White" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="36"/>
 
-                                                        <!-- Channel Title -->
-                                                        <TextBlock Grid.Row="1" Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="Click to view creator videos" Margin="0,3,0,0" MouseDown="ChannelName_MouseDown"/>
+                                                        <!-- Channel Title & Quick Series Button -->
+                                                        <Grid Grid.Row="1" Margin="0,3,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding ChannelTitle}" Style="{StaticResource LinkTextBlock}" FontSize="11" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="Click to view creator videos" VerticalAlignment="Center" MouseDown="ChannelName_MouseDown"/>
+                                                            <Button Grid.Column="1" Content="📺 Series" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="9.5" FontWeight="Bold" Padding="5,1" Margin="4,0,0,0" VerticalAlignment="Center" ToolTip="Find all TV series &amp; show episodes from this channel" Tag="{Binding}" Click="CardSeries_Click"/>
+                                                        </Grid>
 
                                                         <!-- Date & Views Metadata Subtitle -->
                                                         <TextBlock Grid.Row="2" Text="{Binding FormattedDateAndViews}" Foreground="{StaticResource TextSecondary}" FontSize="10.5" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
@@ -696,102 +753,270 @@
                                 </StackPanel>
                             </Border>
 
+                            <!-- Binge Mode / Next Episode Auto-Advancer Overlay (Netflix-Style) -->
+                            <Border x:Name="NextEpisodeCard"
+                                    Background="#E614141E"
+                                    BorderBrush="{StaticResource AccentGold}"
+                                    BorderThickness="1.5"
+                                    CornerRadius="16"
+                                    Padding="16"
+                                    Width="360"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,0,24,24"
+                                    Visibility="Collapsed"
+                                    Panel.ZIndex="12">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="25" ShadowDepth="0" Opacity="0.9" Color="Black"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="⚡ Next Episode in " Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock x:Name="NextEpisodeCountdownText" Text="5s" Foreground="White" FontSize="12" FontWeight="ExtraBold"/>
+                                        </StackPanel>
+                                        <Button Content="✕" Style="{StaticResource IconActionButton}" Width="20" Height="20" HorizontalAlignment="Right" Click="DismissNextEpisode_Click"/>
+                                    </Grid>
+                                    <Grid Grid.Row="1" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="90"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" CornerRadius="8" ClipToBounds="True" Height="52" Background="#222">
+                                            <Image x:Name="NextEpisodeThumb" Stretch="UniformToFill"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="NextEpisodeSeriesTag" Text="S01E02 • Next Episode" Foreground="{StaticResource AccentGold}" FontSize="10.5" FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="NextEpisodeTitle" Text="Episode Title" Foreground="White" FontSize="12" FontWeight="Bold" TextTrimming="CharacterEllipsis" MaxHeight="34"/>
+                                            <TextBlock x:Name="NextEpisodeChannel" Text="Channel Name" Foreground="{StaticResource TextSecondary}" FontSize="10"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid Grid.Row="2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0" Content="▶ Play Now" Style="{StaticResource RedAccentButton}" Padding="12,6" FontSize="12" FontWeight="Bold" Margin="0,0,8,0" Click="PlayNextEpisodeNow_Click"/>
+                                        <Button Grid.Column="1" Content="Dismiss" Style="{StaticResource GlassButton}" Padding="12,6" FontSize="11" Click="DismissNextEpisode_Click"/>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+
+                            <!-- Interactive Synchronized Live Transcript Drawer (Slide-in) -->
+                            <Border x:Name="TranscriptDrawer"
+                                    Background="#F2101018"
+                                    BorderBrush="{StaticResource BorderHover}"
+                                    BorderThickness="1.5,0,0,0"
+                                    Width="340"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Stretch"
+                                    Visibility="Collapsed"
+                                    Panel.ZIndex="15">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="25" ShadowDepth="-5" Opacity="0.8" Color="Black"/>
+                                </Border.Effect>
+                                <Grid Margin="12">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <!-- Header -->
+                                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="📝 " FontSize="14"/>
+                                            <TextBlock Text="Live Transcript" Foreground="White" FontSize="13.5" FontWeight="Bold"/>
+                                            <TextBlock x:Name="TranscriptCountText" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <Button Content="✕" Style="{StaticResource IconActionButton}" Width="22" Height="22" HorizontalAlignment="Right" Click="CloseTranscriptDrawer_Click"/>
+                                    </Grid>
+                                    <!-- Search Box -->
+                                    <Border Grid.Row="1" Background="#20202E" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="8,4" Margin="0,0,0,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="🔍" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox Grid.Column="1" x:Name="TranscriptSearchInput" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="11.5" VerticalAlignment="Center" TextChanged="TranscriptSearchInput_TextChanged"/>
+                                            <Button Grid.Column="2" Content="✕" Style="{StaticResource IconActionButton}" Width="16" Height="16" FontSize="9" Click="ClearTranscriptSearch_Click"/>
+                                        </Grid>
+                                    </Border>
+                                    <!-- Transcript Items List -->
+                                    <ScrollViewer Grid.Row="2" x:Name="TranscriptScrollViewer" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl x:Name="TranscriptItemsControl">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Background="#161622" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="8" Padding="9,7" Margin="0,0,0,6" Cursor="Hand" MouseDown="TranscriptCue_MouseDown">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <Border Grid.Column="0" Background="#28283C" BorderBrush="{StaticResource AccentGold}" BorderThickness="1" CornerRadius="4" Padding="5,2" VerticalAlignment="Top" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding FormattedTime}" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="Bold"/>
+                                                            </Border>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Text}" Foreground="White" FontSize="11.5" TextWrapping="Wrap" LineHeight="16"/>
+                                                            <Button Grid.Column="2" Content="📋" Style="{StaticResource IconActionButton}" Width="20" Height="20" FontSize="10" ToolTip="Copy Quote" Click="CopyTranscriptCue_Click" Margin="4,0,0,0" VerticalAlignment="Top"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                    <TextBlock Grid.Row="3" x:Name="TranscriptStatusText" Text="" Foreground="{StaticResource TextSecondary}" FontSize="10.5" Margin="0,6,0,0" TextAlignment="Center"/>
+                                </Grid>
+                            </Border>
+
                         </Grid>
 
                         <!-- Solid opaque backing for bottom bar row so fading controls never reveal background -->
                         <Border Grid.Row="2" Background="#0E0E14" Panel.ZIndex="0"/>
 
                         <!-- Below Video Details & Desktop Utility Deck (Auto-fades after inactivity) -->
-                        <Border x:Name="PlayerBottomBar" Grid.Row="2" Panel.ZIndex="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,12"
+                        <Border x:Name="PlayerBottomBar" Grid.Row="2" Panel.ZIndex="1" Background="{StaticResource BgDarkSecondary}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="18,10"
                                 MouseEnter="PlayerBottomBar_MouseEnter"
                                 MouseLeave="PlayerBottomBar_MouseLeave">
                             <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <!-- Row 0: Visual Scrubber Bar with SponsorBlock & Chapters -->
+                                    <RowDefinition Height="Auto"/>
+                                    <!-- Row 1: Player Information & Utility Buttons -->
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-                                <!-- Left: Video Title, Channel & Back Button -->
-                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Content="◀ Back" Style="{StaticResource GlassButton}" Padding="10,6" Margin="0,0,12,0" Click="BackToFeed_Click"/>
+                                <!-- Row 0: Timeline Scrubber with Visual Segment Overlays -->
+                                <Grid Grid.Row="0" Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="PlayerCurrentTimeText" Text="0:00" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
 
-                                    <!-- Quick Seek Controls -->
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
-                                        <Button Content="-10s" Style="{StaticResource GlassButton}" ToolTip="Seek Back 10s (J)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekMinus10_Click"/>
-                                        <Button Content="-5s" Style="{StaticResource GlassButton}" ToolTip="Seek Back 5s (Left)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekMinus5_Click"/>
-                                        <Button Content="+5s" Style="{StaticResource GlassButton}" ToolTip="Seek Forward 5s (Right)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekPlus5_Click"/>
-                                        <Button Content="+10s" Style="{StaticResource GlassButton}" ToolTip="Seek Forward 10s (L)" FontSize="11" Padding="6,4" Margin="0,0,8,0" Click="SeekPlus10_Click"/>
-                                    </StackPanel>
+                                    <!-- Scrubber Track & Segment Canvas -->
+                                    <Grid Grid.Column="1" Height="18" VerticalAlignment="Center" Cursor="Hand" SizeChanged="ScrubberGrid_SizeChanged">
+                                        <!-- Background Bar -->
+                                        <Border Height="4" Background="#33FFFFFF" CornerRadius="2" VerticalAlignment="Center"/>
+                                        <!-- SponsorBlock Visual Segments Canvas -->
+                                        <Canvas x:Name="SponsorBlockCanvas" Height="4" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                        <!-- Video Chapter Ticks Canvas -->
+                                        <Canvas x:Name="ChapterTicksCanvas" Height="6" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                        <!-- Progress Bar -->
+                                        <ProgressBar x:Name="PlayerProgressBar" Height="4" Minimum="0" Maximum="100" Value="0" Foreground="#E62117" Background="Transparent" BorderThickness="0" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                        <!-- Interactive Slider overlay for dragging and scrubbing -->
+                                        <Slider x:Name="PlayerScrubberSlider" Minimum="0" Maximum="100" Value="0" VerticalAlignment="Center"
+                                                Opacity="0.01" Cursor="Hand"
+                                                PreviewMouseDown="PlayerScrubber_PreviewMouseDown"
+                                                PreviewMouseUp="PlayerScrubber_PreviewMouseUp"
+                                                ValueChanged="PlayerScrubber_ValueChanged"/>
+                                    </Grid>
 
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock x:Name="CurrentVideoTitle" Text="Video Title" Foreground="White" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" MaxWidth="380"/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,2,0,0" VerticalAlignment="Center">
-                                            <TextBlock x:Name="CurrentVideoChannel" Text="Channel Name" Style="{StaticResource LinkTextBlock}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip="Click to view creator videos" MouseDown="CurrentVideoChannel_MouseDown"/>
-                                            <Button x:Name="SubscribeToggleBtn" Content="+ Subscribe" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,2" Margin="8,0,0,0" ToolTip="Toggle Subscription for this Creator" Click="SubscribeToggleBtn_Click"/>
-                                            <TextBlock x:Name="CurrentVideoDate" Text="" Foreground="{StaticResource AccentGold}" FontSize="11.5" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                            <TextBlock x:Name="CurrentVideoViews" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="PlayerDurationText" Text="0:00" Foreground="{StaticResource TextSecondary}" FontSize="11" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                </Grid>
+
+                                <!-- Row 1: Left video info & Right utility buttons -->
+                                <Grid Grid.Row="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Left: Video Title, Channel & Back Button -->
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button Content="◀ Back" Style="{StaticResource GlassButton}" Padding="10,6" Margin="0,0,8,0" Click="BackToFeed_Click"/>
+                                        <Button x:Name="PlayerSeriesBtn" Content="📺 Find Series Episodes" Style="{StaticResource RedAccentButton}" FontSize="11" FontWeight="Bold" Padding="10,6" Margin="0,0,14,0" ToolTip="Find all TV series &amp; show episodes from this channel" Click="SeriesHubBtn_Click"/>
+
+                                        <!-- Quick Seek Controls -->
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                                            <Button Content="-10s" Style="{StaticResource GlassButton}" ToolTip="Seek Back 10s (J)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekMinus10_Click"/>
+                                            <Button Content="-5s" Style="{StaticResource GlassButton}" ToolTip="Seek Back 5s (Left)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekMinus5_Click"/>
+                                            <Button Content="+5s" Style="{StaticResource GlassButton}" ToolTip="Seek Forward 5s (Right)" FontSize="11" Padding="6,4" Margin="0,0,3,0" Click="SeekPlus5_Click"/>
+                                            <Button Content="+10s" Style="{StaticResource GlassButton}" ToolTip="Seek Forward 10s (L)" FontSize="11" Padding="6,4" Margin="0,0,8,0" Click="SeekPlus10_Click"/>
+                                        </StackPanel>
+
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="CurrentVideoTitle" Text="Video Title" Foreground="White" FontSize="14" FontWeight="Bold" TextTrimming="CharacterEllipsis" MaxWidth="380"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="CurrentVideoChannel" Text="Channel Name" Style="{StaticResource LinkTextBlock}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" ToolTip="Click to view creator videos" MouseDown="CurrentVideoChannel_MouseDown"/>
+                                                <Button x:Name="SubscribeToggleBtn" Content="+ Subscribe" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,2" Margin="8,0,0,0" ToolTip="Toggle Subscription for this Creator" Click="SubscribeToggleBtn_Click"/>
+                                                <Button x:Name="SeriesHubBtn" Content="📺 Find Series Videos" Style="{StaticResource GlassButton}" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="SemiBold" Padding="7,2" Margin="8,0,0,0" ToolTip="Find TV series episodes &amp; related videos from this channel" Click="SeriesHubBtn_Click"/>
+                                                <TextBlock x:Name="CurrentVideoDate" Text="" Foreground="{StaticResource AccentGold}" FontSize="11.5" FontWeight="Bold" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="CurrentVideoViews" Text="" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
 
-                                <!-- Right: Desktop Action Utility Buttons & Status -->
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <!-- Dynamic Toast / Feedback Pill -->
-                                    <Border x:Name="BottomToastPill" Background="#282838" BorderBrush="{StaticResource AccentGold}" BorderThickness="1" CornerRadius="12" Padding="10,4" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed">
-                                        <TextBlock x:Name="BottomToastText" Text="Screenshot saved 📸" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="SemiBold"/>
-                                    </Border>
+                                    <!-- Right: Desktop Action Utility Buttons & Status -->
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <!-- Dynamic Toast / Feedback Pill -->
+                                        <Border x:Name="BottomToastPill" Background="#282838" BorderBrush="{StaticResource AccentGold}" BorderThickness="1" CornerRadius="12" Padding="10,4" Margin="0,0,10,0" VerticalAlignment="Center" Visibility="Collapsed">
+                                            <TextBlock x:Name="BottomToastText" Text="Screenshot saved 📸" Foreground="{StaticResource AccentGold}" FontSize="12" FontWeight="SemiBold"/>
+                                        </Border>
 
-                                    <!-- 1. 📸 Screenshot Button -->
-                                    <Button x:Name="ScreenshotBtn" Content="📸" Style="{StaticResource IconActionButton}" ToolTip="Take Screenshot (S)" Margin="0,0,5,0" Click="ScreenshotBtn_Click"/>
+                                        <!-- 1. 📝 Transcript Button -->
+                                        <Button x:Name="TranscriptBtn" Content="📝" Style="{StaticResource IconActionButton}" ToolTip="Interactive Live Transcript &amp; In-Video Search (T)" Margin="0,0,5,0" Click="TranscriptBtn_Click"/>
 
-                                    <!-- 2. 📥 Download Video / Audio Button -->
-                                    <Button x:Name="DownloadVideoBtn" Content="📥" Style="{StaticResource IconActionButton}" ToolTip="Download Video / Audio (D)" Margin="0,0,5,0" Click="DownloadVideoBtn_Click"/>
+                                        <!-- 2. 📸 Screenshot Button -->
+                                        <Button x:Name="ScreenshotBtn" Content="📸" Style="{StaticResource IconActionButton}" ToolTip="Take Screenshot (S)" Margin="0,0,5,0" Click="ScreenshotBtn_Click"/>
 
-                                    <!-- 3. 💡 Dynamic Ambient Lighting Glow Toggle -->
-                                    <Button x:Name="AmbientGlowBtn" Content="💡" Style="{StaticResource IconActionButton}" ToolTip="Toggle Dynamic Ambient Glow" Margin="0,0,5,0" Click="AmbientGlowBtn_Click"/>
+                                        <!-- 3. 📥 Download Video / Audio Button -->
+                                        <Button x:Name="DownloadVideoBtn" Content="📥" Style="{StaticResource IconActionButton}" ToolTip="Download Video / Audio (D)" Margin="0,0,5,0" Click="DownloadVideoBtn_Click"/>
 
-                                    <!-- 4. 📁 Folder Switcher -->
-                                    <Button Content="📁" Style="{StaticResource IconActionButton}" ToolTip="Change Screenshot Folder" Margin="0,0,5,0" Click="ChangeFolder_Click"/>
+                                        <!-- 4. 💡 Dynamic Ambient Lighting Glow Toggle -->
+                                        <Button x:Name="AmbientGlowBtn" Content="💡" Style="{StaticResource IconActionButton}" ToolTip="Toggle Dynamic Ambient Glow" Margin="0,0,5,0" Click="AmbientGlowBtn_Click"/>
 
-                                    <!-- 5. ▶️/⏸️ Autoplay Toggle Switch -->
-                                    <Button x:Name="AutoplayBtn" Content="▶️" Style="{StaticResource IconActionButton}" ToolTip="Toggle Autoplay Next Video" Margin="0,0,5,0" Click="AutoplayBtn_Click"/>
+                                        <!-- 5. 📁 Folder Switcher -->
+                                        <Button Content="📁" Style="{StaticResource IconActionButton}" ToolTip="Change Screenshot Folder" Margin="0,0,5,0" Click="ChangeFolder_Click"/>
 
-                                    <!-- 6. 🌙 Sleep Timer -->
-                                    <Button x:Name="SleepTimerBtn" Content="🌙" Style="{StaticResource IconActionButton}" ToolTip="Sleep Timer" Margin="0,0,5,0" Click="SleepTimerBtn_Click"/>
+                                        <!-- 6. ▶️/⏸️ Autoplay Toggle Switch -->
+                                        <Button x:Name="AutoplayBtn" Content="▶️" Style="{StaticResource IconActionButton}" ToolTip="Toggle Autoplay Next Video" Margin="0,0,5,0" Click="AutoplayBtn_Click"/>
 
-                                    <!-- 7. 👍 Thumbs Up (Like / Boost) -->
-                                    <Button x:Name="ThumbsUpBtn" Content="👍" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Up / Like (+Algorithm Boost)" Margin="0,0,5,0" Click="ThumbsUpBtn_Click"/>
+                                        <!-- 7. 🌙 Sleep Timer -->
+                                        <Button x:Name="SleepTimerBtn" Content="🌙" Style="{StaticResource IconActionButton}" ToolTip="Sleep Timer" Margin="0,0,5,0" Click="SleepTimerBtn_Click"/>
 
-                                    <!-- 8. 👎 Thumbs Down (Dislike / Remove) -->
-                                    <Button x:Name="ThumbsDownBtn" Content="👎" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Down / Dislike &amp; Remove (-Negative Algorithm Score)" Margin="0,0,5,0" Click="ThumbsDownBtn_Click"/>
+                                        <!-- 8. 👍 Thumbs Up (Like / Boost) -->
+                                        <Button x:Name="ThumbsUpBtn" Content="👍" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Up / Like (+Algorithm Boost)" Margin="0,0,5,0" Click="ThumbsUpBtn_Click"/>
 
-                                    <!-- 9. ⭐ Favorite -->
-                                    <Button x:Name="FavBtn" Content="⭐" Style="{StaticResource IconActionButton}" ToolTip="Favorite" Margin="0,0,5,0" Click="FavBtn_Click"/>
+                                        <!-- 9. 👎 Thumbs Down (Dislike / Remove) -->
+                                        <Button x:Name="ThumbsDownBtn" Content="👎" Style="{StaticResource IconActionButton}" ToolTip="Thumbs Down / Dislike &amp; Remove (-Negative Algorithm Score)" Margin="0,0,5,0" Click="ThumbsDownBtn_Click"/>
 
-                                    <!-- 10. 🕒 Watch Later -->
-                                    <Button x:Name="WatchLaterBtn" Content="🕒" Style="{StaticResource IconActionButton}" ToolTip="Watch Later" Margin="0,0,5,0" Click="WatchLaterBtn_Click"/>
+                                        <!-- 10. ⭐ Favorite -->
+                                        <Button x:Name="FavBtn" Content="⭐" Style="{StaticResource IconActionButton}" ToolTip="Favorite" Margin="0,0,5,0" Click="FavBtn_Click"/>
 
-                                    <!-- 11. ⏭️ Next Video -->
-                                    <Button Content="⏭️" Style="{StaticResource IconActionButton}" ToolTip="Next Video (N)" Margin="0,0,5,0" Click="NextVideoBtn_Click"/>
+                                        <!-- 11. 🕒 Watch Later -->
+                                        <Button x:Name="WatchLaterBtn" Content="🕒" Style="{StaticResource IconActionButton}" ToolTip="Watch Later" Margin="0,0,5,0" Click="WatchLaterBtn_Click"/>
 
-                                    <!-- 12. 📺 Quality Selector (1080p HD Default) -->
-                                    <Button x:Name="QualityBtn" Content="HD 1080p" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="Bold" Padding="8,4" Margin="0,0,5,0" ToolTip="Select Video Quality (1080p / 720p / Auto)" Click="QualityBtn_Click"/>
+                                        <!-- 12. ⏭️ Next Video -->
+                                        <Button Content="⏭️" Style="{StaticResource IconActionButton}" ToolTip="Next Video (N)" Margin="0,0,5,0" Click="NextVideoBtn_Click"/>
 
-                                    <!-- 13. ✨ AI Summarize & Copilot -->
-                                    <Button x:Name="PlayerAiBtn" Content="✨" Style="{StaticResource IconActionButton}" ToolTip="AI Video Summarizer &amp; Assistant" Margin="0,0,5,0" Click="AiCopilotBtn_Click"/>
+                                        <!-- 13. 📺 Quality Selector (1080p HD Default) -->
+                                        <Button x:Name="QualityBtn" Content="HD 1080p" Style="{StaticResource GlassButton}" FontSize="11" FontWeight="Bold" Padding="8,4" Margin="0,0,5,0" ToolTip="Select Video Quality (1080p / 720p / Auto)" Click="QualityBtn_Click"/>
 
-                                    <!-- 14. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
-                                    <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
+                                        <!-- 14. ✨ AI Summarize & Copilot -->
+                                        <Button x:Name="PlayerAiBtn" Content="✨" Style="{StaticResource IconActionButton}" ToolTip="AI Video Summarizer &amp; Assistant" Margin="0,0,5,0" Click="AiCopilotBtn_Click"/>
 
-                                    <!-- 15. ⧉ POP-OUT FLOATING PLAYER -->
-                                    <Button x:Name="PopOutBtn" Content="⧉" Style="{StaticResource IconActionButton}" ToolTip="Pop-out Floating Mini Player (Always on Top)" Margin="0,0,5,0" Click="PopOutPlayer_Click"/>
+                                        <!-- 15. ↗️ Share Video (WhatsApp, Copy Link, Socials) -->
+                                        <Button x:Name="ShareBtn" Content="↗️" Style="{StaticResource IconActionButton}" ToolTip="Share Video (WhatsApp, Copy Link, Socials)" Margin="0,0,5,0" Click="ShareBtn_Click"/>
 
-                                    <!-- 16. 🛠️ F12 DevTools -->
-                                    <Button Content="🛠️" Style="{StaticResource IconActionButton}" ToolTip="Developer Tools (F12)" Margin="0,0,5,0" Click="DevToolsBtn_Click"/>
+                                        <!-- 16. ⧉ POP-OUT FLOATING PLAYER -->
+                                        <Button x:Name="PopOutBtn" Content="⧉" Style="{StaticResource IconActionButton}" ToolTip="Pop-out Floating Mini Player (Always on Top)" Margin="0,0,5,0" Click="PopOutPlayer_Click"/>
 
-                                    <!-- 17. ⛶ Fullscreen -->
-                                    <Button Content="⛶" Style="{StaticResource IconActionButton}" ToolTip="Fullscreen (F)" Click="FullscreenBtn_Click"/>
-                                </StackPanel>
+                                        <!-- 17. 🛠️ F12 DevTools -->
+                                        <Button Content="🛠️" Style="{StaticResource IconActionButton}" ToolTip="Developer Tools (F12)" Margin="0,0,5,0" Click="DevToolsBtn_Click"/>
+
+                                        <!-- 18. ⛶ Fullscreen -->
+                                        <Button Content="⛶" Style="{StaticResource IconActionButton}" ToolTip="Fullscreen (F)" Click="FullscreenBtn_Click"/>
+                                    </StackPanel>
+                                </Grid>
                             </Grid>
                         </Border>
 
@@ -928,11 +1153,114 @@
                                     <Button Content="✕" Style="{StaticResource IconActionButton}" Width="24" Height="24" HorizontalAlignment="Right" VerticalAlignment="Top" Click="CloseAccountModal_Click"/>
                                 </Grid>
 
+                                <!-- Profiles & Multi-Account Switcher -->
+                                <Border Background="#161622" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,8">
+                                            <TextBlock Text="👥 Profiles &amp; Accounts" Foreground="{StaticResource AccentGold}" FontSize="11" FontWeight="Bold"/>
+                                            <Button Content="+ New Profile" Style="{StaticResource GlassButton}" FontSize="10" Padding="6,2" HorizontalAlignment="Right" Click="CreateNewProfile_Click"/>
+                                        </Grid>
+                                        <ScrollViewer MaxHeight="140" VerticalScrollBarVisibility="Auto">
+                                            <ItemsControl x:Name="ProfileItemsControl">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="#20202E" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="6" Padding="8,6" Margin="0,0,0,4" Cursor="Hand" MouseDown="ProfileItem_MouseDown">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <StackPanel Grid.Column="0">
+                                                                    <TextBlock Text="{Binding Name}" Foreground="White" FontSize="11.5" FontWeight="SemiBold"/>
+                                                                    <TextBlock Text="{Binding Email}" Foreground="{StaticResource TextSecondary}" FontSize="9.5"/>
+                                                                </StackPanel>
+                                                                <TextBlock Grid.Column="1" Text="✓ Active" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="Bold" VerticalAlignment="Center" Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+
                                 <!-- Sync Action Buttons -->
                                 <Button Content="🔐 Sign In / Switch Google Account" Style="{StaticResource RedAccentButton}" Margin="0,0,0,8" Padding="12,7" Click="OpenSignInWindow_Click"/>
                                 <Button Content="🔄 Sync Subscriptions &amp; Recommendations" Style="{StaticResource GlassButton}" Margin="0,0,0,8" Padding="12,7" Click="SyncAccountSubscriptions_Click"/>
                                 <Button Content="🚪 Sign Out" Style="{StaticResource GlassButton}" Padding="12,7" Click="SignOutAccount_Click"/>
                             </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- G2. DOWNLOAD QUEUE POPUP -->
+                    <Popup x:Name="DownloadQueuePopup" AllowsTransparency="True" StaysOpen="False" Placement="Bottom" PlacementTarget="{Binding ElementName=DownloadQueueBtn}">
+                        <Border Width="420" MaxHeight="500" Background="#1C1C26" BorderBrush="{StaticResource BorderHover}" BorderThickness="1.5" CornerRadius="16" Padding="16">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="25" ShadowDepth="0" Opacity="0.85" Color="Black"/>
+                            </Border.Effect>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <!-- Header -->
+                                <Grid Grid.Row="0" Margin="0,0,0,12">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="📥 Download Tasks &amp; Queue" Foreground="White" FontSize="14" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Content="Clear Done" Style="{StaticResource GlassButton}" FontSize="10.5" Padding="7,3" Margin="0,0,6,0" Click="ClearCompletedDownloads_Click"/>
+                                        <Button Content="✕" Style="{StaticResource IconActionButton}" Width="22" Height="22" Click="CloseDownloadQueuePopup_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                                <!-- Tasks List -->
+                                <ScrollViewer Grid.Row="1" MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="DownloadQueueItemsControl">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Background="#14141E" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="10" Padding="10" Margin="0,0,0,8">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto"/>
+                                                            <RowDefinition Height="Auto"/>
+                                                        </Grid.RowDefinitions>
+                                                        <Grid Grid.Row="0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0" Text="{Binding MediaTypeText}" Foreground="{StaticResource AccentGold}" FontSize="10" FontWeight="Bold" Margin="0,0,8,0"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Title}" Foreground="White" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                            <!-- Actions -->
+                                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,0,0">
+                                                                <Button Content="⏸" Style="{StaticResource IconActionButton}" Width="20" Height="20" FontSize="10" ToolTip="Pause" Visibility="{Binding CanPause, Converter={StaticResource BoolToVis}}" Click="PauseDownloadTask_Click"/>
+                                                                <Button Content="▶" Style="{StaticResource IconActionButton}" Width="20" Height="20" FontSize="10" ToolTip="Resume" Visibility="{Binding CanResume, Converter={StaticResource BoolToVis}}" Click="ResumeDownloadTask_Click"/>
+                                                                <Button Content="🔄" Style="{StaticResource IconActionButton}" Width="20" Height="20" FontSize="10" ToolTip="Retry" Visibility="{Binding CanRetry, Converter={StaticResource BoolToVis}}" Click="RetryDownloadTask_Click"/>
+                                                                <Button Content="✕" Style="{StaticResource IconActionButton}" Width="20" Height="20" FontSize="10" ToolTip="Cancel" Click="CancelDownloadTask_Click"/>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                        <!-- Progress & Status -->
+                                                        <Grid Grid.Row="1" Margin="0,6,0,0">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <ProgressBar Grid.Column="0" Height="4" Minimum="0" Maximum="1" Value="{Binding Progress}" Foreground="{StaticResource AccentGold}" Background="#33FFFFFF" BorderThickness="0" VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}" FontSize="10.5" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                                <!-- Footer -->
+                                <Border Grid.Row="2" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,8,0,0">
+                                    <Button Content="📂 Open Downloads Folder" Style="{StaticResource GlassButton}" Padding="10,6" FontSize="11.5" HorizontalAlignment="Stretch" Click="OpenDownloadsFolder_Click"/>
+                                </Border>
+                            </Grid>
                         </Border>
                     </Popup>
 
@@ -1140,6 +1468,64 @@
 
                                 <!-- Secondary Utility: Copy Embed Code -->
                                 <Button Content="‹/› Copy HTML Embed Code" Style="{StaticResource GlassButton}" FontSize="11" Padding="8,5" HorizontalAlignment="Stretch" Click="CopyEmbedCode_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- J. TV SERIES & CHANNEL SHOW EXPLORER POPUP (HWnd Layered, floats above WebView2) -->
+                    <Popup x:Name="SeriesHubPopup" AllowsTransparency="True" StaysOpen="False" Placement="Center" PlacementTarget="{Binding ElementName=PlayerView}">
+                        <Border Width="470" Background="#181826" BorderBrush="{StaticResource AccentGold}" BorderThickness="1.5" CornerRadius="18" Padding="22">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="30" ShadowDepth="0" Opacity="0.85" Color="Black"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <!-- Header -->
+                                <Grid Margin="0,0,0,14">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="📺" FontSize="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                        <StackPanel>
+                                            <TextBlock Text="TV Series &amp; Show Explorer" Foreground="White" FontSize="16" FontWeight="Bold"/>
+                                            <TextBlock x:Name="SeriesPopupChannelSubtext" Text="Scope: All YouTube" Foreground="{StaticResource AccentGold}" FontSize="11.5" FontWeight="SemiBold" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <Button Content="✕" Style="{StaticResource IconActionButton}" Width="26" Height="26" HorizontalAlignment="Right" Click="CloseSeriesPopup_Click"/>
+                                </Grid>
+
+                                <!-- Search Input for Series -->
+                                <TextBlock Text="SEARCH / SERIES TITLE:" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SeriesPopupInput" Background="#12121A" Foreground="White" BorderBrush="{StaticResource BorderSubtle}" CaretBrush="White" FontSize="13" Padding="10,7" KeyDown="SeriesPopupInput_KeyDown"/>
+                                    <Button Grid.Column="1" Content="🔍 Search" Style="{StaticResource RedAccentButton}" FontSize="11.5" Padding="14,7" Margin="8,0,0,0" Click="SeriesPopupSearchBtn_Click"/>
+                                </Grid>
+
+                                <!-- Optional Channel Input -->
+                                <TextBlock Text="CHANNEL / CREATOR (OPTIONAL — LEAVE BLANK FOR ALL YOUTUBE):" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                                <Grid Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="SeriesPopupChannelInput" Background="#12121A" Foreground="{StaticResource AccentGold}" BorderBrush="{StaticResource BorderSubtle}" CaretBrush="White" FontSize="12" Padding="10,6" KeyDown="SeriesPopupChannelInput_KeyDown" TextChanged="SeriesPopupChannelInput_TextChanged"/>
+                                    <Button Grid.Column="1" x:Name="SeriesPopupClearChannelBtn" Content="🌐 All YouTube" Style="{StaticResource GlassButton}" FontSize="10.5" Padding="10,5" Margin="8,0,0,0" Click="SeriesPopupClearChannelBtn_Click" ToolTip="Search across all of YouTube"/>
+                                </Grid>
+
+                                <!-- Suggested Pills -->
+                                <TextBlock Text="QUICK SERIES &amp; SEASON FILTERS:" Foreground="{StaticResource TextSecondary}" FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                                <WrapPanel x:Name="SeriesPillsPanel" Margin="0,0,0,16"/>
+
+                                <!-- Bottom Action Buttons -->
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button x:Name="SeriesPopupFindAllBtn" Grid.Column="0" Content="🚀 Find Series Videos" Style="{StaticResource RedAccentButton}" Padding="10,8" Margin="0,0,4,0" Click="SeriesPopupFindAllBtn_Click"/>
+                                    <Button x:Name="SeriesPopupPlaylistsBtn" Grid.Column="1" Content="📋 Series Playlists" Style="{StaticResource GlassButton}" Padding="10,8" Margin="4,0,0,0" Click="SeriesPopupPlaylistsBtn_Click"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
                     </Popup>
