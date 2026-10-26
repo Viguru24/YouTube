@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -729,13 +730,15 @@ fun YouTubePlayerView(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+                        settings.loadWithOverviewMode = true
+                        settings.useWideViewPort = true
 
-                        // Fix Error 153: Disguise WebView as modern Chrome mobile browser (remove "Version/4.0" and "; wv")
+                        // Modern Chrome User-Agent without WebView tags
                         val defaultUa = settings.userAgentString
                         val cleanUa = defaultUa.replace("; wv", "").replace("Version/4.0 ", "")
                         settings.userAgentString = cleanUa
 
-                        // Enable cookies & third-party cookies so signed-in YouTube account cookies pass through
+                        // Enable cookies so authenticated sessions pass through seamlessly
                         val cookieManager = android.webkit.CookieManager.getInstance()
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
@@ -744,8 +747,8 @@ fun YouTubePlayerView(
                             for (cookie in aggregatedCookies.split(";")) {
                                 val trimmed = cookie.trim()
                                 if (trimmed.isNotEmpty()) {
+                                    cookieManager.setCookie("https://www.youtube.com", trimmed)
                                     cookieManager.setCookie("https://youtube.com", trimmed)
-                                    cookieManager.setCookie("https://m.youtube.com", trimmed)
                                 }
                             }
                             cookieManager.flush()
@@ -753,7 +756,7 @@ fun YouTubePlayerView(
 
                         webChromeClient = object : android.webkit.WebChromeClient() {
                             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
-                                android.util.Log.d("WebViewPlayer", "[Console] ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
+                                android.util.Log.d("WebViewPlayer", "[Console] ${consoleMessage?.message()}")
                                 return true
                             }
                         }
@@ -765,87 +768,102 @@ fun YouTubePlayerView(
                             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isFirstFrameRendered = true
-                                view?.evaluateJavascript("""
-                                    (function() {
-                                        if (!document.getElementById('vixz-mobile-cleaner')) {
-                                            var style = document.createElement('style');
-                                            style.id = 'vixz-mobile-cleaner';
-                                            style.innerHTML = 'header, ytm-header-bar, #header-bar, .mobile-topbar-header, ytm-pivot-bar-renderer, .pivot-bar, ytm-app-banner-renderer, #below, ytm-item-section-renderer, #comments, ytm-comment-section-renderer, #related, ytm-related-chip-cloud-renderer, ytm-compact-video-renderer, .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay, ytm-promoted-sparkles-web-renderer, ytm-promoted-video-renderer, .video-ads, .ytp-ad-module, .ytp-ad-player-overlay, .ytp-ad-image-overlay, .ytp-ad-overlay-container, .ad-showing .ytp-ad-text { display: none !important; } html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: #000 !important; width: 100vw !important; height: 100vh !important; } .player-container, #player-container-id, .html5-video-player, ytm-player, video { position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; max-width: 100vw !important; max-height: 100vh !important; z-index: 999999 !important; object-fit: contain !important; background: #000 !important; }';
-                                            document.head.appendChild(style);
-                                        }
-
-                                        function skipMobileAds() {
-                                            var player = document.querySelector('.html5-video-player');
-                                            var isAd = (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) || document.querySelector('.ad-showing, .ad-interrupting, .video-ads');
-                                            var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, button[id^="skip-button:"], .ytp-ad-overlay-close-button');
-                                            for (var i = 0; i < skipBtns.length; i++) {
-                                                try { skipBtns[i].click(); } catch(e) {}
-                                            }
-                                            var v = document.querySelector('video');
-                                            if (isAd && v) {
-                                                try {
-                                                    v.muted = true;
-                                                    v.playbackRate = 16.0;
-                                                    if (isFinite(v.duration) && v.duration > 0) {
-                                                        v.currentTime = v.duration - 0.1;
-                                                    }
-                                                } catch(e) {}
-                                            } else if (!isAd && v && v.playbackRate > 2.0) {
-                                                try {
-                                                    v.playbackRate = 1.0;
-                                                    v.muted = false;
-                                                } catch(e) {}
-                                            }
-                                        }
-
-                                        var v = document.querySelector('video');
-                                        if (v) {
-                                            v.muted = false;
-                                            if (v.paused) {
-                                                try { v.play(); } catch(e) {}
-                                            }
-                                            if (!v._vixzHooked) {
-                                                v._vixzHooked = true;
-                                                v.addEventListener('timeupdate', skipMobileAds);
-                                            }
-                                        }
-                                        skipMobileAds();
-
-                                        var playBtn = document.querySelector('.ytp-play-button, .ytp-large-play-button, button.player-control-play-pause-icon');
-                                        if (playBtn) {
-                                            try { playBtn.click(); } catch(e) {}
-                                        }
-                                        var confirmBtn = document.querySelector('button[aria-label*="proceed" i], button.eom-button-row button');
-                                        if (confirmBtn) {
-                                            try { confirmBtn.click(); } catch(e) {}
-                                        }
-                                        window.pauseVideo = function() { var v = document.querySelector('video'); if (v) v.pause(); };
-                                        window.playVideo = function() { var v = document.querySelector('video'); if (v) v.play(); };
-                                        window.seekToSeconds = function(sec) { var v = document.querySelector('video'); if (v) v.currentTime = sec; };
-                                        window.setPlaybackRate = function(rate) { var v = document.querySelector('video'); if (v) v.playbackRate = rate; };
-
-                                        if (!window._vixzMobileInterval) {
-                                            window._vixzMobileInterval = setInterval(function() {
-                                                skipMobileAds();
-                                                var cb = document.querySelector('button[aria-label*="proceed" i], button.eom-button-row button');
-                                                if (cb) try { cb.click(); } catch(e) {}
-                                            }, 200);
-                                        }
-                                    })();
-                                """.trimIndent(), null)
                             }
 
                             override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                                 val u = request?.url?.toString() ?: ""
-                                if (u.contains("youtube.com/watch")) {
+                                if (u.contains("youtube.com/embed") || u.contains("youtube-nocookie.com/embed") || u.startsWith("data:")) {
                                     return false
                                 }
                                 return true
                             }
                         }
 
-                        val targetUrl = "https://m.youtube.com/watch?v=$videoId" + if (startSeconds > 0) "&t=$startSeconds" else ""
-                        loadUrl(targetUrl)
+                        // Clean, isolated edge-to-edge embed container - eliminates any inner YouTube webpage
+                        val embedHtml = """
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                              <style>
+                                * { margin: 0; padding: 0; box-sizing: border-box; }
+                                html, body {
+                                  width: 100%;
+                                  height: 100%;
+                                  background: #000000;
+                                  overflow: hidden;
+                                }
+                                #player-container {
+                                  position: fixed;
+                                  top: 0;
+                                  left: 0;
+                                  width: 100vw;
+                                  height: 100vh;
+                                  background: #000000;
+                                }
+                                iframe {
+                                  width: 100%;
+                                  height: 100%;
+                                  border: none;
+                                  display: block;
+                                }
+                                .ytp-chrome-top, .ytp-watermark, .ytp-youtube-button, .ytp-pause-overlay {
+                                  display: none !important;
+                                }
+                              </style>
+                            </head>
+                            <body>
+                              <div id="player-container">
+                                <iframe
+                                  id="player"
+                                  src="https://www.youtube.com/embed/$videoId?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&controls=1&fs=1&iv_load_policy=3${if (startSeconds > 0) "&start=$startSeconds" else ""}"
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                  allowfullscreen>
+                                </iframe>
+                              </div>
+                              <script>
+                                function skipMobileAds() {
+                                  try {
+                                    var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+                                    for (var i = 0; i < skipBtns.length; i++) {
+                                      skipBtns[i].click();
+                                    }
+                                    var v = document.querySelector('video');
+                                    if (v && (document.querySelector('.ad-showing') || document.querySelector('.ad-interrupting'))) {
+                                      v.muted = true;
+                                      v.playbackRate = 16.0;
+                                      if (isFinite(v.duration) && v.duration > 0) {
+                                        v.currentTime = v.duration;
+                                      }
+                                    }
+                                  } catch(e) {}
+                                }
+                                setInterval(skipMobileAds, 350);
+
+                                window.pauseVideo = function() {
+                                  var ifr = document.getElementById('player');
+                                  if (ifr && ifr.contentWindow) {
+                                    ifr.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                                  }
+                                };
+                                window.playVideo = function() {
+                                  var ifr = document.getElementById('player');
+                                  if (ifr && ifr.contentWindow) {
+                                    ifr.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                                  }
+                                };
+                                window.seekToSeconds = function(sec) {
+                                  var ifr = document.getElementById('player');
+                                  if (ifr && ifr.contentWindow) {
+                                    ifr.contentWindow.postMessage('{"event":"command","func":"seekTo","args":[' + sec + ', true]}', '*');
+                                  }
+                                };
+                              </script>
+                            </body>
+                            </html>
+                        """.trimIndent()
+
+                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
                         webViewRef = this
                     }
                 },
@@ -913,6 +931,50 @@ fun YouTubePlayerView(
             onClick = { showSleepTimerDialog = true },
             modifier = Modifier.align(Alignment.TopEnd)
         )
+
+        // Web Stream Fallback Indicator & Retry Pill
+        if (useWebPlayerFallback && !isInPipMode) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Black.copy(alpha = 0.75f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                modifier = Modifier
+                    .padding(start = 14.dp, top = if (isFullscreen) 16.dp else 12.dp)
+                    .align(Alignment.TopStart)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "🌐 Web Stream Mirror",
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "• Retry Native",
+                        color = YouTubeRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable {
+                            useWebPlayerFallback = false
+                            isLoading = true
+                            coroutineScope.launch {
+                                val result = YouTubeStreamExtractor.extractVideoStreams(videoId)
+                                if (result.primaryStreamUrl != null) {
+                                    streamUrl = result.primaryStreamUrl
+                                } else {
+                                    useWebPlayerFallback = true
+                                }
+                                isLoading = false
+                            }
+                        }
+                    )
+                }
+            }
+        }
 
         // 5. Fullscreen Top Header Bar (Back button + Video title + Views + Publish date)
         PlayerTopHeader(

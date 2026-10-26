@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -93,392 +95,414 @@ fun GoogleSignInDialog(
         )
     } else {
         AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFF4285F4).copy(alpha = 0.15f),
-                    modifier = Modifier.size(40.dp)
+            onDismissRequest = onDismiss,
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (account.isSignedIn) Color(0xFF4CAF50).copy(alpha = 0.15f) else YouTubeRed.copy(alpha = 0.15f),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (account.isSignedIn) Icons.Filled.AccountCircle else Icons.Filled.PlayArrow,
+                                contentDescription = null,
+                                tint = if (account.isSignedIn) Color(0xFF4CAF50) else YouTubeRed,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column {
                         Text(
-                            text = "G",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 22.sp,
-                            color = Color(0xFF4285F4)
+                            text = if (account.isSignedIn) "Account Profile" else "Sign In to YouTube",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (account.isSignedIn) "Connected & Cloud Synchronized" else "Access Subscriptions & Restricted Content",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = if (account.isSignedIn) "User Profile & Accounts" else "Sign In to YouTube / Google",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Vixz YouTube Player • Profile & Cloud Sync",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        text = {
-            val scrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Active Profile Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (account.isSignedIn)
-                            MaterialTheme.colorScheme.surfaceVariant
-                        else
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    shape = RoundedCornerShape(16.dp)
+            },
+            text = {
+                val scrollState = rememberScrollState()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(scrollState),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (account.avatarUrl.isNotBlank() && !account.avatarUrl.contains("no-rj") && !account.avatarUrl.contains("s88-c")) {
-                            AsyncImage(
-                                model = account.avatarUrl,
-                                contentDescription = "Profile Photo",
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Surface(
-                                shape = CircleShape,
-                                color = if (account.isSignedIn) YouTubeRed else Color.Gray,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (account.isSignedIn && account.avatarInitials.isNotBlank()) {
-                                        Text(
-                                            text = account.avatarInitials.ifBlank { "LO" },
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Filled.Person,
-                                            contentDescription = "Guest",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(26.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (account.isSignedIn) account.name.ifBlank { "Signed-In User" } else "Guest Profile",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = if (account.isSignedIn) account.email.ifBlank { "Connected" } else "Not signed in",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (account.isSignedIn) "🟢 Active Account" else "⚪ Local Guest Mode",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (account.isSignedIn) Color(0xFF4CAF50) else Color.Gray
-                            )
-                        }
-                    }
-                }
-
-                // Saved Accounts Multi-Account Switcher
-                val otherAccounts = savedAccounts.filter { it.email.isNotBlank() && it.email != "local@vixz.app" }
-                if (otherAccounts.isNotEmpty()) {
-                    Text(
-                        text = "SWITCH ACCOUNT (${otherAccounts.size})",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        for (acc in otherAccounts) {
-                            val isActive = acc.email.equals(account.email, ignoreCase = true)
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
-                                border = if (isActive) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                    if (account.isSignedIn) {
+                        // Active Signed-In Profile Card
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable {
-                                        if (!isActive) {
-                                            onSwitchAccount(acc)
-                                            Toast.makeText(context, "Switched to ${acc.name} 🟢", Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
+                                    .padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                if (account.avatarUrl.isNotBlank() && !account.avatarUrl.contains("no-rj") && !account.avatarUrl.contains("s88-c")) {
+                                    AsyncImage(
+                                        model = account.avatarUrl,
+                                        contentDescription = "Profile Photo",
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
                                     Surface(
                                         shape = CircleShape,
-                                        color = if (isActive) YouTubeRed else Color(0xFF4285F4),
-                                        modifier = Modifier.size(36.dp)
+                                        color = YouTubeRed,
+                                        modifier = Modifier.size(52.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Text(
-                                                text = acc.avatarInitials.ifBlank { "U" },
+                                                text = account.avatarInitials.ifBlank { "YT" },
                                                 color = Color.White,
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
+                                                fontSize = 20.sp
                                             )
                                         }
                                     }
+                                }
 
-                                    Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(14.dp))
 
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = acc.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = acc.email,
-                                            fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = account.name.ifBlank { "YouTube User" },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = account.email.ifBlank { "Authenticated Account" },
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "🟢 Active YouTube Account",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF4CAF50)
+                                    )
+                                }
+                            }
+                        }
 
-                                    if (isActive) {
-                                        Text(
-                                            text = "Active",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(end = 4.dp)
-                                        )
-                                    } else {
-                                        IconButton(
-                                            onClick = { onRemoveAccount(acc.email) },
-                                            modifier = Modifier.size(32.dp)
+                        // Saved Accounts Multi-Account Switcher
+                        val otherAccounts = savedAccounts.filter { it.email.isNotBlank() && it.email != "local@vixz.app" }
+                        if (otherAccounts.isNotEmpty()) {
+                            Text(
+                                text = "SWITCH ACCOUNT (${otherAccounts.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                for (acc in otherAccounts) {
+                                    val isActive = acc.email.equals(account.email, ignoreCase = true)
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                                        border = if (isActive) androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                if (!isActive) {
+                                                    onSwitchAccount(acc)
+                                                    Toast.makeText(context, "Switched to ${acc.name} 🟢", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Close,
-                                                contentDescription = "Remove Account",
-                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                modifier = Modifier.size(16.dp)
-                                            )
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = if (isActive) YouTubeRed else Color(0xFF4285F4),
+                                                modifier = Modifier.size(36.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        text = acc.avatarInitials.ifBlank { "U" },
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(10.dp))
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = acc.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = acc.email,
+                                                    fontSize = 12.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+
+                                            if (isActive) {
+                                                Text(
+                                                    text = "Active",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(end = 4.dp)
+                                                )
+                                            } else {
+                                                IconButton(
+                                                    onClick = { onRemoveAccount(acc.email) },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Close,
+                                                        contentDescription = "Remove Account",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                }
 
-                if (account.isSignedIn) {
-                    // 1. Sync Playlists & Subscriptions Button
-                    Button(
-                        onClick = {
-                            onSyncPlaylists()
-                            Toast.makeText(context, "Syncing YouTube playlists and subscriptions... 🔄", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "🔄 Sync Playlists & Subscriptions", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                    }
+                        // 1. Sync Playlists & Subscriptions Button
+                        Button(
+                            onClick = {
+                                onSyncPlaylists()
+                                Toast.makeText(context, "Syncing YouTube subscriptions & playlists... 🔄", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                        ) {
+                            Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "🔄 Sync Subscriptions & Feed", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        }
 
-                    // 2. Switch / Re-link Account
-                    OutlinedButton(
-                        onClick = { showWebSignInDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                    ) {
-                        Icon(imageVector = Icons.Filled.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "🌐 Switch or Re-authenticate Account", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    }
+                        // 2. Switch / Re-link Account
+                        OutlinedButton(
+                            onClick = { showWebSignInDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                        ) {
+                            Icon(imageVector = Icons.Filled.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "🌐 Switch or Re-link Account", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
 
-                    // 3. Sign Out Button
-                    TextButton(
-                        onClick = {
-                            onSignOut()
-                            Toast.makeText(context, "Signed out / Guest mode active", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Text("Sign Out / Switch to Guest Mode", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                    }
-                } else {
-                    // Guest Mode: Prominent Sign-In Action
-                    Button(
-                        onClick = { showWebSignInDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("google_web_sign_in_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Language,
-                            contentDescription = "Sign-In via YouTube",
-                            tint = Color.White
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "🌐 Sign In via YouTube / Google Web",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color.White
-                        )
-                    }
+                        // 3. Sign Out Button
+                        TextButton(
+                            onClick = {
+                                onSignOut()
+                                Toast.makeText(context, "Signed out / Guest mode active", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        ) {
+                            Text("Sign Out / Switch to Guest Mode", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    } else {
+                        // NOT SIGNED IN: Clean, crystal-clear value card + 1-Tap Sign-In
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = "Why connect your account?",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🎬", fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Instant access to your Subscriptions & Liked videos", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("⚡", fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Direct streaming of age-gated & restricted videos", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("🛡️", fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("100% private on-device login without tracking", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
+                        }
 
-                    // Collapsible Advanced Option
-                    var showAdvanced by remember { mutableStateOf(false) }
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                        // 1-Tap Prominent Sign-In Action
+                        Button(
+                            onClick = { showWebSignInDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .testTag("google_web_sign_in_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AccountCircle,
+                                contentDescription = "Sign In",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = if (showAdvanced) "▲ Hide Advanced Options" else "▼ Advanced: Import Cookies Manually",
-                                fontSize = 12.sp,
+                                text = "Sign In with Google / YouTube",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = Color.White
+                            )
+                        }
+
+                        // Manual Cookie Import Alternative
+                        OutlinedButton(
+                            onClick = { showPasteCookiesDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentPaste,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Paste Browser Cookies Manually",
+                                fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (showAdvanced) {
-                            OutlinedButton(
-                                onClick = { showPasteCookiesDialog = true },
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(40.dp)
-                            ) {
-                                Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("📋 Paste Cookies Manually", fontSize = 12.sp)
+                    }
+
+                    // Paste Cookies Sub-Dialog
+                    if (showPasteCookiesDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showPasteCookiesDialog = false },
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, tint = YouTubeRed)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Import YouTube Cookies", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                }
+                            },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Paste your browser cookies (LOGIN_INFO, SID, SAPISID) to authenticate directly:",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedTextField(
+                                        value = cookiesInput,
+                                        onValueChange = { cookiesInput = it },
+                                        label = { Text("Cookie String") },
+                                        placeholder = { Text("LOGIN_INFO=...; SID=...; SAPISID=...") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(130.dp),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val raw = cookiesInput.trim()
+                                        if (raw.isNotBlank()) {
+                                            com.example.data.remote.NPDownloader.savedCookies = raw
+                                            com.example.util.CookieHelper.injectCookies(raw)
+                                            com.example.util.CookieHelper.syncAndPersistCookies(context)
+
+                                            val finalName = deriveCleanName(nameInput, emailInput).ifBlank { "YouTube User" }
+                                            val finalEmail = emailInput.ifBlank { "google.user@vixz.app" }
+
+                                            onSignIn(finalName, finalEmail, "")
+                                            Toast.makeText(context, "Cookies imported! Welcome, $finalName 🟢", Toast.LENGTH_SHORT).show()
+                                            showPasteCookiesDialog = false
+                                            onDismiss()
+                                        } else {
+                                            Toast.makeText(context, "Please paste valid cookie string", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                                ) {
+                                    Text("Import & Sign In")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showPasteCookiesDialog = false }) {
+                                    Text("Cancel")
+                                }
                             }
-                        }
+                        )
                     }
                 }
-
-                if (showPasteCookiesDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showPasteCookiesDialog = false },
-                        title = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(imageVector = Icons.Filled.ContentPaste, contentDescription = null, tint = YouTubeRed)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Import YouTube Cookies", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            }
-                        },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "If Google restricts in-app sign-in on your device, paste your exported browser cookies below:",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                OutlinedTextField(
-                                    value = cookiesInput,
-                                    onValueChange = { cookiesInput = it },
-                                    label = { Text("Cookie String") },
-                                    placeholder = { Text("LOGIN_INFO=...; SID=...; SAPISID=...") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(130.dp),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                            }
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    val raw = cookiesInput.trim()
-                                    if (raw.isNotBlank()) {
-                                        com.example.data.remote.NPDownloader.savedCookies = raw
-                                        com.example.util.CookieHelper.injectCookies(raw)
-                                        com.example.util.CookieHelper.syncAndPersistCookies(context)
-
-                                        val finalName = deriveCleanName(nameInput, emailInput).ifBlank { "YouTube User" }
-                                        val finalEmail = emailInput.ifBlank { "google.user@vixz.app" }
-
-                                        onSignIn(finalName, finalEmail, "")
-                                        Toast.makeText(context, "Cookies imported! Welcome, $finalName 🟢", Toast.LENGTH_SHORT).show()
-                                        showPasteCookiesDialog = false
-                                        onDismiss()
-                                    } else {
-                                        Toast.makeText(context, "Please paste valid cookie string", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
-                            ) {
-                                Text("Import & Sign In")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showPasteCookiesDialog = false }) {
-                                Text("Cancel")
-                            }
-                        }
-                    )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        }
-    )
+        )
     }
 }

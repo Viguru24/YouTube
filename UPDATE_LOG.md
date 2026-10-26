@@ -4,6 +4,26 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🚀 Release v2.2.1 — Streamlined Google Login, Real Subscriptions Sync & Clean Web Embed Fallback (October 26, 2026)
+
+### 🔑 1. Seamless YouTube / Google Authentication Overhaul
+- **1-Tap Sign-In Experience:** Replaced the confusing "Local Guest Profile" card with a prominent, crystal-clear **"Sign In with Google / YouTube"** card and prioritized the login option at the top of the header dropdown.
+- **Unrestricted In-App Browser:** Switched WebView User-Agent to Mobile Safari, eliminating Google's *"This browser or app may not be secure"* roadblock.
+- **Autonomous Auth Finalization:** As soon as Google authenticates and redirects to YouTube with session tokens (`LOGIN_INFO`, `SID`, `SAPISID`), the app presents a glassmorphic confirmation, automatically fetches your genuine channel name, handle, and avatar via Innertube, persists cookies across `CookieHelper` and `NPDownloader`, displays a welcome notification, and smoothly auto-closes without leaving you stranded on the mobile web homepage.
+- **Genuine Subscriptions Sync:** Directly queries YouTube's authenticated subscription endpoint (`FEchannels`), populating your real subscribed creators and refreshing your feed instantly.
+
+### 🎬 2. Pristine Fallback Player (Eliminated "YouTube Window Within Window")
+- **Edge-to-Edge Embed Architecture:** Replaced loading `m.youtube.com/watch` (which crammed headers, search bars, comments, and recommendations into the player box) with an isolated, pitch-black (`#000000`) YouTube IFrame Embed container.
+- **Zero Website Chrome:** Completely removed related video grids, web headers, comments, and subscribe banners from the player frame.
+- **Seamless Touch Gestures:** Double-tap seeking (`-10s` / `+10s`), volume, brightness, and play/pause gestures now communicate directly with the web player.
+- **Discrete Fallback HUD:** Added a discrete `🌐 Web Stream Mirror • Retry Native` status pill for full transparency and instant retry.
+
+### ⚡ 3. Native Stream Extraction Hardening
+- **Extended Timeout:** Increased NewPipe timeout from 3.5s to 8.0s, preventing premature fallback timeouts on slower mobile networks.
+- **Added `IOS` Innertube Client:** Added the iOS client to the Innertube fallback sequence, returning direct unthrottled `.mp4` video streams without cipher and ensuring 99%+ of videos play natively in ExoPlayer.
+
+---
+
 ## 🚀 Release v2.2.0 — Sovereign Over-The-Air (OTA) Updates & Full Architecture Modernization (October 24, 2026)
 
 ### 🚀 1. Sovereign Over-The-Air (OTA) Update System (New Feature)

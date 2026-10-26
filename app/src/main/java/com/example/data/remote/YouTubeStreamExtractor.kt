@@ -202,7 +202,7 @@ object YouTubeStreamExtractor {
 
         // 1. PRIMARY: NewPipe Extractor (Resolves direct Apple HLS Master Playlist & adaptive streams)
         try {
-            kotlinx.coroutines.withTimeout(3500L) {
+            kotlinx.coroutines.withTimeout(8000L) {
                 logD("YouTubeStreamExtractor", "[NewPipe] Extracting streams for videoId: $videoId")
                 val service = org.schabi.newpipe.extractor.ServiceList.YouTube
                 val extractor = service.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
@@ -288,7 +288,7 @@ object YouTubeStreamExtractor {
 
         // 2. SECONDARY: Innertube Fallback
         if (qualityMap.isEmpty()) {
-            val clients = listOf("WEB", "ANDROID_VR", "ANDROID", "TVHTML5")
+            val clients = listOf("IOS", "ANDROID_VR", "TVHTML5", "ANDROID", "WEB")
             for (c in clients) {
                 try {
                     val playerJson = fetchInnertubePlayer(videoId, c)

@@ -362,7 +362,10 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             com.example.data.remote.GoogleAccountSyncService.syncUserAccountData(
                 email = current.email,
                 videoDao = db.videoDao(),
-                categoryDao = db.playlistCategoryDao()
+                categoryDao = db.playlistCategoryDao(),
+                onSubscriptionsFetched = { fetchedSubs ->
+                    mergeIncomingSubscriptions(fetchedSubs)
+                }
             )
             refreshFeed()
         }

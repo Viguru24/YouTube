@@ -779,6 +779,19 @@ fun HomeScreen(
                                 onDismissRequest = { showProfileMenu = false }
                             ) {
                                 DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = if (googleAccount.isSignedIn) "👤 Profile: ${googleAccount.name.ifBlank { "Account" }} (🟢 Connected)" else "🔴 Sign In to YouTube (Connect Account)",
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (googleAccount.isSignedIn) MaterialTheme.colorScheme.onSurface else YouTubeRed
+                                        )
+                                    },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        onOpenGoogleAuth()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("🌐 ${strings.appLanguageTitle} (${currentLang.flagEmoji} ${currentLang.nativeName})", fontWeight = FontWeight.SemiBold) },
                                     onClick = {
                                         showProfileMenu = false
@@ -790,13 +803,6 @@ fun HomeScreen(
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenSettings()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (googleAccount.isSignedIn) "👤 Profile: ${googleAccount.name.ifBlank { "Account" }} (${googleAccount.avatarInitials})" else "👤 ${strings.profileAccount} (Guest)") },
-                                    onClick = {
-                                        showProfileMenu = false
-                                        onOpenGoogleAuth()
                                     }
                                 )
                                 DropdownMenuItem(

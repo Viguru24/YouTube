@@ -165,9 +165,16 @@ fun Modifier.playerGestureEngine(
                             lastTapTime = now
                             lastTapX = startPos.x
 
-                            val currentPos = exoPlayer.currentPosition
-                            val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
-                            exoPlayer.seekTo(newPos)
+                            if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                val currentPos = exoPlayer.currentPosition
+                                val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
+                                exoPlayer.seekTo(newPos)
+                            } else {
+                                currentWebViewRef?.evaluateJavascript(
+                                    "if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(Math.max(0, cur - 10)); } else { var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); }",
+                                    null
+                                )
+                            }
                             val totalSec = consecutiveSeekCount * 10
                             currentOnSeekFeedback("⏪ -${totalSec}s")
                             coroutineScope.launch {
@@ -193,10 +200,17 @@ fun Modifier.playerGestureEngine(
                             lastTapTime = now
                             lastTapX = startPos.x
 
-                            val currentPos = exoPlayer.currentPosition
-                            val dur = if (currentTotalDurationMs > 0) currentTotalDurationMs else Long.MAX_VALUE
-                            val newPos = (currentPos + 10_000L).coerceAtMost(dur)
-                            exoPlayer.seekTo(newPos)
+                            if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                val currentPos = exoPlayer.currentPosition
+                                val dur = if (currentTotalDurationMs > 0) currentTotalDurationMs else Long.MAX_VALUE
+                                val newPos = (currentPos + 10_000L).coerceAtMost(dur)
+                                exoPlayer.seekTo(newPos)
+                            } else {
+                                currentWebViewRef?.evaluateJavascript(
+                                    "if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(cur + 10); } else { var v = document.querySelector('video'); if (v) v.currentTime = v.currentTime + 10; }",
+                                    null
+                                )
+                            }
                             val totalSec = consecutiveSeekCount * 10
                             currentOnSeekFeedback("⏩ +${totalSec}s")
                             coroutineScope.launch {
