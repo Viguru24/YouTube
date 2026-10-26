@@ -19,7 +19,7 @@
 
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android** | `APK (v2.2.0)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.2.0/Vixz-YouTube-Player-v2.2.0.apk) |
+| 📱 **Android** | `APK (v2.2.1)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.2.1/Vixz-YouTube-Player-v2.2.1.apk) |
 | 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
 | 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
-  <a href="#-whats-new-in-v220">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v221">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -38,17 +38,21 @@
 
 ---
 
-## 🆕 What's New in v2.2.0
+## 🆕 What's New in v2.2.1
 
-- 🚀 **Sovereign Over-The-Air (OTA) Updates:** YouTube for Android (Vixz) now receives seamless, direct Over-The-Air updates straight from your self-hosted Sovereign VPS update server (`https://api.cosmowhisper.com/updates/youtube/`).
-  - **In-App OTA Engine:** Automatic background startup check, streaming progress bar, and 1-tap native package installer via secure `FileProvider`.
-  - **Glassmorphic OTA Dialog:** Rich dark UI dialog comparing builds and presenting release notes.
-  - **Settings Integration:** Dedicated "Check for Updates Now" card inside the Settings panel.
-  - **1-Click Publisher:** Automated compilation, version bumping, and VPS deployment via `publish-update.ps1` and desktop batch shortcut.
-- 🔍 **Live Search & Content Extraction Overhaul:** Rewritten live search service for robust channel metadata, subscriber counts, accurate view counts, and uninterrupted stream playback.
-- 🖥️ **Windows Desktop (VixzDesktop) Architectural Modularization:** Refactored monolithic codebase into dedicated partial classes (`Playback`, `Navigation`, `Downloads`, `AiCopilot`, `Account`, `Series`, `Social`, `UIControls`) and standalone services (`DownloadQueueService`, `SeriesDetectionService`, `TranscriptService`).
-- 🔄 **Cross-Device Cloud Sync & Watched Content Filter:** Seamless watch history, category, and playlist sync between Android and Windows PC, automatically filtering already-watched videos from feeds.
-- ⚡ **TypeSafe AI Jev System-One Engine:** Autonomous auth resolving, smart viewport quality arbitration, and AI DJ autoplay curation.
+- 🔑 **Streamlined Google / YouTube Login & Real Subscriptions Sync:**
+  - **1-Tap Sign-In:** Replaced the confusing "Local Guest Profile" card with a prominent, crystal-clear **"Sign In with Google / YouTube"** card and prioritized the login option at the top of the header dropdown.
+  - **Unrestricted In-App Browser:** Switched WebView User-Agent to Mobile Safari, eliminating Google's *"This browser or app may not be secure"* roadblock.
+  - **Autonomous Auth Finalization:** As soon as Google authenticates and redirects to YouTube with session tokens (`LOGIN_INFO`, `SID`, `SAPISID`), the app presents a glassmorphic confirmation, automatically fetches your genuine channel name, handle, and avatar via Innertube, persists cookies across `CookieHelper` and `NPDownloader`, displays a welcome notification, and smoothly auto-closes without leaving you stranded on the mobile web homepage.
+  - **Genuine Subscriptions Sync:** Directly queries YouTube's authenticated subscription endpoint (`FEchannels`), populating your real subscribed creators and refreshing your feed instantly.
+- 🎬 **Pristine Fallback Player (Eliminated "YouTube Window Within Window"):**
+  - **Edge-to-Edge Embed Architecture:** Replaced loading `m.youtube.com/watch` (which crammed headers, search bars, comments, and recommendations into the player box) with an isolated, pitch-black (`#000000`) YouTube IFrame Embed container.
+  - **Zero Website Chrome:** Completely removed related video grids, web headers, comments, and subscribe banners from the player frame.
+  - **Seamless Touch Gestures:** Double-tap seeking (`-10s` / `+10s`), volume, brightness, and play/pause gestures now communicate directly with the web player.
+  - **Discrete Fallback HUD:** Added a discrete `🌐 Web Stream Mirror • Retry Native` status pill for full transparency and instant retry.
+- ⚡ **Native Stream Extraction Hardening:**
+  - **Extended Timeout:** Increased NewPipe timeout from 3.5s to 8.0s, preventing premature fallback timeouts on slower mobile networks.
+  - **Added `IOS` Innertube Client:** Added the iOS client to the Innertube fallback sequence, returning direct unthrottled `.mp4` video streams without cipher and ensuring 99%+ of videos play natively in ExoPlayer.
 
 ---
 
@@ -85,7 +89,7 @@ Prefer watching on your laptop or desktop? Experience **[Vixz Desktop](https://g
 ## ⚡ Quick Install Guide
 
 ### Option A: Direct APK Install
-1. **[📥 Download the Latest Vixz APK (v2.2.0)](https://github.com/Viguru24/YouTube/releases/download/v2.2.0/Vixz-YouTube-Player-v2.2.0.apk)** directly to your Android device.
+1. **[📥 Download the Latest Vixz APK (v2.2.1)](https://github.com/Viguru24/YouTube/releases/download/v2.2.1/Vixz-YouTube-Player-v2.2.1.apk)** directly to your Android device.
 2. Open the downloaded `.apk` file from your browser downloads or notification tray.
 3. If prompted by Android, tap **"Settings" → "Allow from this source"**, then tap **Install**.
 4. Open **Vixz** and enjoy pure, uninterrupted video playback with zero ads!
