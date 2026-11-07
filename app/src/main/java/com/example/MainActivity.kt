@@ -582,6 +582,7 @@ fun MainAppContent(
                             onOpenAddVideoDialog = { showAddVideoDialog = true },
                             onOpenGoogleAuth = { showGoogleAuthDialog = true },
                             onOpenSettings = { showSettingsDialog = true },
+                            onOpenOtaUpdates = { showOtaUpdateDialog = true },
                             onRefreshFeed = { viewModel.refreshFeed() },
                             liveSearchResults = liveSearchResults,
                             categoryVideos = categoryVideos,
@@ -627,6 +628,7 @@ fun MainAppContent(
                                 viewModel.updateAlgorithmSettings(algorithmSettings.copy(autoDeleteDownloads = retention))
                             },
                             onOpenHistory = { previousNavIndex = selectedNavIndex; selectedNavIndex = 2 },
+                            onOpenOtaUpdates = { showOtaUpdateDialog = true },
                             onMuteChannel = { channelName -> viewModel.permanentlyDeleteChannel(channelName) }
                         )
                         2 -> HistoryScreen(

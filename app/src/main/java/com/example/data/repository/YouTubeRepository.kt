@@ -114,8 +114,9 @@ class YouTubeRepository(
         if (videos.isEmpty()) return
         val filtered = videos.filter { !isChannelBlocked(it.channelName) }
         if (filtered.isEmpty()) return
+        val ids = filtered.map { it.youtubeId }
         val existingMap = try {
-            videoDao.getAllVideosDirect().associateBy { it.youtubeId }
+            videoDao.getVideosByIds(ids).associateBy { it.youtubeId }
         } catch (e: Exception) {
             emptyMap()
         }

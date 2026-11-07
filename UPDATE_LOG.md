@@ -4,6 +4,17 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
+## 🚀 Release v2.2.2 — Feed Rendering & Recommendation Engine Performance Overhaul (November 7, 2026)
+
+### ⚡ 1. High-Performance Feed & Recommendation Computations
+- **Batch Recommendation Reasoning:** Replaced iterative single-item evaluation with `RecommendationEngine.getRecommendationReasons()`, which precomputes lookup sets once and processes all video badges in $O(N)$ time.
+- **Background Thread Offloading:** Shifted feed filtering, sorting, and recommendation scoring off the main UI thread onto `Dispatchers.Default` using Compose `produceState`, preventing frame drops and UI freezes during feed scrolling and search.
+- **Timestamp Caching & Compiled Regex:** Precompiled `PUBLISHED_TIME_REGEX` and added `PUBLISHED_TIME_CACHE` in `YouTubeUtils`, eliminating repeated expensive regex compilation and parsing during scroll.
+- **Database Query Batching:** Added `VideoDao.getVideosByIds()` to query only relevant video records instead of scanning the full database with `getAllVideosDirect()`.
+- **ViewModel Flow Debounce:** Added a 150ms debounce and background dispatcher to `repository.allVideos` in `YouTubeViewModel`, preventing excessive UI recompositions during active syncs.
+
+---
+
 ## 🚀 Release v2.2.1 — Streamlined Google Login, Real Subscriptions Sync & Clean Web Embed Fallback (October 26, 2026)
 
 ### 🔑 1. Seamless YouTube / Google Authentication Overhaul

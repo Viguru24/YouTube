@@ -242,6 +242,92 @@ fun SettingsDialog(
                             .verticalScroll(scrollState),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        // 0. 🚀 Sovereign Over-The-Air Updates (TOP OF SETTINGS)
+                        val currentAppVersion = remember(context) {
+                            try {
+                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.2.2"
+                            } catch (_: Exception) {
+                                "2.2.2"
+                            }
+                        }
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = Color(0xFF1D141F).copy(alpha = 0.9f)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                Brush.horizontalGradient(
+                                    listOf(YouTubeRed.copy(alpha = 0.8f), Color(0xFFFF5252).copy(alpha = 0.4f))
+                                )
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .background(YouTubeRed.copy(alpha = 0.2f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.RocketLaunch,
+                                            contentDescription = null,
+                                            tint = YouTubeRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Column {
+                                        Text(
+                                            text = "🚀 Sovereign OTA Updates",
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                        Text(
+                                            text = "Version v$currentAppVersion • Tap to check VPS",
+                                            fontSize = 10.sp,
+                                            color = Color.White.copy(alpha = 0.65f)
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { onOpenOtaUpdates() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.RocketLaunch,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(13.dp),
+                                        tint = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Check for Updates",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
                         // 1. 🌌 Sovereign Cosmo Software Suite Card (TOP-LEVEL SPOTLIGHT)
                         Card(
                             shape = RoundedCornerShape(14.dp),

@@ -1077,9 +1077,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val categories: StateFlow<List<PlaylistCategoryEntity>> = repository.categories
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
     val videos: StateFlow<List<VideoEntity>> = combine(
-        repository.allVideos,
+        repository.allVideos.debounce(150L),
         repository.mutedChannels,
         searchQuery,
         selectedCategory
@@ -1106,7 +1106,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         filtered
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val favoriteVideos: StateFlow<List<VideoEntity>> = repository.favoriteVideos
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

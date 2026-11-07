@@ -35,6 +35,8 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,6 +83,7 @@ fun HomeScreen(
     onOpenAddVideoDialog: () -> Unit,
     onOpenGoogleAuth: () -> Unit,
     onOpenSettings: () -> Unit = {},
+    onOpenOtaUpdates: () -> Unit = {},
     onRefreshFeed: () -> Unit = {},
     liveSearchResults: List<VideoEntity> = emptyList(),
     categoryVideos: List<VideoEntity> = emptyList(),
@@ -730,6 +733,18 @@ fun HomeScreen(
                             Icon(imageVector = Icons.Filled.Mic, contentDescription = "Voice Search", tint = MaterialTheme.colorScheme.onSurface)
                         }
 
+                        // 1.8 Check for Updates Button 🚀
+                        IconButton(
+                            onClick = onOpenOtaUpdates,
+                            modifier = Modifier.testTag("top_ota_update_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.RocketLaunch,
+                                contentDescription = "Check for Updates",
+                                tint = YouTubeRed
+                            )
+                        }
+
                         // 2. Profile Button (Opens Quick Menu: Account, Settings, Language, Sort, Manage)
                         Box {
                             IconButton(
@@ -789,6 +804,28 @@ fun HomeScreen(
                                     onClick = {
                                         showProfileMenu = false
                                         onOpenGoogleAuth()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Filled.RocketLaunch,
+                                                contentDescription = null,
+                                                tint = YouTubeRed,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "🚀 Check for Updates",
+                                                fontWeight = FontWeight.Bold,
+                                                color = YouTubeRed
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        showProfileMenu = false
+                                        onOpenOtaUpdates()
                                     }
                                 )
                                 DropdownMenuItem(
@@ -1200,7 +1237,8 @@ fun HomeScreen(
 
             val candidateList = categoryVideos.ifEmpty { videos }
 
-            val displayList = remember(
+            val displayList by produceState(
+                initialValue = candidateList,
                 candidateList,
                 liveSearchResults,
                 selectedSubscribedChannel,
@@ -1218,6 +1256,7 @@ fun HomeScreen(
                 historyVideos,
                 algorithmSettings
             ) {
+                value = withContext(Dispatchers.Default) {
                 val rawDisplayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
                     val searchList = if (liveSearchResults.isNotEmpty()) {
                         liveSearchResults
@@ -1407,6 +1446,7 @@ fun HomeScreen(
                     }
                 }
             }
+            }
 
             var isRefreshing by remember { mutableStateOf(false) }
 
@@ -1500,9 +1540,15 @@ fun HomeScreen(
                 val mainVideosList = remember(displayList) {
                     displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
                 }
-                val recommendationReasons = remember(mainVideosList, videos, historyVideos) {
-                    val favs = videos.filter { it.isFavorite }
-                    mainVideosList.associate { it.youtubeId to com.example.data.repository.RecommendationEngine.getRecommendationReason(it, favs, historyVideos) }
+                val recommendationReasons by produceState(
+                    initialValue = emptyMap<String, String>(),
+                    mainVideosList,
+                    historyVideos
+                ) {
+                    value = withContext(Dispatchers.Default) {
+                        val favs = videos.filter { it.isFavorite }
+                        com.example.data.repository.RecommendationEngine.getRecommendationReasons(mainVideosList, favs, historyVideos)
+                    }
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {

@@ -100,7 +100,8 @@ namespace VixzDesktop
                     }
 
                     // Fallback: youtube.com/account if main page gave signed-out response
-                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email))
+                    // Fallback: youtube.com/account if main page gave signed-out response or missing channel name
+                    if (updated == null || string.IsNullOrWhiteSpace(updated.Email) || string.IsNullOrWhiteSpace(updated.DisplayName) || updated.DisplayName == "Google User" || updated.DisplayName == "Google Account")
                     {
                         var tcsAccount = new TaskCompletionSource<bool>();
                         void OnAccountNav(object? s, CoreWebView2NavigationCompletedEventArgs e)

@@ -19,6 +19,14 @@ data class AlgorithmSettings(
 
 object RecommendationEngine {
 
+    private val SPACE_REGEX = Regex("""\s+""")
+
+    private data class ScoredVideo(
+        val video: VideoEntity,
+        val score: Float,
+        val ageSeconds: Long
+    )
+
     // Boredom Detection state (tracked 100% locally on device)
     private var consecutiveShortSkips = 0
 
@@ -34,6 +42,67 @@ object RecommendationEngine {
         get() = consecutiveShortSkips >= 3
 
     /**
+     * Efficiently determines user-facing transparency reasons for a batch of videos.
+     * Precomputes sets once to achieve O(N) performance without main thread choking.
+     */
+    fun getRecommendationReasons(
+        videos: List<VideoEntity>,
+        favorites: List<VideoEntity>,
+        watchHistory: List<VideoEntity>
+    ): Map<String, String> {
+        if (videos.isEmpty()) return emptyMap()
+
+        val favIds = favorites.map { it.youtubeId }.toSet()
+        val subscribedSet = com.example.data.model.UserProfileData.subscribedChannels
+            .map { it.lowercase().trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val watchedChannels = watchHistory
+            .map { it.channelName.lowercase().trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+        val isBoredom = isBoredomModeActive
+
+        val result = HashMap<String, String>(videos.size)
+        for (video in videos) {
+            if (video.lastPositionSeconds > 0) {
+                result[video.youtubeId] = "🕒 Continue Watching"
+                continue
+            }
+            if (video.isFavorite || video.youtubeId in favIds) {
+                result[video.youtubeId] = "⭐ Saved Favorite"
+                continue
+            }
+            if (video.isWatchLater) {
+                result[video.youtubeId] = "🔖 Saved Watch Later"
+                continue
+            }
+
+            val chanLower = video.channelName.lowercase().trim()
+            val isSubscribedProfileChannel = chanLower in subscribedSet || subscribedSet.any { sub ->
+                sub.contains(chanLower) || (chanLower.length >= 3 && chanLower.contains(sub))
+            }
+            if (isSubscribedProfileChannel) {
+                result[video.youtubeId] = "💡 Subscribed Channel"
+                continue
+            }
+
+            if (chanLower in watchedChannels) {
+                result[video.youtubeId] = "🔥 Channel You Enjoy"
+                continue
+            }
+
+            if (isBoredom) {
+                result[video.youtubeId] = "✨ Fresh Topic Exploration"
+                continue
+            }
+
+            result[video.youtubeId] = "📈 Popular Recommendation"
+        }
+        return result
+    }
+
+    /**
      * Determines user-facing transparency reason for why a video is recommended.
      */
     fun getRecommendationReason(
@@ -41,21 +110,7 @@ object RecommendationEngine {
         favorites: List<VideoEntity>,
         watchHistory: List<VideoEntity>
     ): String {
-        if (video.lastPositionSeconds > 0) return "🕒 Continue Watching"
-        if (video.isFavorite) return "⭐ Saved Favorite"
-        if (video.isWatchLater) return "🔖 Saved Watch Later"
-
-        val isSubscribedProfileChannel = com.example.data.model.UserProfileData.subscribedChannels.any {
-            it.contains(video.channelName, ignoreCase = true) || video.channelName.contains(it, ignoreCase = true)
-        }
-        if (isSubscribedProfileChannel) return "💡 Subscribed Channel"
-
-        val hasWatchedChannel = watchHistory.any { it.channelName.equals(video.channelName, ignoreCase = true) }
-        if (hasWatchedChannel) return "🔥 Channel You Enjoy"
-
-        if (isBoredomModeActive) return "✨ Fresh Topic Exploration"
-
-        return "📈 Popular Recommendation"
+        return getRecommendationReasons(listOf(video), favorites, watchHistory)[video.youtubeId] ?: "📈 Popular Recommendation"
     }
 
     /**
@@ -96,10 +151,15 @@ object RecommendationEngine {
 
         // 2. Identify top watched keywords in titles
         val topKeywords = watchHistory
-            .flatMap { it.title.lowercase().split("\\s+".toRegex()) }
+            .flatMap { it.title.lowercase().split(SPACE_REGEX) }
             .filter { it.length > 3 && it !in setOf("video", "with", "this", "that", "from", "2026", "youtube") }
             .groupingBy { it }
             .eachCount()
+
+        val subscribedProfileChannels = com.example.data.model.UserProfileData.subscribedChannels
+            .map { it.lowercase().trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
 
         val scoredList = unmutedVideos.map { video ->
             var score = 50.0f
@@ -117,8 +177,8 @@ object RecommendationEngine {
             }
 
             // C. Creator & Subscribed Profile Channel Boost
-            val isSubscribedProfileChannel = com.example.data.model.UserProfileData.subscribedChannels.any {
-                it.contains(video.channelName, ignoreCase = true) || video.channelName.contains(it, ignoreCase = true)
+            val isSubscribedProfileChannel = chanLower in subscribedProfileChannels || subscribedProfileChannels.any {
+                it.contains(chanLower) || (chanLower.length >= 3 && chanLower.contains(it))
             }
             if (isSubscribedProfileChannel) {
                 score += 80.0f * settings.creatorWeight
@@ -130,11 +190,12 @@ object RecommendationEngine {
             }
 
             // C. Keyword & Subject Affinity
-            val titleWords = video.title.lowercase().split("\\s+".toRegex())
+            val titleWords = video.title.lowercase().split(SPACE_REGEX)
             var keywordHits = 0
             for (word in titleWords) {
-                if (topKeywords.containsKey(word)) {
-                    keywordHits += topKeywords[word] ?: 0
+                val count = topKeywords[word]
+                if (count != null) {
+                    keywordHits += count
                 }
             }
             if (keywordHits > 0) {
@@ -180,16 +241,16 @@ object RecommendationEngine {
                 score -= 350.0f // Drastically push down in algorithm ranking while preserving subscription
             }
 
-            Pair(video, score)
+            ScoredVideo(video, score, ageSeconds)
         }
 
-        // 3. Sort descending by score, breaking ties with actual upload time
+        // 3. Sort descending by score, breaking ties with actual upload time (fast primitive comparison)
         val sortedList = scoredList
             .sortedWith(
-                compareByDescending<Pair<VideoEntity, Float>> { it.second }
-                    .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.first.publishedTimeText) }
+                compareByDescending<ScoredVideo> { it.score }
+                    .thenBy { it.ageSeconds }
             )
-            .map { it.first }
+            .map { it.video }
 
         // 4. Channel Diversity Cap: Enforce max 3 videos per channel in top 15, prioritizing newest
         val finalDiverseList = mutableListOf<VideoEntity>()

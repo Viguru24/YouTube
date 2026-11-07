@@ -18,24 +18,84 @@ namespace VixzDesktop.Services
         try { result.debug.push(String(msg)); } catch(e) {}
     }
 
+    function cleanLine(val) {
+        if (!val) return '';
+        var first = String(val).split(/[\r\n]+/)[0].replace(/\s+/g, ' ').trim();
+        if (!first) return '';
+        if (/^(account menu|google account|google user|sign in|youtube|avatar|profile picture)$/i.test(first)) return '';
+        if (first.indexOf('\u2022') !== -1 || first.indexOf('\u00B7') !== -1 || first.indexOf('\uFFFD') !== -1) return '';
+        return first;
+    }
+
+    function findAccountRenderer(obj, depth, isAccountPage) {
+        if (!obj || typeof obj !== 'object' || depth > 12) return;
+        if (obj.activeAccountHeaderRenderer) {
+            var hdr = obj.activeAccountHeaderRenderer;
+            var nm = hdr.accountName?.simpleText || (hdr.accountName?.runs && hdr.accountName.runs[0]?.text) || '';
+            var em = hdr.email?.simpleText || (hdr.email?.runs && hdr.email.runs[0]?.text) || '';
+            var hd = hdr.channelHandle?.simpleText || (hdr.channelHandle?.runs && hdr.channelHandle.runs[0]?.text) || '';
+            var th = hdr.accountPhoto?.thumbnails;
+            if (!result.name && cleanLine(nm)) { result.name = cleanLine(nm); log('Found name in activeAccountHeaderRenderer: ' + result.name); }
+            if (!result.email && em && em.includes('@')) { result.email = em.trim(); log('Found email in activeAccountHeaderRenderer: ' + result.email); }
+            if (!result.handle && cleanLine(hd)) { result.handle = cleanLine(hd); }
+            if (!result.avatar && th && th.length > 0) { result.avatar = th[th.length - 1].url; }
+        }
+        if (obj.accountItemRenderer) {
+            var item = obj.accountItemRenderer;
+            if (item.isSelected || !result.name) {
+                var inm = item.accountName?.simpleText || (item.accountName?.runs && item.accountName.runs[0]?.text) || '';
+                var ihd = item.channelHandle?.simpleText || (item.channelHandle?.runs && item.channelHandle.runs[0]?.text) || '';
+                var ith = item.accountPhoto?.thumbnails;
+                if (cleanLine(inm)) { result.name = cleanLine(inm); log('Found name in accountItemRenderer: ' + result.name); }
+                if (!result.handle && cleanLine(ihd)) { result.handle = cleanLine(ihd); }
+                if (!result.avatar && ith && ith.length > 0) { result.avatar = ith[ith.length - 1].url; }
+            }
+        }
+        if (obj.accountChannelRenderer) {
+            var ch = obj.accountChannelRenderer;
+            var cnm = ch.title?.simpleText || (ch.title?.runs && ch.title.runs[0]?.text) || '';
+            var cth = ch.thumbnail?.thumbnails;
+            if (!result.name && cleanLine(cnm)) { result.name = cleanLine(cnm); log('Found name in accountChannelRenderer: ' + result.name); }
+            if (!result.avatar && cth && cth.length > 0) { result.avatar = cth[cth.length - 1].url; }
+        }
+        if (Array.isArray(obj)) {
+            for (var i = 0; i < obj.length; i++) findAccountRenderer(obj[i], depth + 1, isAccountPage);
+        } else {
+            var keys = Object.keys(obj);
+            for (var k = 0; k < keys.length; k++) {
+                var key = keys[k];
+                // Skip video feed/watch contents so we never inspect video cards or descriptions
+                if (key === 'richGridRenderer' || key === 'twoColumnWatchNextResults' || (key === 'twoColumnBrowseResultsRenderer' && !isAccountPage)) continue;
+                findAccountRenderer(obj[key], depth + 1, isAccountPage);
+            }
+        }
+    }
+
     try {
-        log('URL: ' + (window.location ? window.location.href : 'none'));
+        var href = window.location ? window.location.href : '';
+        var isYoutubeAccountPage = /youtube\.com\/account(\b|\/|\?|$)/i.test(href);
+        var isGoogleAccountPage = /(myaccount|accounts)\.google\.com/i.test(href);
+
+        log('URL: ' + (href || 'none'));
         log('Title: ' + (document.title || ''));
 
-        // 1. Check window.ytInitialData (instantaneous in HTML)
+        // 1. Check window.ytInitialData (structured account/topbar fields only)
         try {
             if (window.ytInitialData) {
-                var str = JSON.stringify(window.ytInitialData);
-                log('ytInitialData length: ' + str.length);
+                findAccountRenderer(window.ytInitialData, 0, isYoutubeAccountPage);
 
-                // Look for email pattern anywhere in ytInitialData
-                var emailMatches = str.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6})/g);
-                if (emailMatches && emailMatches.length > 0) {
-                    for (var em of emailMatches) {
-                        if (!em.includes('google.com') && !em.includes('youtube.com') || em.includes('@gmail.com')) {
-                            result.email = em;
-                            log('Matched email: ' + em);
-                            break;
+                // Only scan raw ytInitialData for email on dedicated /account page (never on feed/watch pages where creator emails appear)
+                if (isYoutubeAccountPage && !result.email) {
+                    var str = JSON.stringify(window.ytInitialData);
+                    log('ytInitialData (/account) length: ' + str.length);
+                    var emailMatches = str.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6})/g);
+                    if (emailMatches && emailMatches.length > 0) {
+                        for (var em of emailMatches) {
+                            if ((!em.includes('google.com') && !em.includes('youtube.com')) || em.includes('@gmail.com')) {
+                                result.email = em;
+                                log('Matched email on /account: ' + em);
+                                break;
+                            }
                         }
                     }
                 }
@@ -51,10 +111,10 @@ namespace VixzDesktop.Services
                             log('Button ' + i + ' label: ' + lbl);
                             var m = lbl.match(/Google Account:\s*([^\n\(]+)(?:\s*\(([^)]+)\))?/i) ||
                                     lbl.match(/([^\n\(]+)\s*\(([^)]+@[^)]+)\)/i) ||
-                                    lbl.match(/Account:\s*([^\n\(]+)/i);
+                                    lbl.match(/^Account:\s*([^\n\(]+)/i);
                             if (m) {
-                                if (!result.name && m[1]) result.name = m[1].trim();
-                                if (!result.email && m[2]) result.email = m[2].trim();
+                                if (!result.name && cleanLine(m[1])) result.name = cleanLine(m[1]);
+                                if (!result.email && m[2] && m[2].includes('@')) result.email = m[2].trim();
                             }
                             var thumbs = b.avatar?.thumbnails;
                             if (thumbs && thumbs.length > 0) {
@@ -69,18 +129,18 @@ namespace VixzDesktop.Services
             }
         } catch(eInit) { log('ytInitialData search error: ' + eInit.message); }
 
-        // 2. DOM extraction: Topbar avatar button aria-label & image
+        // 2. DOM extraction: Strictly scoped to Topbar masthead avatar button
         try {
-            var avatarBtn = document.querySelector('#avatar-btn, button#avatar-btn, ytd-topbar-menu-button-renderer button, yt-img-shadow#avatar');
+            var avatarBtn = document.querySelector('#masthead-container #avatar-btn, ytd-masthead button#avatar-btn, ytd-masthead ytd-topbar-menu-button-renderer button');
             if (avatarBtn) {
-                log('Found avatarBtn element in DOM');
+                log('Found masthead avatarBtn element in DOM');
                 var label = avatarBtn.getAttribute('aria-label') || avatarBtn.closest('ytd-topbar-menu-button-renderer')?.getAttribute('aria-label') || '';
                 log('DOM avatarBtn aria-label: ' + label);
                 var match = label.match(/Google Account:\s*([^\n\(]+)(?:\s*\(([^)]+)\))?/i) ||
                             label.match(/([^\n\(]+)\s*\(([^)]+@[^)]+)\)/i);
                 if (match) {
-                    if (!result.name && match[1]) result.name = match[1].trim();
-                    if (!result.email && match[2]) result.email = match[2].trim();
+                    if (!result.name && cleanLine(match[1])) result.name = cleanLine(match[1]);
+                    if (!result.email && match[2] && match[2].includes('@')) result.email = match[2].trim();
                 }
                 var img = avatarBtn.querySelector('img') || avatarBtn.closest('button')?.querySelector('img') || avatarBtn.closest('ytd-topbar-menu-button-renderer')?.querySelector('img');
                 if (img && img.src && !result.avatar && !img.src.includes('data:image')) {
@@ -88,59 +148,64 @@ namespace VixzDesktop.Services
                     log('Found DOM avatar img: ' + img.src);
                 }
             } else {
-                log('avatarBtn not found in DOM');
+                log('masthead avatarBtn not found in DOM');
             }
         } catch(eDom) { log('DOM search error: ' + eDom.message); }
 
-        // 3. Scan all images on page for profile avatars (googleusercontent / yt3)
+        // 3. Fallback avatar scan: Strictly scoped to masthead or dedicated account pages (never video feed cards)
         if (!result.avatar) {
             try {
-                var imgs = document.querySelectorAll('img');
-                for (var j = 0; j < imgs.length; j++) {
-                    var src = imgs[j].src || '';
-                    if ((src.includes('googleusercontent.com') || src.includes('yt3.ggpht.com')) && 
+                var imgScope = (isYoutubeAccountPage || isGoogleAccountPage)
+                    ? document.querySelectorAll('img')
+                    : document.querySelectorAll('#masthead-container img, ytd-masthead img, header img');
+                for (var j = 0; j < imgScope.length; j++) {
+                    var src = imgScope[j].src || '';
+                    if ((src.includes('googleusercontent.com') || src.includes('yt3.ggpht.com')) &&
                         (src.includes('=s') || src.includes('/photo.jpg') || src.includes('-c-k-c0x'))) {
                         result.avatar = src;
-                        log('Found avatar via image scan: ' + src);
-                        var alt = imgs[j].alt || imgs[j].getAttribute('aria-label') || '';
-                        if (alt && !result.name && !alt.toLowerCase().includes('avatar') && !alt.toLowerCase().includes('picture')) {
-                            result.name = alt.trim();
-                        }
+                        log('Found avatar via scoped image scan: ' + src);
                         break;
                     }
                 }
             } catch(eImg) { log('Image scan error: ' + eImg.message); }
         }
 
-        // 4. Account page DOM selectors (if on /account or myaccount)
-        try {
-            var nameEl = document.querySelector('#channel-name, #channel-title, yt-formatted-string.ytd-account-item-renderer, [data-email]');
-            if (nameEl) {
-                var txt = nameEl.textContent ? nameEl.textContent.trim() : '';
-                if (txt && !result.name) result.name = txt;
-                var attrEmail = nameEl.getAttribute('data-email');
-                if (attrEmail && !result.email) result.email = attrEmail;
-            }
-            var handleEl = document.querySelector('#channel-handle');
-            if (handleEl && !result.handle) result.handle = handleEl.textContent ? handleEl.textContent.trim() : '';
-
-            // Google MyAccount page structure
-            var welcomeEl = document.querySelector('h1, [data-profile-name], .Wgg1ne, .gb_d');
-            if (welcomeEl) {
-                var wText = welcomeEl.textContent ? welcomeEl.textContent.trim() : '';
-                var wm = wText.match(/Welcome,\s*([^!.]+)/i);
-                if (wm && wm[1]) {
-                    result.name = wm[1].trim();
-                    log('Found name in Welcome header: ' + result.name);
+        // 4. Account page DOM selectors — ONLY run on youtube.com/account or Google Account pages!
+        //    (On youtube.com Home/Watch pages, #channel-name belongs to video/movie cards!)
+        if (isYoutubeAccountPage) {
+            try {
+                var nameEl = document.querySelector('ytd-account-item-renderer #channel-title, ytd-account-settings #name, yt-formatted-string.ytd-account-item-renderer, [data-email]');
+                if (nameEl) {
+                    var txt = cleanLine(nameEl.textContent);
+                    if (txt && !result.name) result.name = txt;
+                    var attrEmail = nameEl.getAttribute('data-email');
+                    if (attrEmail && !result.email) result.email = attrEmail.trim();
                 }
-            }
+                var handleEl = document.querySelector('ytd-account-item-renderer #channel-handle, #channel-handle');
+                if (handleEl && !result.handle) result.handle = cleanLine(handleEl.textContent);
+            } catch(eAcc) { log('YouTube /account DOM error: ' + eAcc.message); }
+        }
 
-            var gEmail = document.querySelector('.gb_d, [aria-label*=""@""]');
-            if (gEmail && !result.email) {
-                var gm = (gEmail.textContent || gEmail.getAttribute('aria-label') || '').match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6})/);
-                if (gm) result.email = gm[1];
-            }
-        } catch(eAcc) { log('Account DOM error: ' + eAcc.message); }
+        if (isGoogleAccountPage) {
+            try {
+                var welcomeEl = document.querySelector('h1, [data-profile-name], .Wgg1ne, .gb_d');
+                if (welcomeEl) {
+                    var wText = welcomeEl.textContent ? welcomeEl.textContent.trim() : '';
+                    var wm = wText.match(/Welcome,\s*([^!.\r\n]+)/i);
+                    if (wm && cleanLine(wm[1])) {
+                        result.name = cleanLine(wm[1]);
+                        log('Found name in Welcome header: ' + result.name);
+                    }
+                }
+
+                var gEmail = document.querySelector('[data-email], .gb_d, [aria-label*=""@""]');
+                if (gEmail && !result.email) {
+                    var gm = (gEmail.getAttribute('data-email') || gEmail.textContent || gEmail.getAttribute('aria-label') || '')
+                        .match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6})/);
+                    if (gm) result.email = gm[1];
+                }
+            } catch(eGAcc) { log('Google Account DOM error: ' + eGAcc.message); }
+        }
 
     } catch(err) {
         log('Fatal script error: ' + err.toString());
@@ -148,6 +213,48 @@ namespace VixzDesktop.Services
 
     return JSON.stringify(result);
 })();";
+
+        /// <summary>
+        /// Sanitizes a scraped or stored display name, rejecting multi-line or feed metadata strings
+        /// (such as "Action &amp; adventure • 1984") and falling back cleanly when invalid.
+        /// </summary>
+        public static string SanitizeDisplayName(string? rawName)
+        {
+            if (string.IsNullOrWhiteSpace(rawName)) return "";
+
+            var firstLine = rawName.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)[0];
+            firstLine = Regex.Replace(firstLine, @"\s+", " ").Trim();
+
+            if (string.IsNullOrWhiteSpace(firstLine) || firstLine.Length > 60)
+                return "";
+
+            // Reject YouTube UI chrome labels and movie/video metadata badges (e.g., "Action & adventure • 1984")
+            if (firstLine.Equals("Google User", StringComparison.OrdinalIgnoreCase) ||
+                firstLine.Equals("Account menu", StringComparison.OrdinalIgnoreCase) ||
+                firstLine.Equals("Sign in", StringComparison.OrdinalIgnoreCase) ||
+                firstLine.Equals("YouTube", StringComparison.OrdinalIgnoreCase) ||
+                firstLine.Contains('•') ||
+                firstLine.Contains('·') ||
+                firstLine.Contains('\uFFFD') ||
+                Regex.IsMatch(firstLine, @"\b(Action & adventure|Comedy|Drama|Thriller|Horror|Sci-fi|Documentary)\b", RegexOptions.IgnoreCase))
+            {
+                return "";
+            }
+
+            return firstLine;
+        }
+
+        public static string DeriveDisplayNameFromEmail(string? email)
+        {
+            if (string.IsNullOrWhiteSpace(email) || !email.Contains('@')) return "";
+            var prefix = email.Split('@')[0];
+            var alphaOnly = Regex.Replace(prefix, @"\d+$", "");
+            if (alphaOnly.Length >= 3)
+            {
+                return char.ToUpper(alphaOnly[0]) + alphaOnly.Substring(1);
+            }
+            return email.Trim();
+        }
 
         /// <summary>
         /// Executes profile discovery and updates stored UserAccount if valid credentials exist.
@@ -173,14 +280,18 @@ namespace VixzDesktop.Services
                 var parsed = JToken.Parse(rawResult);
                 var jobj = parsed.Type == JTokenType.String ? JObject.Parse(parsed.ToString()) : (JObject)parsed;
 
-                var name = jobj.Value<string>("name")?.Trim() ?? "";
+                var name = SanitizeDisplayName(jobj.Value<string>("name"));
                 var email = jobj.Value<string>("email")?.Trim() ?? "";
                 var avatar = jobj.Value<string>("avatar")?.Trim() ?? "";
-                var handle = jobj.Value<string>("handle")?.Trim() ?? "";
+                var handle = SanitizeDisplayName(jobj.Value<string>("handle"));
 
-                // Determine best display name
+                var existing = StorageService.Settings.UserAccount ?? new UserAccount();
+                var effectiveEmail = !string.IsNullOrWhiteSpace(email) ? email : existing.Email;
+                var existingCleanName = SanitizeDisplayName(existing.DisplayName);
+
+                // Determine best display name without overwriting a valid stored name with empty fallback
                 string displayName = "";
-                if (!string.IsNullOrWhiteSpace(name) && !name.Equals("Google User", StringComparison.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(name))
                 {
                     displayName = name;
                 }
@@ -188,18 +299,13 @@ namespace VixzDesktop.Services
                 {
                     displayName = handle;
                 }
-                else if (!string.IsNullOrWhiteSpace(email))
+                else if (!string.IsNullOrWhiteSpace(existingCleanName))
                 {
-                    var prefix = email.Split('@')[0];
-                    var alphaOnly = Regex.Replace(prefix, @"\d+$", "");
-                    if (alphaOnly.Length >= 3)
-                    {
-                        displayName = char.ToUpper(alphaOnly[0]) + alphaOnly.Substring(1);
-                    }
-                    else
-                    {
-                        displayName = email;
-                    }
+                    displayName = existingCleanName;
+                }
+                else if (!string.IsNullOrWhiteSpace(effectiveEmail))
+                {
+                    displayName = DeriveDisplayNameFromEmail(effectiveEmail);
                 }
 
                 if (string.IsNullOrWhiteSpace(displayName) && string.IsNullOrWhiteSpace(email) && string.IsNullOrWhiteSpace(avatar))
@@ -207,9 +313,8 @@ namespace VixzDesktop.Services
                     return null;
                 }
 
-                var existing = StorageService.Settings.UserAccount ?? new UserAccount();
                 existing.IsSignedIn = true;
-                if (!string.IsNullOrWhiteSpace(displayName)) existing.DisplayName = displayName;
+                existing.DisplayName = !string.IsNullOrWhiteSpace(displayName) ? displayName : "Google Account";
                 if (!string.IsNullOrWhiteSpace(email)) existing.Email = email;
                 if (!string.IsNullOrWhiteSpace(avatar)) existing.AvatarUrl = avatar;
                 existing.LastSyncTime = DateTime.UtcNow;

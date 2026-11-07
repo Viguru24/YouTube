@@ -420,7 +420,7 @@ object YouTubeUtils {
             return "TODAY"
         }
 
-        val match = Regex("""(\d+)\s*(seconds?|sec|s|minutes?|mins?|min|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|wk|w|months?|mos?|mo|years?|yrs?|yr|y)\b""").find(lower)
+        val match = PUBLISHED_TIME_REGEX.find(lower)
         if (match != null) {
             val num = match.groupValues[1]
             val unit = match.groupValues[2]
@@ -440,6 +440,12 @@ object YouTubeUtils {
         return defaultIfMissing
     }
 
+        private val PUBLISHED_TIME_REGEX = Regex(
+        """(\d+)\s*(seconds?|sec|s|minutes?|mins?|min|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|wk|w|months?|mos?|mo|years?|yrs?|yr|y)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val PUBLISHED_TIME_CACHE = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     /**
      * Parses a relative publication string (e.g., "2 hours ago", "5 days ago", "1 year ago", "9h ago", "1 second ago")
      * into estimated elapsed seconds, enabling precise time-based sorting (Newest vs Oldest).
@@ -448,6 +454,8 @@ object YouTubeUtils {
         if (publishedText.isBlank() || publishedText.equals("Latest", ignoreCase = true)) {
             return 2L * 86400L // Default to 2 days old (so unparsed videos do not jump ahead of fresh uploads)
         }
+        PUBLISHED_TIME_CACHE[publishedText]?.let { return it }
+
         // Normalize Unicode non-breaking spaces and HTML entities
         val normalized = publishedText.lowercase()
             .replace('\u00A0', ' ')
@@ -458,20 +466,23 @@ object YouTubeUtils {
         if (normalized.contains("live now") || normalized.contains("just now") || normalized.contains("moments ago") || 
             (normalized.contains("live") && !normalized.contains("ago") && !normalized.contains("streamed")) ||
             normalized.contains("premiering") || normalized.contains("premieres")) {
+            PUBLISHED_TIME_CACHE[publishedText] = 0L
             return 0L
         }
         if (normalized.contains("today")) {
+            PUBLISHED_TIME_CACHE[publishedText] = 43200L
             return 43200L // ~12 hours
         }
         if (normalized.contains("yesterday")) {
+            PUBLISHED_TIME_CACHE[publishedText] = 86400L
             return 86400L // 24 hours
         }
 
-        val match = Regex("""(\d+)\s*(seconds?|sec|s|minutes?|mins?|min|m|hours?|hrs?|hr|h|days?|d|weeks?|wks?|wk|w|months?|mos?|mo|years?|yrs?|yr|y)\b""").find(normalized)
-        if (match != null) {
+        val match = PUBLISHED_TIME_REGEX.find(normalized)
+        val calculated = if (match != null) {
             val num = match.groupValues[1].toLongOrNull() ?: 1L
-            val unit = match.groupValues[2]
-            return when {
+            val unit = match.groupValues[2].lowercase()
+            when {
                 unit == "s" || unit.startsWith("sec") -> num
                 unit == "m" || unit.startsWith("min") -> num * 60L
                 unit == "h" || unit.startsWith("hr") || unit.startsWith("hour") -> num * 3600L
@@ -481,8 +492,11 @@ object YouTubeUtils {
                 unit == "y" || unit.startsWith("yr") || unit.startsWith("year") -> num * 31536000L
                 else -> 2L * 86400L
             }
+        } else {
+            2L * 86400L
         }
 
-        return 2L * 86400L
+        PUBLISHED_TIME_CACHE[publishedText] = calculated
+        return calculated
     }
 }

@@ -88,6 +88,21 @@ namespace VixzDesktop.Services
                     if (settings != null)
                     {
                         Settings = settings;
+                        if (Settings.UserAccount != null && Settings.UserAccount.IsSignedIn && !string.IsNullOrWhiteSpace(Settings.UserAccount.DisplayName))
+                        {
+                            var sanitized = AccountSyncService.SanitizeDisplayName(Settings.UserAccount.DisplayName);
+                            if (string.IsNullOrWhiteSpace(sanitized))
+                            {
+                                var fallback = AccountSyncService.DeriveDisplayNameFromEmail(Settings.UserAccount.Email);
+                                Settings.UserAccount.DisplayName = !string.IsNullOrWhiteSpace(fallback) ? fallback : "Google Account";
+                                Save();
+                            }
+                            else if (sanitized != Settings.UserAccount.DisplayName)
+                            {
+                                Settings.UserAccount.DisplayName = sanitized;
+                                Save();
+                            }
+                        }
                     }
                 }
 

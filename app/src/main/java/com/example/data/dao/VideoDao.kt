@@ -39,6 +39,9 @@ interface VideoDao {
     @Query("SELECT * FROM videos WHERE youtubeId = :youtubeId LIMIT 1")
     suspend fun getVideoById(youtubeId: String): VideoEntity?
 
+    @Query("SELECT * FROM videos WHERE youtubeId IN (:ids)")
+    suspend fun getVideosByIds(ids: List<String>): List<VideoEntity>
+
     @Query("SELECT * FROM videos WHERE title LIKE '%' || :query || '%' OR channelName LIKE '%' || :query || '%'")
     fun searchVideos(query: String): Flow<List<VideoEntity>>
 

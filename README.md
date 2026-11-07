@@ -19,7 +19,7 @@
 
 | Platform | Format | Architecture | Direct Link |
 | :--- | :--- | :--- | :--- |
-| 📱 **Android** | `APK (v2.2.1)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.2.1/Vixz-YouTube-Player-v2.2.1.apk) |
+| 📱 **Android** | `APK (v2.2.2)` | Universal (`arm64`, `armv7`, `x86_64`) | [**📥 Download APK**](https://github.com/Viguru24/YouTube/releases/download/v2.2.2/Vixz-YouTube-Player-v2.2.2.apk) |
 | 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
 | 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
-  <a href="#-whats-new-in-v221">🆕 <b>What's New</b></a> •
+  <a href="#-whats-new-in-v222">🆕 <b>What's New</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •
@@ -35,6 +35,19 @@
 </p>
 
 </div>
+
+---
+
+## 🆕 What's New in v2.2.2
+
+- ⚡ **Feed Rendering & Recommendation Engine Performance Overhaul:**
+  - **Batch Recommendation Reasoning:** Replaced iterative single-item evaluation with `RecommendationEngine.getRecommendationReasons()`, which precomputes lookup sets once and processes all video badges in $O(N)$ time.
+  - **Background Thread Offloading:** Shifted feed filtering, sorting, and recommendation scoring off the main UI thread onto `Dispatchers.Default` using Compose `produceState`, preventing frame drops and UI freezes during feed scrolling and search.
+  - **Timestamp Caching & Compiled Regex:** Precompiled `PUBLISHED_TIME_REGEX` and added `PUBLISHED_TIME_CACHE` in `YouTubeUtils`, eliminating repeated expensive regex compilation and parsing during scroll.
+  - **Database Query Batching:** Added `VideoDao.getVideosByIds()` to query only relevant video records instead of scanning the full database with `getAllVideosDirect()`.
+  - **ViewModel Flow Debounce:** Added a 150ms debounce and background dispatcher to `repository.allVideos` in `YouTubeViewModel`, preventing excessive UI recompositions during active syncs.
+- 🔄 **Direct OTA Updates in UI:** Added 1-tap Over-The-Air update checks to the Settings Dialog and Library screen.
+- 🖥️ **Windows Desktop Display & Avatar Enhancements:** Improved Google profile name resolution, email fallback derivation, and avatar circular clipping.
 
 ---
 

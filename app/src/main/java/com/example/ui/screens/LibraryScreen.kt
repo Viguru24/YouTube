@@ -54,6 +54,7 @@ fun LibraryScreen(
     downloadRetention: String = "Never",
     onDownloadRetentionChanged: (String) -> Unit = {},
     onOpenHistory: () -> Unit = {},
+    onOpenOtaUpdates: () -> Unit = {},
     onMuteChannel: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -70,6 +71,17 @@ fun LibraryScreen(
                     )
                 },
                 actions = {
+                    IconButton(
+                        onClick = onOpenOtaUpdates,
+                        modifier = Modifier.testTag("library_ota_update_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.RocketLaunch,
+                            contentDescription = "Check for Updates",
+                            tint = YouTubeRed
+                        )
+                    }
+
                     IconButton(
                         onClick = onOpenHistory,
                         modifier = Modifier.testTag("library_history_top_btn")

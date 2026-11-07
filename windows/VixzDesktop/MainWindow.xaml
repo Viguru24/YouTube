@@ -1141,7 +1141,11 @@
                                         <Border Width="40" Height="40" CornerRadius="20" Background="#282838" BorderBrush="{StaticResource AccentGold}" BorderThickness="1.5" ClipToBounds="True">
                                             <Grid>
                                                 <TextBlock x:Name="AccountAvatarInitial" Text="👤" FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource AccentGold}"/>
-                                                <Image x:Name="AccountAvatarImage" Visibility="Collapsed" Stretch="UniformToFill"/>
+                                                <Image x:Name="AccountAvatarImage" Width="37" Height="37" Visibility="Collapsed" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Image.Clip>
+                                                        <EllipseGeometry Center="18.5,18.5" RadiusX="18.5" RadiusY="18.5"/>
+                                                    </Image.Clip>
+                                                </Image>
                                             </Grid>
                                         </Border>
                                         <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">

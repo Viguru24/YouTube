@@ -1175,6 +1175,15 @@ namespace VixzDesktop
                     ? account.DisplayName
                     : (!string.IsNullOrWhiteSpace(account.Email) ? account.Email : "Google Account");
 
+                var cleanDisplay = AccountSyncService.SanitizeDisplayName(account.DisplayName);
+                if (string.IsNullOrWhiteSpace(cleanDisplay))
+                {
+                    cleanDisplay = AccountSyncService.DeriveDisplayNameFromEmail(account.Email);
+                }
+                display = !string.IsNullOrWhiteSpace(cleanDisplay)
+                    ? cleanDisplay
+                    : (!string.IsNullOrWhiteSpace(account.Email) ? account.Email.Trim() : "Google Account");
+
                 AccountBtn.Content = $"👤 {display}";
                 AccountBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentGold");
                 AccountProfileName.Text = display;
@@ -1201,6 +1210,12 @@ namespace VixzDesktop
                         bi.UriSource = new Uri(account.AvatarUrl, UriKind.Absolute);
                         bi.CacheOption = BitmapCacheOption.OnLoad;
                         bi.EndInit();
+                        bi.DownloadFailed += (_, __) =>
+                        {
+                            AccountAvatarImage.Visibility = Visibility.Collapsed;
+                            AccountAvatarInitial.Visibility = Visibility.Visible;
+                            AccountAvatarInitial.Text = display.Length > 0 ? display[0].ToString().ToUpper() : "👤";
+                        };
                         AccountAvatarImage.Source = bi;
                         AccountAvatarImage.Visibility = Visibility.Visible;
                         AccountAvatarInitial.Visibility = Visibility.Collapsed;

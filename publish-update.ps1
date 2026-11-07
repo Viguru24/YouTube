@@ -2,7 +2,8 @@
 # Automates compiling and publishing OTA builds to the Sovereign VPS update server for YouTube for Android (Vixz).
 
 param(
-    [string]$Notes = ""
+    [string]$Notes = "",
+    [switch]$InstallOnDevice
 )
 
 $AdminKey = "test_secret_4666"
@@ -69,21 +70,14 @@ if (-not $ApkPath -or -not (Test-Path $ApkPath)) {
 }
 
 if (-not $VersionCode) {
-    $VersionCode = 39
+    $VersionCode = 43
 }
 if (-not $VersionName) {
-    $VersionName = "2.0.0"
+    $VersionName = "2.2.2"
 }
 
 if ([string]::IsNullOrWhiteSpace($Notes)) {
-    Write-Host ""
-    Write-Host "Release Notes (or press Enter for default 'Sovereign OTA updates and performance improvements'):" -ForegroundColor Cyan
-    $InputNotes = Read-Host
-    if ([string]::IsNullOrWhiteSpace($InputNotes)) {
-        $ReleaseNotes = "Sovereign Over-The-Air (OTA) updates, background sync, and performance improvements."
-    } else {
-        $ReleaseNotes = $InputNotes
-    }
+    $ReleaseNotes = "Sovereign Over-The-Air (OTA) updates, background sync, and performance improvements."
 } else {
     $ReleaseNotes = $Notes
 }
@@ -94,6 +88,14 @@ Write-Host "    Version: $VersionName (code: $VersionCode)"
 Write-Host "    File:    $ApkPath"
 Write-Host "    Notes:   $ReleaseNotes"
 Write-Host ""
+
+# Copy to release folder
+$ReleaseDir = Join-Path $PSScriptRoot "release"
+if (Test-Path $ReleaseDir) {
+    Copy-Item -Path $ApkPath -Destination (Join-Path $ReleaseDir "Vixz-YouTube-Player-v$VersionName.apk") -Force
+    Copy-Item -Path $ApkPath -Destination (Join-Path $ReleaseDir "Vixz-YouTube-Player-latest.apk") -Force
+    Write-Host "[+] Mirrored APK to release directory." -ForegroundColor Green
+}
 
 Write-Host "[*] Uploading to VPS ($UploadUrl)..." -ForegroundColor Yellow
 
@@ -114,4 +116,28 @@ try {
     Write-Warning ""
     Write-Warning "Note: Verify that api.cosmowhisper.com /updates endpoint is active."
     Write-Error "[!] Server deployment upload failed: $_"
+}
+
+# 3. Direct install to connected phone if requested
+if ($InstallOnDevice) {
+    Write-Host "[*] Scanning for connected ADB devices..." -ForegroundColor Yellow
+    $devices = & adb devices | Select-String -Pattern "^\s*([^\s]+)\s+device$"
+    if ($devices) {
+        foreach ($d in $devices) {
+            $serial = $d.Matches[0].Groups[1].Value
+            $model = & adb -s $serial shell getprop ro.product.model
+            $model = $model.Trim()
+            Write-Host "[*] Installing to $model [$serial]..." -ForegroundColor Cyan
+            & adb -s $serial install -r "$ApkPath"
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[+] Launching Vixz on $model..." -ForegroundColor Green
+                & adb -s $serial shell am start -n com.aistudio.youtubeplayer.vixz/com.example.MainActivity
+                Write-Host "[OK] Successfully updated and launched on $model!" -ForegroundColor Green
+            } else {
+                Write-Error "[!] Failed to install on $model [$serial]"
+            }
+        }
+    } else {
+        Write-Warning "[!] No connected ADB devices detected to install."
+    }
 }
