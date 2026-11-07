@@ -8,6 +8,21 @@ This application receives direct Over-The-Air updates from your self-hosted sove
 - **Metadata Endpoint:** `https://api.cosmowhisper.com/updates/youtube/version.json`
 - **Binary Download:** `https://api.cosmowhisper.com/updates/youtube/app-latest.apk`
 - **Upload Endpoint:** `POST https://api.cosmowhisper.com/updates/youtube/upload`
+- **Live Stats & Analytics:** `https://api.cosmowhisper.com/updates/youtube/stats`
+- **Global Hub Status:** `https://api.cosmowhisper.com/updates/status`
+
+## Monitoring Downloads (GitHub + Sovereign VPS OTA)
+Because OTA updates are served directly from your Sovereign VPS, GitHub release counts do not capture OTA installs. The VPS tracks downloads in real time (`stats.json`), recording total downloads, version breakdowns, timestamps, and client info.
+
+### 1-Click Monitor
+Double-click `CHECK_STATS.bat` or run:
+```powershell
+.\check-stats.ps1
+```
+This reconciles:
+1. **GitHub Releases API:** All historical and direct GitHub downloads.
+2. **Sovereign VPS OTA Telemetry:** Live downloads from `https://api.cosmowhisper.com/updates/youtube/stats`.
+3. **Grand Total:** Unified downloads across both distribution channels.
 
 ## In-App Update Mechanism
 1. **Startup Check:** Whenever the app launches or returns to the foreground, `AppUpdateManager` queries the VPS asynchronously.
