@@ -28,6 +28,7 @@
 <p align="center">
   <a href="#-quick-install-guide">📥 <b>Installation</b></a> •
   <a href="#-whats-new-in-v222">🆕 <b>What's New</b></a> •
+  <a href="docs/v2.2.2_performance_architecture.md">⚡ <b>Performance Architecture</b></a> •
   <a href="#-sovereign-cosmo-software-suite">🌌 <b>Cosmo Suite</b></a> •
   <a href="#-vixz-desktop-windows-pc-version">🖥️ <b>Windows Desktop</b></a> •
   <a href="#-gestures-reference">🎮 <b>Gestures</b></a> •

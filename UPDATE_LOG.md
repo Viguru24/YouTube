@@ -7,6 +7,7 @@ All notable changes, fixes, and improvements across the Android client and Windo
 ## 🚀 Release v2.2.2 — Feed Rendering & Recommendation Engine Performance Overhaul (November 7, 2026)
 
 ### ⚡ 1. High-Performance Feed & Recommendation Computations
+*(See comprehensive architecture deep-dive: [docs/v2.2.2_performance_architecture.md](docs/v2.2.2_performance_architecture.md))*
 - **Batch Recommendation Reasoning:** Replaced iterative single-item evaluation with `RecommendationEngine.getRecommendationReasons()`, which precomputes lookup sets once and processes all video badges in $O(N)$ time.
 - **Background Thread Offloading:** Shifted feed filtering, sorting, and recommendation scoring off the main UI thread onto `Dispatchers.Default` using Compose `produceState`, preventing frame drops and UI freezes during feed scrolling and search.
 - **Timestamp Caching & Compiled Regex:** Precompiled `PUBLISHED_TIME_REGEX` and added `PUBLISHED_TIME_CACHE` in `YouTubeUtils`, eliminating repeated expensive regex compilation and parsing during scroll.
