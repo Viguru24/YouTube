@@ -28,7 +28,6 @@ namespace VixzDesktop
             if (ClearHistoryBtn != null) ClearHistoryBtn.Visibility = Visibility.Collapsed;
             if (ResetAlgorithmBtn != null) ResetAlgorithmBtn.Visibility = Visibility.Visible;
             LoadingSpinner.Visibility = Visibility.Visible;
-            VideoItemsControl.ItemsSource = null;
 
             try
             {
@@ -54,8 +53,7 @@ namespace VixzDesktop
 
             if (_rawUnfilteredFeed == null || _rawUnfilteredFeed.Count == 0)
             {
-                _currentFeed = new List<VideoItem>();
-                VideoItemsControl.ItemsSource = _currentFeed;
+                SetFeedItems(null);
                 return;
             }
 
@@ -70,8 +68,7 @@ namespace VixzDesktop
                 // Passing null for sortBy maintains the exact watch-history insertion order
                 var list = YouTubeService.ApplyLocalFilters(_rawUnfilteredFeed, dateTag, durationTag, sortBy: null);
 
-                _currentFeed = list;
-                VideoItemsControl.ItemsSource = _currentFeed;
+                SetFeedItems(list);
                 return;
             }
 
@@ -90,8 +87,7 @@ namespace VixzDesktop
                 filtered = filtered.Where(v => !watchedIds.Contains(v.Id)).ToList();
             }
 
-            _currentFeed = filtered;
-            VideoItemsControl.ItemsSource = _currentFeed;
+            SetFeedItems(filtered);
         }
 
         private void FilterOrSort_Changed(object sender, SelectionChangedEventArgs e)
@@ -129,8 +125,7 @@ namespace VixzDesktop
 
                 var results = await YouTubeService.GetDeepFilteredFeedAsync(dateTag, durationTag, sortByTag);
                 _rawUnfilteredFeed = results;
-                _currentFeed = results;
-                VideoItemsControl.ItemsSource = _currentFeed;
+                SetFeedItems(results);
                 LoadingSpinner.Visibility = Visibility.Collapsed;
                 ShowToast($"⚡ Found {_currentFeed.Count} videos matching filters");
             }
@@ -145,8 +140,7 @@ namespace VixzDesktop
             DateFilterCombo.SelectedIndex = 0;
             DurationFilterCombo.SelectedIndex = 0;
             SortByFilterCombo.SelectedIndex = 1;
-            _currentFeed = _rawUnfilteredFeed.ToList();
-            VideoItemsControl.ItemsSource = _currentFeed;
+            SetFeedItems(_rawUnfilteredFeed);
             ShowToast("Filters reset");
         }
 
@@ -642,12 +636,7 @@ namespace VixzDesktop
                 prompt.Close();
                 StorageService.ClearWatchHistory();
                 _rawUnfilteredFeed = new List<VideoItem>();
-                _currentFeed = new List<VideoItem>();
-                if (VideoItemsControl != null)
-                {
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
-                }
+                SetFeedItems(null);
                 ShowToast("🗑️ Watch history cleared");
             };
 
@@ -838,28 +827,20 @@ namespace VixzDesktop
             return result;
         }
 
-        private async void SwitchToFeedView()
+        private void SwitchToFeedView()
         {
             PlayerView.Visibility = Visibility.Collapsed;
             FeedView.Visibility = Visibility.Visible;
             _sponsorBlockTimer?.Stop();
 
-            // When returning to the feed, ensure the watched video is removed from the visible list (unless in History, Downloads, or Series/Playlist feeds)
+            // When returning to the feed, ensure the watched video is removed smoothly without rebuilding all tiles
             if (_currentVideo != null && FeedTitleText?.Text != "📜 Watch History" && FeedTitleText?.Text != "💾 Downloaded Videos & Audio" && (FeedTitleText == null || !FeedTitleText.Text.StartsWith("📺")) && (FeedTitleText == null || !FeedTitleText.Text.StartsWith("📋")))
             {
                 var targetId = _currentVideo.Id;
                 if (!string.IsNullOrEmpty(targetId))
                 {
                     _rawUnfilteredFeed?.RemoveAll(v => v.Id == targetId);
-                    if (_currentFeed != null)
-                    {
-                        var removed = _currentFeed.RemoveAll(v => v.Id == targetId);
-                        if (removed > 0 && VideoItemsControl != null)
-                        {
-                            VideoItemsControl.ItemsSource = null;
-                            VideoItemsControl.ItemsSource = _currentFeed;
-                        }
-                    }
+                    RemoveFeedItem(targetId);
                 }
             }
 
@@ -867,18 +848,14 @@ namespace VixzDesktop
             {
                 if (VideoWebView?.CoreWebView2 != null)
                 {
-                    // Save playback position
-                    if (_currentVideo != null)
+                    // Save playback position directly from in-memory tracker (0ms IPC delay)
+                    if (_currentVideo != null && _currentVideoPosition > 1)
                     {
-                        var timeStr = await VideoWebView.ExecuteScriptAsync("getCurrentTime()");
-                        if (double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) && sec > 1)
-                        {
-                            StorageService.SavePlaybackPosition(_currentVideo.Id, sec);
-                        }
+                        StorageService.SavePlaybackPosition(_currentVideo.Id, _currentVideoPosition);
                     }
 
-                    // Immediately pause video and all media elements so it stops playing in the background
-                    await VideoWebView.ExecuteScriptAsync("document.querySelectorAll('video, audio').forEach(m => { m.pause(); }); if (window.player && typeof window.player.pauseVideo === 'function') window.player.pauseVideo();");
+                    // Immediately pause video and all media elements fire-and-forget
+                    _ = VideoWebView.ExecuteScriptAsync("document.querySelectorAll('video, audio').forEach(m => { m.pause(); }); if (window.player && typeof window.player.pauseVideo === 'function') window.player.pauseVideo();");
                 }
             }
             catch (Exception ex)
@@ -1063,8 +1040,7 @@ namespace VixzDesktop
             );
 
             _rawUnfilteredFeed = ranked;
-            _currentFeed = YouTubeService.ApplyLocalFilters(ranked, dateTag, durationTag, sortByTag);
-            VideoItemsControl.ItemsSource = _currentFeed;
+            SetFeedItems(YouTubeService.ApplyLocalFilters(ranked, dateTag, durationTag, sortByTag));
             LoadingSpinner.Visibility = Visibility.Collapsed;
         }
 

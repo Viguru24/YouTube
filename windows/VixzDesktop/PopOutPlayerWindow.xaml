@@ -8,9 +8,10 @@
         MinHeight="220" MinWidth="340"
         WindowStartupLocation="Manual"
         WindowStyle="None"
-        AllowsTransparency="True"
-        Background="Transparent"
+        Background="#0B0B0E"
         Topmost="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <WindowChrome.WindowChrome>
@@ -68,6 +69,15 @@
             <!-- 2. VIDEO PLAYER AREA -->
             <Grid Grid.Row="1" Background="Black">
                 <wv2:WebView2 x:Name="MiniWebView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+
+                <!-- Smooth Poster Overlay while player initializes & buffers -->
+                <Grid x:Name="MiniPosterOverlay" Background="#0A0A0E" IsHitTestVisible="False">
+                    <Image x:Name="MiniPosterImage" Stretch="UniformToFill" Opacity="0.55"/>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <ProgressBar IsIndeterminate="True" Width="90" Height="3" Foreground="{StaticResource AccentGold}" Background="#25FFFFFF" BorderThickness="0"/>
+                        <TextBlock Text="Pop-Out Streaming..." Foreground="{StaticResource TextSecondary}" FontSize="10.5" FontWeight="SemiBold" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
 
                 <!-- 3. AUTO-HIDING UTILITY DECK (Fades in on mouse hover) -->
                 <Border x:Name="FooterOverlay"

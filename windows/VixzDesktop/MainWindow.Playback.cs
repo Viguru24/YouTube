@@ -167,24 +167,14 @@ namespace VixzDesktop
                 // Move video to top of current Watch History feed
                 _rawUnfilteredFeed?.RemoveAll(v => v.Id == video.Id);
                 _rawUnfilteredFeed?.Insert(0, video);
-                _currentFeed?.RemoveAll(v => v.Id == video.Id);
-                _currentFeed?.Insert(0, video);
-                if (VideoItemsControl != null)
-                {
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
-                }
+                RemoveFeedItem(video.Id);
+                _currentFeed.Insert(0, video);
             }
             else if (FeedTitleText?.Text != "💾 Downloaded Videos & Audio" && (FeedTitleText == null || !FeedTitleText.Text.StartsWith("📺")) && (FeedTitleText == null || !FeedTitleText.Text.StartsWith("📋")))
             {
-                // Drop the video from the discovery/recommendation feed immediately
+                // Drop the video from the discovery/recommendation feed smoothly
                 _rawUnfilteredFeed?.RemoveAll(v => v.Id == video.Id);
-                _currentFeed?.RemoveAll(v => v.Id == video.Id);
-                if (VideoItemsControl != null)
-                {
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
-                }
+                RemoveFeedItem(video.Id);
             }
 
             CurrentVideoTitle.Text = video.Title;
@@ -548,10 +538,8 @@ namespace VixzDesktop
                 ThumbsDownBtn.Foreground = (System.Windows.Media.Brush)FindResource("AccentRed");
 
                 // Completely remove from active feeds
-                _currentFeed.RemoveAll(v => v.Id == targetVideo.Id);
+                RemoveFeedItem(targetVideo.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == targetVideo.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
 
                 ShowToast("👎 Disliked! Video removed & assigned negative score.");
 
@@ -612,10 +600,8 @@ namespace VixzDesktop
             if (sender is MenuItem menuItem && menuItem.DataContext is VideoItem video)
             {
                 StorageService.AddDislike(video);
-                _currentFeed.RemoveAll(v => v.Id == video.Id);
+                RemoveFeedItem(video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
                 ShowToast("👎 Disliked & removed from feed! Algorithm updated.");
             }
         }
@@ -627,19 +613,15 @@ namespace VixzDesktop
                 if (FeedTitleText?.Text == "📜 Watch History")
                 {
                     StorageService.RemoveFromWatchHistory(video.Id);
-                    _currentFeed.RemoveAll(v => v.Id == video.Id);
+                    RemoveFeedItem(video.Id);
                     _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
                     ShowToast("🗑️ Removed from Watch History");
                     return;
                 }
 
                 StorageService.DeleteVideo(video);
-                _currentFeed.RemoveAll(v => v.Id == video.Id);
+                RemoveFeedItem(video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
                 ShowToast("🗑️ Video removed from feed");
             }
         }
@@ -658,10 +640,8 @@ namespace VixzDesktop
                 if (result == MessageBoxResult.Yes)
                 {
                     StorageService.PermanentlyDeleteChannel(ch);
-                    _currentFeed.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
+                    RemoveFeedItems(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
                     _rawUnfilteredFeed.RemoveAll(v => v.ChannelTitle != null && (v.ChannelTitle.Equals(ch, StringComparison.OrdinalIgnoreCase) || v.ChannelTitle.Contains(ch, StringComparison.OrdinalIgnoreCase)));
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
                     ShowToast($"🚫 Channel '{ch}' permanently deleted & blocked!");
                 }
             }
@@ -690,10 +670,8 @@ namespace VixzDesktop
             if (sender is FrameworkElement elem && elem.DataContext is VideoItem video)
             {
                 StorageService.AddDislike(video);
-                _currentFeed.RemoveAll(v => v.Id == video.Id);
+                RemoveFeedItem(video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
                 ShowToast("👎 Disliked & removed from feed! Algorithm updated.");
             }
         }
@@ -706,19 +684,15 @@ namespace VixzDesktop
                 if (FeedTitleText?.Text == "📜 Watch History")
                 {
                     StorageService.RemoveFromWatchHistory(video.Id);
-                    _currentFeed.RemoveAll(v => v.Id == video.Id);
+                    RemoveFeedItem(video.Id);
                     _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                    VideoItemsControl.ItemsSource = null;
-                    VideoItemsControl.ItemsSource = _currentFeed;
                     ShowToast("🗑️ Removed from Watch History");
                     return;
                 }
 
                 StorageService.DeleteVideo(video);
-                _currentFeed.RemoveAll(v => v.Id == video.Id);
+                RemoveFeedItem(video.Id);
                 _rawUnfilteredFeed.RemoveAll(v => v.Id == video.Id);
-                VideoItemsControl.ItemsSource = null;
-                VideoItemsControl.ItemsSource = _currentFeed;
                 ShowToast("🗑️ Video removed from feed");
             }
         }
@@ -979,7 +953,15 @@ namespace VixzDesktop
 
             if (nextVideo == null && _currentFeed.Count > 0 && _currentVideo != null)
             {
-                var idx = _currentFeed.FindIndex(v => v.Id == _currentVideo.Id);
+                var idx = -1;
+                for (int i = 0; i < _currentFeed.Count; i++)
+                {
+                    if (_currentFeed[i].Id == _currentVideo.Id)
+                    {
+                        idx = i;
+                        break;
+                    }
+                }
                 if (idx >= 0 && idx + 1 < _currentFeed.Count)
                 {
                     nextVideo = _currentFeed[idx + 1];

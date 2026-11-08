@@ -1235,7 +1235,7 @@ namespace VixzDesktop.Services
                 try
                 {
                     var videos = await GetChannelVideosFeedAsync(ch, forceRefresh: forceRefresh);
-                    foreach (var v in videos.Take(30))
+                    foreach (var v in videos.Take(6))
                     {
                         results.Add(v);
                     }

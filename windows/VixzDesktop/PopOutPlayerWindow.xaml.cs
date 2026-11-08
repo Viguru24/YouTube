@@ -30,6 +30,25 @@ namespace VixzDesktop
             MiniVideoTitle.Text = video.Title;
             UpdateFavoriteUi();
 
+            if (!string.IsNullOrEmpty(video.ThumbnailUrl))
+            {
+                try
+                {
+                    var bi = new System.Windows.Media.Imaging.BitmapImage();
+                    bi.BeginInit();
+                    bi.UriSource = new Uri(video.ThumbnailUrl);
+                    bi.DecodePixelWidth = 480;
+                    bi.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation;
+                    bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bi.EndInit();
+                    MiniPosterImage.Source = bi;
+                }
+                catch { }
+            }
+
+            // Immediately start WebView2 initialization in parallel with window layout
+            _ = InitializeMiniWebViewAsync();
+
             Loaded += PopOutPlayerWindow_Loaded;
             Closing += PopOutPlayerWindow_Closing;
         }
@@ -63,7 +82,10 @@ namespace VixzDesktop
 
         private async void PopOutPlayerWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            await InitializeMiniWebViewAsync();
+            if (MiniWebView.CoreWebView2 == null)
+            {
+                await InitializeMiniWebViewAsync();
+            }
         }
 
         private async Task InitializeMiniWebViewAsync()
@@ -314,6 +336,11 @@ namespace VixzDesktop
                 return;
             }
 
+            if (MiniPosterOverlay != null && MiniPosterOverlay.Visibility != Visibility.Collapsed)
+            {
+                MiniPosterOverlay.Visibility = Visibility.Collapsed;
+            }
+
             if (msg.StartsWith("POS:"))
             {
                 var parts = msg.Split(':');
@@ -391,38 +418,45 @@ namespace VixzDesktop
             PinBtn.Foreground = Topmost ? (System.Windows.Media.Brush)FindResource("AccentGold") : System.Windows.Media.Brushes.Gray;
         }
 
-        private async void DockBackBtn_Click(object sender, RoutedEventArgs e)
+        private void DockBackBtn_Click(object sender, RoutedEventArgs e)
         {
-            await DockBackToMainWindowAsync();
+            DockBackToMainWindow();
         }
 
-        private async void CloseBtn_Click(object sender, RoutedEventArgs e)
+        private void CloseBtn_Click(object sender, RoutedEventArgs e)
         {
-            await DockBackToMainWindowAsync();
+            DockBackToMainWindow();
         }
 
-        public async Task DockBackToMainWindowAsync()
+        public void DockBackToMainWindow()
         {
             try
             {
                 if (MiniWebView.CoreWebView2 != null)
                 {
-                    var timeStr = await MiniWebView.ExecuteScriptAsync("getCurrentTime()");
-                    if (double.TryParse(timeStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var sec))
-                    {
-                        _currentPosition = sec;
-                    }
+                    MiniWebView.CoreWebView2.IsMuted = true;
+                    _ = MiniWebView.ExecuteScriptAsync("document.querySelectorAll('video, audio').forEach(m => m.pause()); if (window.player && typeof window.player.pauseVideo === 'function') window.player.pauseVideo();");
                 }
             }
             catch { }
 
-            _mainWindow.ReturnFromPopOut(_video, _currentPosition);
+            var pos = _currentPosition;
+            _mainWindow.ReturnFromPopOut(_video, pos);
             Close();
         }
 
         private void PopOutPlayerWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             _sleepTimer?.Stop();
+            try
+            {
+                if (MiniWebView.CoreWebView2 != null)
+                {
+                    MiniWebView.CoreWebView2.IsMuted = true;
+                    _ = MiniWebView.ExecuteScriptAsync("document.querySelectorAll('video, audio').forEach(m => m.pause()); if (window.player && typeof window.player.pauseVideo === 'function') window.player.pauseVideo();");
+                }
+            }
+            catch { }
         }
 
         #region Player Controls

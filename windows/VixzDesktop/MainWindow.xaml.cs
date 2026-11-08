@@ -25,7 +25,50 @@ namespace VixzDesktop
         // at the same user-data folder simultaneously.
         public static CoreWebView2Environment? SharedWebView2Environment { get; private set; }
 
-        private List<VideoItem> _currentFeed = new List<VideoItem>();
+        private readonly System.Collections.ObjectModel.ObservableCollection<VideoItem> _currentFeed = new();
+
+        public void SetFeedItems(IEnumerable<VideoItem>? items)
+        {
+            _currentFeed.Clear();
+            if (items != null)
+            {
+                foreach (var item in items)
+                {
+                    _currentFeed.Add(item);
+                }
+            }
+        }
+
+        public void AppendFeedItems(IEnumerable<VideoItem>? items)
+        {
+            if (items == null) return;
+            foreach (var item in items)
+            {
+                _currentFeed.Add(item);
+            }
+        }
+
+        public void RemoveFeedItem(string videoId)
+        {
+            for (int i = _currentFeed.Count - 1; i >= 0; i--)
+            {
+                if (string.Equals(_currentFeed[i].Id, videoId, StringComparison.OrdinalIgnoreCase))
+                {
+                    _currentFeed.RemoveAt(i);
+                }
+            }
+        }
+
+        public void RemoveFeedItems(Func<VideoItem, bool> predicate)
+        {
+            for (int i = _currentFeed.Count - 1; i >= 0; i--)
+            {
+                if (predicate(_currentFeed[i]))
+                {
+                    _currentFeed.RemoveAt(i);
+                }
+            }
+        }
         private List<VideoItem> _rawUnfilteredFeed = new List<VideoItem>();
         private bool _isDiscoveryFeed = true; // true = Home/Subscriptions — filter out watched videos
         private VideoItem? _currentVideo = null;
@@ -82,6 +125,7 @@ namespace VixzDesktop
             UpdateQualityButtonText(StorageService.Settings.PreferredQuality);
             SubscribedChannelsList.ItemsSource = UserProfileData.SubscribedChannels;
             SubscribersHeader.Text = $"👤 Subscriptions ({UserProfileData.SubscribedChannels.Count})";
+            if (VideoItemsControl != null) VideoItemsControl.ItemsSource = _currentFeed;
 
             DownloadQueueService.Instance.QueueChanged += () => Dispatcher.Invoke(UpdateDownloadQueueBadge);
             DownloadQueueService.Instance.TaskCompleted += (task) => Dispatcher.Invoke(() =>
@@ -111,15 +155,8 @@ namespace VixzDesktop
                 {
                     var watchedIds = new HashSet<string>(StorageService.Settings.WatchHistory.Select(v => v.Id), StringComparer.OrdinalIgnoreCase);
                     _rawUnfilteredFeed?.RemoveAll(v => watchedIds.Contains(v.Id));
-                    if (_currentFeed != null)
-                    {
-                        var removed = _currentFeed.RemoveAll(v => watchedIds.Contains(v.Id));
-                        if (removed > 0 && VideoItemsControl != null)
-                        {
-                            VideoItemsControl.ItemsSource = null;
-                            VideoItemsControl.ItemsSource = _currentFeed;
-                        }
-                    }
+                    RemoveFeedItems(v => watchedIds.Contains(v.Id));
+
                 }
             };
 
@@ -481,6 +518,31 @@ namespace VixzDesktop
             } else {
                 fallbackToDirectIframe(vid, targetSec);
             }
+        }
+
+        function resumeVideo(vid, seekTime, quality) {
+            var targetSec = parseFloat(seekTime || '0') || 0;
+            if (quality) preferredQuality = quality;
+            if (isLocalMode) {
+                var lvid = getLocalVideo();
+                if (lvid) {
+                    lvid.currentTime = targetSec;
+                    lvid.play().catch(function(e) {});
+                    return;
+                }
+            }
+            if (player && typeof player.seekTo === 'function' && typeof player.playVideo === 'function') {
+                if (currentVideoId === vid) {
+                    try {
+                        player.seekTo(targetSec, true);
+                        player.unMute();
+                        player.playVideo();
+                        applyHighQuality();
+                        return;
+                    } catch(e) {}
+                }
+            }
+            loadVideo(vid, seekTime, quality);
         }
 
         function setQuality(quality) {
