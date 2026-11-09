@@ -34,14 +34,7 @@ namespace VixzDesktop
             {
                 try
                 {
-                    var bi = new System.Windows.Media.Imaging.BitmapImage();
-                    bi.BeginInit();
-                    bi.UriSource = new Uri(video.ThumbnailUrl);
-                    bi.DecodePixelWidth = 480;
-                    bi.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation;
-                    bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                    bi.EndInit();
-                    MiniPosterImage.Source = bi;
+                    MiniPosterImage.Source = new System.Windows.Media.Imaging.BitmapImage(new Uri(video.ThumbnailUrl));
                 }
                 catch { }
             }
