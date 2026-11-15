@@ -410,7 +410,21 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 compareByDescending<VideoEntity> { YouTubeUtils.parseViewCount(it.viewCountText) }
                     .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
             )
-            "Relevance" -> list
+            "Oldest" -> list.sortedWith(
+                compareByDescending<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    .thenBy { it.addedTimestamp }
+            )
+            "Longest" -> list.sortedWith(
+                compareByDescending<VideoEntity> { YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
+                    .thenByDescending { YouTubeUtils.parseViewCount(it.viewCountText) }
+            )
+            "Shortest" -> list.sortedWith(
+                compareBy<VideoEntity> {
+                    val sec = YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                    if (sec > 0) sec else Int.MAX_VALUE
+                }.thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+            )
+            "Relevance", "Top Rated" -> list
             else -> list.sortedWith( // "Latest" (Default)
                 compareBy<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                     .thenByDescending { it.addedTimestamp }
@@ -634,7 +648,6 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
         // 1. Instant 0ms Cache Load on Startup & Thorough Database Purge of Unsubscribed/Foreign Content
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            checkAndCleanExpiredDownloads()
             val cached = repository.getAllVideosDirect()
             if (cached.isNotEmpty()) {
                 val subscribedSet = _subscribedCreators.value.map { it.lowercase().trim() }.toSet()
@@ -644,32 +657,37 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val hasSubscriptions = subscribedSet.isNotEmpty()
 
                 val (keepVideos, junkVideos) = cached.partition { video ->
-                    val ch = video.channelName.lowercase().trim()
-                    val isSub = !hasSubscriptions || subscribedSet.any { sub -> ch.contains(sub) || sub.contains(ch) }
-                    val isUserSaved = video.isFavorite || video.isWatchLater || video.lastWatchedTimestamp > 0L || video.lastPositionSeconds > 0
-                    !YouTubeUtils.isForeignLanguageContent(video.title, video.channelName) && (isSub || isUserSaved)
-                }
-
-                junkVideos.forEach { junk ->
-                    try { repository.deleteVideo(junk) } catch (e: Exception) { }
+                    !YouTubeUtils.isForeignLanguageContent(video.title, video.channelName)
                 }
 
                 val watched = watchedVideoIds.value
                 val valid = keepVideos.filter {
                     it.youtubeId !in _dislikedVideoIds.value &&
                     it.youtubeId !in watched &&
-                    // Only treat as "fully watched" if actually watched for >30s.
-                    // A position of 0–30s means the video was barely opened (accidental tap,
-                    // buffering test, etc.) and should still show in the feed.
                     !(it.lastWatchedTimestamp > 0L && it.lastPositionSeconds > 30)
-                }
+                }.sortedWith(
+                    compareByDescending<VideoEntity> { video ->
+                        val ch = video.channelName.lowercase().trim()
+                        hasSubscriptions && subscribedSet.any { sub -> ch.contains(sub) || sub.contains(ch) }
+                    }.thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                ).take(150)
                 if (valid.isNotEmpty()) {
                     _categoryVideos.value = valid
                     valid.firstOrNull()?.let { top ->
                         com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
                     }
                 }
+
+                if (junkVideos.isNotEmpty()) {
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        kotlinx.coroutines.delay(2500L)
+                        junkVideos.take(200).forEach { junk ->
+                            try { repository.deleteVideo(junk) } catch (e: Exception) { }
+                        }
+                    }
+                }
             }
+            checkAndCleanExpiredDownloads()
         }
 
         // 2. Continuous background updater: keeps the feed buffer refreshed with subscribed creator content
@@ -759,12 +777,11 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     val validCached = cached.filter {
                         it.youtubeId !in _dislikedVideoIds.value &&
                         it.youtubeId !in watched &&
-                        it.lastWatchedTimestamp == 0L &&
-                        it.lastPositionSeconds == 0 &&
-                        !it.publishedTimeText.equals("Latest", ignoreCase = true) &&
+                        !(it.lastWatchedTimestamp > 0L && it.lastPositionSeconds > 30) &&
                         !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
                     }.sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-                    if (category != "All" || validCached.isNotEmpty()) {
+                    val isHomeFeed = category == "All" || category.contains("Latest", ignoreCase = true)
+                    if (!isHomeFeed || validCached.isNotEmpty()) {
                         _categoryVideos.value = validCached
                     }
                     if (validCached.isNotEmpty()) {
@@ -773,17 +790,49 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                         }
                     }
 
-                    // Step B: Parallel Live Network Sync with Strict Upload Date Sorting
+                    // Step B: Parallel Live Network Sync with Progressive First-Wave Emission
                     val fetched = if (category == "All" || category.contains("Latest", ignoreCase = true)) {
-                        val profileFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
-                        } catch (e: Exception) { emptyList() }
+                        kotlinx.coroutines.coroutineScope {
+                            val profileDeferred = async {
+                                try {
+                                    com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(
+                                        subscribedChannels = _subscribedCreators.value,
+                                        batchIndex = 0,
+                                        batchSize = 30,
+                                        forceRefresh = true,
+                                        onBatchUpdate = { wave1 ->
+                                            val quickFiltered = wave1
+                                                .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                                                .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched && it.lastWatchedTimestamp == 0L && it.lastPositionSeconds == 0 }
+                                            if (quickFiltered.isNotEmpty()) {
+                                                val merged = (quickFiltered + _categoryVideos.value)
+                                                    .distinctBy { it.youtubeId }
+                                                    .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                                                _categoryVideos.value = merged
+                                            }
+                                        }
+                                    )
+                                } catch (e: Exception) { emptyList() }
+                            }
 
-                        val discoveryFeed = try {
-                            com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value, forceRefresh = true)
-                        } catch (e: Exception) { emptyList() }
+                            val discoveryDeferred = async {
+                                try {
+                                    val disc = com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value, forceRefresh = true)
+                                    val quickDisc = disc
+                                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                                        .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched && !(it.lastWatchedTimestamp > 0L && it.lastPositionSeconds > 30) }
+                                    if (quickDisc.isNotEmpty()) {
+                                        val merged = (_categoryVideos.value + quickDisc)
+                                            .distinctBy { it.youtubeId }
+                                            .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                                        _categoryVideos.value = merged
+                                    }
+                                    disc
+                                } catch (e: Exception) { emptyList() }
+                            }
 
-                        (profileFeed + discoveryFeed).distinctBy { it.youtubeId }
+                            (profileDeferred.await() + discoveryDeferred.await()).distinctBy { it.youtubeId }
+                        }
                     } else {
                         com.example.data.remote.YouTubeLiveSearchService.fetchCategoryFeed(category, forceRefresh = true)
                     }
@@ -794,7 +843,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                     if (filtered.isNotEmpty()) {
                         _categoryVideos.value = filtered
-                        filtered.forEach { v -> repository.saveVideo(v) }
+                        repository.saveVideos(filtered)
                         filtered.firstOrNull()?.let { top ->
                             com.example.data.remote.YouTubeStreamExtractor.prewarmStream(top.youtubeId, viewModelScope)
                         }
@@ -814,8 +863,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 6. Clean up any leftover foreign or non-subscription shorts from database & pre-populate with user's subscriptions
+        // 6. Clean up any leftover foreign or non-subscription shorts from database & pre-populate with user's subscriptions (deferred so initial feed renders first)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.delay(2500L)
             try {
                 val existing = repository.getAllVideosDirect()
                 for (v in existing) {
@@ -840,7 +890,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 val unDisliked = initialShorts.filter { it.youtubeId !in _dislikedVideoIds.value }
                 if (unDisliked.isNotEmpty()) {
                     _shortsQueue.value = unDisliked
-                    unDisliked.forEach { repository.saveVideo(it) }
+                    repository.saveVideos(unDisliked)
                 }
             } catch (e: Exception) {
                 android.util.Log.e("YouTubeViewModel", "Initial Shorts feed fetch error: ${e.message}")
@@ -861,17 +911,36 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                 com.example.data.remote.YouTubeLiveSearchService.clearCache()
 
-                // 1. Fetch latest uploads from all subscribed channels
-                val profileFeed = try {
-                    com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(subscribedChannels = _subscribedCreators.value, batchIndex = 0, batchSize = 30, forceRefresh = true)
-                } catch (e: Exception) { emptyList() }
-
-                // 2. Fetch intelligent discovery videos matching user's creators and interests
-                val discoveryFeed = try {
-                    com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value, forceRefresh = true)
-                } catch (e: Exception) { emptyList() }
-
+                // 1 & 2. Fetch latest uploads from subscribed channels + discovery in parallel with progressive first-wave UI update
                 val watched = watchedVideoIds.value
+                val (profileFeed, discoveryFeed) = kotlinx.coroutines.coroutineScope {
+                    val profileDeferred = async {
+                        try {
+                            com.example.data.remote.YouTubeLiveSearchService.fetchSubscribedProfileFeed(
+                                subscribedChannels = _subscribedCreators.value,
+                                batchIndex = 0,
+                                batchSize = 30,
+                                forceRefresh = true,
+                                onBatchUpdate = { wave1 ->
+                                    val quickList = wave1
+                                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                                        .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched }
+                                        .distinctBy { it.youtubeId }
+                                        .sortedWith(compareBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
+                                    if (quickList.isNotEmpty()) {
+                                        _categoryVideos.value = quickList
+                                    }
+                                }
+                            )
+                        } catch (e: Exception) { emptyList() }
+                    }
+                    val discoveryDeferred = async {
+                        try {
+                            com.example.data.remote.YouTubeLiveSearchService.fetchIntelligentDiscoveryVideos(_subscribedCreators.value, forceRefresh = true)
+                        } catch (e: Exception) { emptyList() }
+                    }
+                    profileDeferred.await() to discoveryDeferred.await()
+                }
                 val combined = (profileFeed + discoveryFeed)
                     .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                     .filter { it.youtubeId !in _dislikedVideoIds.value && it.youtubeId !in watched }
@@ -1231,6 +1300,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         _playerCommand.tryEmit("TOGGLE_PLAY_PAUSE")
     }
 
+    fun pausePlayer() {
+        _playerCommand.tryEmit("PAUSE")
+    }
+
+    fun resumePlayer() {
+        _playerCommand.tryEmit("PLAY")
+    }
+
     fun seekBy(seconds: Int) {
         if (seconds > 0) {
             _playerCommand.tryEmit("SEEK_FORWARD_$seconds")
@@ -1264,6 +1341,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
     fun playVideo(video: VideoEntity, isShort: Boolean = false) {
         android.util.Log.d("YouTubeViewModel", "playVideo called: id=${video.youtubeId}, isShort=$isShort, title=${video.title}")
+        _isPlayerPlaying.value = true
         _isPlayingAsShort.value = isShort
         _activeVideoId.value = video.youtubeId
         _activeVideo.value = video

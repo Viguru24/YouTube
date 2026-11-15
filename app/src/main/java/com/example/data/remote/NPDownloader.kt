@@ -22,8 +22,10 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
             }
         }
 
-        val cookieHeader = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
-            savedCookies
+        val cookieHeader = if (includeAuthCookies) {
+            com.example.util.CookieHelper.getAggregatedCookies().ifBlank { savedCookies }
+        } else {
+            ""
         }
 
         if (cookieHeader.isNotBlank() && (url.contains("youtube.com") || url.contains("googlevideo.com"))) {
@@ -64,6 +66,8 @@ class NPDownloader private constructor(private val client: OkHttpClient) : Downl
         @Volatile
         private var instance: NPDownloader? = null
         var savedCookies: String = ""
+        @Volatile
+        var includeAuthCookies: Boolean = false
 
         fun getInstance(): NPDownloader {
             return instance ?: synchronized(this) {

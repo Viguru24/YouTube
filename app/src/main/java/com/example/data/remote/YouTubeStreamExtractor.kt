@@ -21,7 +21,8 @@ data class StreamExtractionResult(
     val videoOnlyUrls: Set<String> = emptySet(),
     val muxedUrls: Set<String> = emptySet(),
     val isMembersOnly: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val clientUserAgent: String? = null
 ) {
     /**
      * Determines whether the given video stream URL has no built-in audio track and requires
@@ -110,61 +111,95 @@ object YouTubeStreamExtractor {
         return null
     }
 
-    private fun fetchInnertubePlayer(videoId: String, clientName: String = "ANDROID_VR"): org.json.JSONObject? {
+    private fun fetchInnertubePlayer(
+        videoId: String,
+        clientName: String = "ANDROID_VR",
+        useAuthCookies: Boolean = false,
+        poToken: org.schabi.newpipe.extractor.services.youtube.PoTokenResult? = null
+    ): org.json.JSONObject? {
         try {
-            val visitorData = fetchVisitorData()
+            val isNativeClient = clientName == "ANDROID_VR" || clientName == "IOS" || clientName == "ANDROID"
+            val visitorData = when {
+                !poToken?.visitorData.isNullOrBlank() -> poToken?.visitorData
+                clientName == "ANDROID" || clientName == "WEB" -> fetchVisitorData()
+                else -> null
+            }
             val visitorDataField = if (!visitorData.isNullOrBlank()) """, "visitorData": "$visitorData"""" else ""
 
             val (clientObj, userAgent) = when (clientName) {
                 "IOS" -> Pair(
-                    """{"clientName":"IOS","clientVersion":"19.29.1","deviceModel":"iPhone16,2","hl":"en","gl":"US"$visitorDataField}""",
-                    "com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X; US)"
+                    """{"clientName":"IOS","clientVersion":"20.10.4","deviceMake":"Apple","deviceModel":"iPhone16,2","osName":"iPhone","osVersion":"18.3.2.22D82","hl":"en","gl":"US"}""",
+                    "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
                 )
                 "TVHTML5" -> Pair(
                     """{"clientName":"TVHTML5","clientVersion":"7.20240820.01.00","hl":"en","gl":"US"$visitorDataField}""",
                     "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
                 )
                 "WEB" -> Pair(
-                    """{"clientName":"WEB","clientVersion":"2.20240820.01.00","hl":"en","gl":"US"$visitorDataField}""",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                    """{"clientName":"WEB","clientVersion":"2.20250312.01.00","hl":"en","gl":"US"$visitorDataField}""",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
                 )
                 "ANDROID" -> Pair(
-                    """{"clientName":"ANDROID","clientVersion":"19.09.37","androidSdkVersion":34,"hl":"en","gl":"US"$visitorDataField}""",
-                    "com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip"
+                    """{"clientName":"ANDROID","clientVersion":"20.10.38","androidSdkVersion":35,"hl":"en","gl":"US"$visitorDataField}""",
+                    "com.google.android.youtube/20.10.38 (Linux; U; Android 15; US) gzip"
                 )
                 else -> Pair(
-                    """{"clientName":"ANDROID_VR","clientVersion":"1.61.48","hl":"en","gl":"US"$visitorDataField}""",
-                    "Mozilla/5.0 (Linux; Android 12; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/34.0.0.36.41 SamsungBrowser/4.0 Chrome/124.0.6367.207 Mobile VR Safari/537.36"
+                    """{"clientName":"ANDROID_VR","clientVersion":"1.62.27","deviceMake":"Oculus","deviceModel":"Quest 3","androidSdkVersion":32,"hl":"en","gl":"US"}""",
+                    "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
                 )
             }
+
+            val sts = if (!isNativeClient) {
+                try {
+                    org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager.getSignatureTimestamp(videoId)
+                } catch (_: Exception) {
+                    null
+                }
+            } else null
+
+            val playbackContextBlock = if (sts != null) {
+                """, "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS", "signatureTimestamp": $sts}}"""
+            } else ""
+
+            val poTokenBlock = if (!poToken?.playerRequestPoToken.isNullOrBlank()) {
+                """, "serviceIntegrityDimensions": {"poToken": "${poToken?.playerRequestPoToken}"}"""
+            } else ""
 
             val payload = """
                 {
                   "context": {
                     "client": $clientObj
                   },
-                  "videoId": "$videoId"
+                  "videoId": "$videoId",
+                  "contentCheckOk": true,
+                  "racyCheckOk": true$playbackContextBlock$poTokenBlock
                 }
             """.trimIndent()
 
             val mediaType = "application/json; charset=utf-8".toMediaType()
             val reqBuilder = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/player")
+                .url("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
                 .post(payload.toRequestBody(mediaType))
                 .addHeader("User-Agent", userAgent)
                 .addHeader("Content-Type", "application/json")
-                .addHeader("Origin", "https://www.youtube.com")
 
-            val cookieHeader = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
-                com.example.data.remote.NPDownloader.savedCookies
+            if (!isNativeClient) {
+                reqBuilder.addHeader("Origin", "https://www.youtube.com")
+                reqBuilder.addHeader("Referer", "https://www.youtube.com/")
             }
-            if (cookieHeader.isNotBlank()) {
-                reqBuilder.addHeader("Cookie", cookieHeader)
-                val sapisid = com.example.util.CookieHelper.extractSapisid(cookieHeader)
-                if (!sapisid.isNullOrBlank()) {
-                    val auth = com.example.util.CookieHelper.generateSapisidHash(sapisid)
-                    if (auth.isNotBlank()) {
-                        reqBuilder.addHeader("Authorization", auth)
+            if (useAuthCookies && !isNativeClient) {
+                val cookieHeader = com.example.util.CookieHelper.getAggregatedCookies().ifBlank {
+                    com.example.data.remote.NPDownloader.savedCookies
+                }
+                if (cookieHeader.isNotBlank()) {
+                    reqBuilder.addHeader("Cookie", cookieHeader)
+                    val sapisid = com.example.util.CookieHelper.extractSapisid(cookieHeader)
+                    if (!sapisid.isNullOrBlank()) {
+                        val auth = com.example.util.CookieHelper.generateSapisidHash(sapisid)
+                        if (auth.isNotBlank()) {
+                            reqBuilder.addHeader("Authorization", auth)
+                            reqBuilder.addHeader("X-Origin", "https://www.youtube.com")
+                        }
                     }
                 }
             }
@@ -173,6 +208,8 @@ object YouTubeStreamExtractor {
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: return null
                     return org.json.JSONObject(body)
+                } else {
+                    logD("YouTubeStreamExtractor", "fetchInnertubePlayer ($clientName, auth=$useAuthCookies) HTTP ${response.code}")
                 }
             }
         } catch (e: Exception) {
@@ -199,6 +236,7 @@ object YouTubeStreamExtractor {
         val muxedUrls = mutableSetOf<String>()
         var bestAudioUrl: String? = null
         var bestCombinedUrl: String? = null
+        var extractedClientUa: String? = null
 
         // 1. PRIMARY: NewPipe Extractor (Resolves direct Apple HLS Master Playlist & adaptive streams)
         try {
@@ -264,38 +302,62 @@ object YouTubeStreamExtractor {
                     qualityMap["HLS"] = hlsUrl
                     logD("YouTubeStreamExtractor", "[NewPipe] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
                 }
+                if (qualityMap.isNotEmpty() && extractedClientUa == null) {
+                    extractedClientUa = try {
+                        org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper.getVisionOsUserAgent(
+                            org.schabi.newpipe.extractor.NewPipe.getPreferredLocalization()
+                        )
+                    } catch (_: Exception) {
+                        "com.google.visionos.youtube/1.4(RealityDevice14,1; U; CPU visionOS 2_0 like Mac OS X; GB)"
+                    }
+                }
             }
         } catch (e: Exception) {
             val errMsg = e.message.orEmpty()
             logD("YouTubeStreamExtractor", "[NewPipe] Extraction error for $videoId: $errMsg")
-            // Immediate fast-fail for members-only, paywalled, or restricted videos (0ms delay)
+            // Immediate fast-fail ONLY for true members-only, paywalled, private, or unavailable videos.
+            // Do NOT fast-fail on "sign in to confirm" / bot-check or age-restriction so InnerTube clients (IOS, ANDROID_VR, TVHTML5) can still extract streams!
             if (errMsg.contains("members", ignoreCase = true) ||
                 errMsg.contains("private", ignoreCase = true) ||
                 errMsg.contains("unavailable", ignoreCase = true) ||
                 errMsg.contains("paid", ignoreCase = true) ||
-                errMsg.contains("join this channel", ignoreCase = true) ||
-                errMsg.contains("age", ignoreCase = true) ||
-                errMsg.contains("sign in to confirm", ignoreCase = true)) {
-                val isAge = errMsg.contains("age", ignoreCase = true) || errMsg.contains("sign in to confirm", ignoreCase = true)
-                logD("YouTubeStreamExtractor", if (isAge) "🔞 Age-restricted video identified for $videoId - fast failing to web player immediately" else "🔒 Members-only video identified for $videoId - fast failing immediately")
+                errMsg.contains("join this channel", ignoreCase = true)) {
+                logD("YouTubeStreamExtractor", "🔒 Members-only / unavailable video identified for $videoId - fast failing immediately")
                 return@withContext StreamExtractionResult(
                     primaryStreamUrl = null,
-                    isMembersOnly = !isAge && (errMsg.contains("members", ignoreCase = true) || errMsg.contains("join this channel", ignoreCase = true)),
+                    isMembersOnly = errMsg.contains("members", ignoreCase = true) || errMsg.contains("join this channel", ignoreCase = true),
                     errorMessage = errMsg
                 )
             }
         }
 
-        // 2. SECONDARY: Innertube Fallback
+        // 2. SECONDARY: Innertube Fallback (ANDROID_VR / IOS / TVHTML5 / ANDROID / WEB+BotGuard poToken)
         if (qualityMap.isEmpty()) {
-            val clients = listOf("IOS", "ANDROID_VR", "TVHTML5", "ANDROID", "WEB")
+            val clients = listOf("ANDROID_VR", "IOS", "TVHTML5", "ANDROID", "WEB")
             for (c in clients) {
                 try {
-                    val playerJson = fetchInnertubePlayer(videoId, c)
+                    val webPoToken = if (c == "WEB") {
+                        BotGuardPoTokenProvider.getWebClientPoToken(videoId)
+                    } else null
+                    val streamingPot = webPoToken?.streamingDataPoToken
+
+                    var playerJson = fetchInnertubePlayer(videoId, c, useAuthCookies = false, poToken = webPoToken)
+                    var playability = playerJson?.optJSONObject("playabilityStatus")
+                    var status = playability?.optString("status", "")
+                    var reason = playability?.optString("reason", "") ?: ""
+
+                    // Retry browser clients with user auth cookies ONLY if anonymous attempt hit age/login gate
+                    if ((c == "TVHTML5" || c == "WEB") &&
+                        (status == "LOGIN_REQUIRED" || status == "UNPLAYABLE") &&
+                        (reason.contains("age", ignoreCase = true) || reason.contains("sign in", ignoreCase = true))
+                    ) {
+                        playerJson = fetchInnertubePlayer(videoId, c, useAuthCookies = true, poToken = webPoToken)
+                        playability = playerJson?.optJSONObject("playabilityStatus")
+                        status = playability?.optString("status", "")
+                        reason = playability?.optString("reason", "") ?: ""
+                    }
+
                     if (playerJson != null) {
-                        val playability = playerJson.optJSONObject("playabilityStatus")
-                        val status = playability?.optString("status", "")
-                        val reason = playability?.optString("reason", "") ?: ""
                         if (status == "UNPLAYABLE" && (reason.contains("member", ignoreCase = true) || reason.contains("paid", ignoreCase = true))) {
                             return@withContext StreamExtractionResult(
                                 primaryStreamUrl = null,
@@ -304,30 +366,47 @@ object YouTubeStreamExtractor {
                             )
                         }
                         if ((status == "LOGIN_REQUIRED" || status == "UNPLAYABLE") &&
-                            (reason.contains("age", ignoreCase = true) || reason.contains("sign in", ignoreCase = true))) {
-                            logD("YouTubeStreamExtractor", "🔞 Age-restricted video ($reason) identified in Innertube - activating web player")
-                            return@withContext StreamExtractionResult(
-                                primaryStreamUrl = null,
-                                isMembersOnly = false,
-                                errorMessage = reason
-                            )
+                            (reason.contains("age", ignoreCase = true) || reason.contains("sign in", ignoreCase = true) || reason.contains("bot", ignoreCase = true))) {
+                            logD("YouTubeStreamExtractor", "⚠️ Client $c returned $status ($reason) - trying next InnerTube client")
+                            continue
                         }
 
                         val streamingData = playerJson.optJSONObject("streamingData")
                         if (streamingData != null) {
-                            val hlsUrl = streamingData.optString("hlsManifestUrl", "")
-                            if (hlsUrl.isNotBlank() && hlsUrl.startsWith("http") && !qualityMap.containsKey("HLS")) {
+                            val rawHlsUrl = streamingData.optString("hlsManifestUrl", "")
+                            if (rawHlsUrl.isNotBlank() && rawHlsUrl.startsWith("http") && !qualityMap.containsKey("HLS")) {
+                                val hlsUrl = if (!streamingPot.isNullOrBlank() && !rawHlsUrl.contains("pot=")) {
+                                    if (rawHlsUrl.contains("?")) "$rawHlsUrl&pot=$streamingPot" else "$rawHlsUrl?pot=$streamingPot"
+                                } else rawHlsUrl
                                 qualityMap["HLS"] = hlsUrl
-                                logD("YouTubeStreamExtractor", "[Innertube] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
+                                if (extractedClientUa == null) {
+                                    extractedClientUa = when (c) {
+                                        "IOS" -> "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+                                        "TVHTML5" -> "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
+                                        "WEB" -> "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                                        "ANDROID" -> "com.google.android.youtube/20.10.38 (Linux; U; Android 15; US) gzip"
+                                        else -> "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+                                    }
+                                }
+                                logD("YouTubeStreamExtractor", "[Innertube:$c] Found HLS Master Playlist: ${hlsUrl.take(60)}...")
                             }
                             val formats = streamingData.optJSONArray("formats")
                             if (formats != null) {
                                 for (i in 0 until formats.length()) {
                                     val f = formats.getJSONObject(i)
-                                    val url = f.optString("url", "")
+                                    val url = resolveFormatUrl(videoId, f, streamingPot)
                                     val qLabel = f.optString("qualityLabel", "")
                                     val height = f.optInt("height", 0)
                                     if (url.isNotBlank() && url.startsWith("http")) {
+                                        if (extractedClientUa == null) {
+                                            extractedClientUa = when (c) {
+                                                "IOS" -> "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+                                                "TVHTML5" -> "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
+                                                "WEB" -> "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                                                "ANDROID" -> "com.google.android.youtube/20.10.38 (Linux; U; Android 15; US) gzip"
+                                                else -> "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+                                            }
+                                        }
                                         val key = when {
                                             qLabel.isNotBlank() -> if (qLabel.endsWith("p", true)) qLabel.lowercase() else "${qLabel}p"
                                             height > 0 -> "${height}p"
@@ -346,8 +425,17 @@ object YouTubeStreamExtractor {
                                 for (i in 0 until adaptive.length()) {
                                     val f = adaptive.getJSONObject(i)
                                     val mime = f.optString("mimeType", "")
-                                    val url = f.optString("url", "")
+                                    val url = resolveFormatUrl(videoId, f, streamingPot)
                                     if (url.isNotBlank() && url.startsWith("http")) {
+                                        if (extractedClientUa == null) {
+                                            extractedClientUa = when (c) {
+                                                "IOS" -> "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+                                                "TVHTML5" -> "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/6.0 TV Safari/538.1"
+                                                "WEB" -> "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                                                "ANDROID" -> "com.google.android.youtube/20.10.38 (Linux; U; Android 15; US) gzip"
+                                                else -> "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+                                            }
+                                        }
                                         if (mime.contains("video")) {
                                             val qLabel = f.optString("qualityLabel", "")
                                             val height = f.optInt("height", 0)
@@ -442,7 +530,8 @@ object YouTubeStreamExtractor {
             qualityUrlMap = qualityMap,
             videoOnlyQualities = videoOnlyQualities,
             videoOnlyUrls = videoOnlyUrls,
-            muxedUrls = muxedUrls
+            muxedUrls = muxedUrls,
+            clientUserAgent = extractedClientUa
         )
 
         if (!bestUrl.isNullOrEmpty()) {
@@ -512,7 +601,35 @@ object YouTubeStreamExtractor {
         return Pair(videoUrl, audioUrl)
     }
 
-    private fun parseCipher(cipher: String): String {
+    private fun resolveFormatUrl(
+        videoId: String,
+        formatJson: org.json.JSONObject,
+        streamingPot: String?
+    ): String {
+        var rawUrl = formatJson.optString("url", "")
+        if (rawUrl.isBlank()) {
+            val cipher = formatJson.optString("signatureCipher", formatJson.optString("cipher", ""))
+            if (cipher.isNotBlank()) {
+                rawUrl = parseCipher(cipher, videoId)
+            }
+        }
+        if (rawUrl.isBlank()) return ""
+
+        val nResolvedUrl = try {
+            org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
+                .getUrlWithThrottlingParameterDeobfuscated(videoId, rawUrl)
+        } catch (_: Exception) {
+            rawUrl
+        }
+
+        return if (!streamingPot.isNullOrBlank() && !nResolvedUrl.contains("pot=")) {
+            if (nResolvedUrl.contains("?")) "$nResolvedUrl&pot=$streamingPot" else "$nResolvedUrl?pot=$streamingPot"
+        } else {
+            nResolvedUrl
+        }
+    }
+
+    private fun parseCipher(cipher: String, videoId: String = ""): String {
         return try {
             val params = cipher.split("&")
             var url = ""
@@ -530,7 +647,15 @@ object YouTubeStreamExtractor {
             }
             if (url.isNotEmpty()) {
                 if (sig.isNotEmpty()) {
-                    "$url&$sp=$sig"
+                    val deobfSig = if (videoId.isNotBlank()) {
+                        try {
+                            org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
+                                .deobfuscateSignature(videoId, sig)
+                        } catch (_: Exception) {
+                            sig
+                        }
+                    } else sig
+                    "$url&$sp=${java.net.URLEncoder.encode(deobfSig, "UTF-8")}"
                 } else {
                     url
                 }

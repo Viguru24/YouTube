@@ -95,6 +95,7 @@ fun ShortsPlayerView(
 
     var isFirstFrameRendered by remember(videoId) { mutableStateOf(false) }
     var useWebPlayerFallback by remember(videoId) { mutableStateOf(false) }
+    var webViewRef by remember(videoId) { mutableStateOf<android.webkit.WebView?>(null) }
 
     // Real-Time Closed Captions (CC) State
     var captionsEnabled by remember { mutableStateOf(false) }
@@ -148,6 +149,8 @@ fun ShortsPlayerView(
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 addLog("⚠️ ExoPlayer Playback Error (${error.errorCodeName}): ${error.message} -> activating fallback")
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
                 useWebPlayerFallback = true
                 isLoading = false
             }
@@ -167,8 +170,47 @@ fun ShortsPlayerView(
     LaunchedEffect(playerCommandFlow) {
         playerCommandFlow?.collect { cmd ->
             when {
+                cmd == "PAUSE" -> {
+                    if (!useWebPlayerFallback) {
+                        exoPlayer.pause()
+                    } else {
+                        webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
+                    }
+                    isPlayingState = false
+                    onPlayingStateChanged(false)
+                }
+                cmd == "PLAY" -> {
+                    if (!useWebPlayerFallback) {
+                        exoPlayer.play()
+                    } else {
+                        webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
+                    }
+                    isPlayingState = true
+                    onPlayingStateChanged(true)
+                }
                 cmd == "TOGGLE_PLAY_PAUSE" -> {
-                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    val isPlayingNow = if (!useWebPlayerFallback) {
+                        exoPlayer.playWhenReady || exoPlayer.isPlaying
+                    } else {
+                        isPlayingState
+                    }
+                    if (isPlayingNow) {
+                        if (!useWebPlayerFallback) {
+                            exoPlayer.pause()
+                        } else {
+                            webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
+                        }
+                        isPlayingState = false
+                        onPlayingStateChanged(false)
+                    } else {
+                        if (!useWebPlayerFallback) {
+                            exoPlayer.play()
+                        } else {
+                            webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
+                        }
+                        isPlayingState = true
+                        onPlayingStateChanged(true)
+                    }
                 }
                 cmd.startsWith("SEEK_FORWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
@@ -182,11 +224,13 @@ fun ShortsPlayerView(
         }
     }
 
-    LaunchedEffect(isPlayingState) {
-        if (isPlayingState) {
-            exoPlayer.play()
-        } else {
-            exoPlayer.pause()
+    LaunchedEffect(isPlayingState, useWebPlayerFallback) {
+        if (!useWebPlayerFallback) {
+            if (isPlayingState) {
+                exoPlayer.play()
+            } else {
+                exoPlayer.pause()
+            }
         }
     }
 
@@ -283,7 +327,7 @@ fun ShortsPlayerView(
                 return@LaunchedEffect
             }
 
-            val result = kotlinx.coroutines.withTimeoutOrNull(5000L) {
+            val result = kotlinx.coroutines.withTimeoutOrNull(9000L) {
                 YouTubeStreamExtractor.extractVideoStreams(videoId)
             }
             val directUrl = if (selectedQuality != "Auto" && result?.qualityUrlMap?.containsKey(selectedQuality) == true) {
@@ -302,21 +346,29 @@ fun ShortsPlayerView(
                     com.example.data.remote.NPDownloader.savedCookies
                 }
 
-                val httpDataSourceFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
-                    .setUserAgent("com.google.android.youtube/19.09.37 (Linux; U; Android 14; US) gzip")
-                    .setDefaultRequestProperties(buildMap {
-                        put("Referer", "https://www.youtube.com/")
-                        put("Origin", "https://www.youtube.com")
-                        put("Sec-Fetch-Dest", "video")
-                        put("Sec-Fetch-Mode", "cors")
-                        put("Sec-Fetch-Site", "cross-site")
-                        if (liveCookies.isNotBlank()) {
-                            put("Cookie", liveCookies)
-                        }
-                    })
-                    .setConnectTimeoutMs(15000)
-                    .setReadTimeoutMs(30000)
-                    .setAllowCrossProtocolRedirects(true)
+                val effectiveUa = result?.clientUserAgent ?: when {
+                    directUrl.contains("c=VISIONOS", ignoreCase = true) -> "com.google.visionos.youtube/1.4(RealityDevice14,1; U; CPU visionOS 2_0 like Mac OS X; GB)"
+                    directUrl.contains("c=IOS", ignoreCase = true) -> "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)"
+                    else -> "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+                }
+                val isNativeMobileClient = effectiveUa.startsWith("com.google.")
+
+                val requestProps = mutableMapOf<String, String>()
+                if (!isNativeMobileClient) {
+                    requestProps["Referer"] = "https://www.youtube.com/"
+                    requestProps["Origin"] = "https://www.youtube.com"
+                    requestProps["Sec-Fetch-Dest"] = "video"
+                    requestProps["Sec-Fetch-Mode"] = "cors"
+                    requestProps["Sec-Fetch-Site"] = "cross-site"
+                    if (liveCookies.isNotBlank()) {
+                        requestProps["Cookie"] = liveCookies
+                    }
+                }
+
+                val okHttpClient = com.example.data.remote.NetworkClient.client
+                val httpDataSourceFactory = androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(okHttpClient)
+                    .setUserAgent(effectiveUa)
+                    .setDefaultRequestProperties(requestProps)
 
                 val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
 
@@ -390,6 +442,7 @@ fun ShortsPlayerView(
             AndroidView(
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
+                        webViewRef = this
                         layoutParams = android.view.ViewGroup.LayoutParams(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -414,59 +467,105 @@ fun ShortsPlayerView(
                             }
                         }
                         webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                view?.evaluateJavascript("""
+                                    (function() {
+                                        function enforceShortAudio(v) {
+                                            if (!v) return;
+                                            var u = document.querySelector('.ytp-unmute');
+                                            if (u) { try { u.click(); } catch(e){} }
+                                            var mp = document.getElementById('movie_player');
+                                            if (mp) {
+                                                try { if (mp.isMuted && mp.isMuted() && mp.unMute) mp.unMute(); } catch(e){}
+                                                try { if (mp.setVolume) mp.setVolume(100); } catch(e){}
+                                            }
+                                            if (v.muted) v.muted = false;
+                                            if (v.volume < 0.99) v.volume = 1.0;
+                                        }
+                                        function applyCleanShort() {
+                                            var style = document.getElementById('vixz-clean-short-css');
+                                            if (!style && document.head) {
+                                                style = document.createElement('style');
+                                                style.id = 'vixz-clean-short-css';
+                                                style.textContent = `
+                                                    .ytmDrawerLayoutContainerDrawerLayout,
+                                                    ytm-drawer-layout-container,
+                                                    [class*="DrawerLayout"],
+                                                    sc-drawer,
+                                                    ytm-mobile-topbar-renderer, header, ytm-pivot-bar-renderer,
+                                                    .reel-player-overlay-actions, ytm-reel-player-overlay-renderer,
+                                                    .player-controls-content, .ytp-chrome-top, .ytp-unmute {
+                                                        display: none !important;
+                                                        width: 0 !important;
+                                                        max-width: 0 !important;
+                                                        height: 0 !important;
+                                                        opacity: 0 !important;
+                                                        visibility: hidden !important;
+                                                        pointer-events: none !important;
+                                                        left: -9999px !important;
+                                                    }
+                                                    html, body, ytm-app, #app {
+                                                        background: #000 !important;
+                                                        overflow: hidden !important;
+                                                        margin: 0 !important;
+                                                        padding: 0 !important;
+                                                        width: 100vw !important;
+                                                        height: 100vh !important;
+                                                    }
+                                                    #player-container-id, .player-container, ytm-player, #player {
+                                                        position: fixed !important;
+                                                        top: 0 !important;
+                                                        left: 0 !important;
+                                                        width: 100vw !important;
+                                                        height: 100vh !important;
+                                                        margin: 0 !important;
+                                                        padding: 0 !important;
+                                                        background: #000 !important;
+                                                    }
+                                                    video {
+                                                        position: fixed !important;
+                                                        top: 0 !important;
+                                                        left: 0 !important;
+                                                        width: 100vw !important;
+                                                        height: 100vh !important;
+                                                        object-fit: cover !important;
+                                                        background: #000 !important;
+                                                        z-index: 999999 !important;
+                                                    }
+                                                `;
+                                                document.head.appendChild(style);
+                                            }
+                                            var v = document.querySelector('video');
+                                            if (v) {
+                                                if (!v.__vixzShortBound) {
+                                                    v.__vixzShortBound = true;
+                                                    v.addEventListener('volumechange', function() { enforceShortAudio(v); });
+                                                    v.addEventListener('loadedmetadata', function() { enforceShortAudio(v); });
+                                                    v.addEventListener('playing', function() { enforceShortAudio(v); });
+                                                }
+                                                enforceShortAudio(v);
+                                                if (v.paused && !window.__vixzUserPaused) {
+                                                    v.play().catch(function(){});
+                                                }
+                                            }
+                                        }
+                                        applyCleanShort();
+                                        if (window.__vixzShortTimer) clearInterval(window.__vixzShortTimer);
+                                        window.__vixzShortTimer = setInterval(applyCleanShort, 450);
+                                    })();
+                                """.trimIndent(), null)
+                            }
                             override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                                 android.util.Log.e("ShortsWebPlayer", "onReceivedError: ${error?.description} for ${request?.url}")
                             }
                         }
 
-                        val embedHtml = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                              <style>
-                                html, body { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-                                #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
-                              </style>
-                            </head>
-                            <body>
-                              <div id="player"></div>
-                              <script src="https://www.youtube.com/iframe_api"></script>
-                              <script>
-                                var player;
-                                function onYouTubeIframeAPIReady() {
-                                  player = new YT.Player('player', {
-                                    videoId: '$videoId',
-                                    host: 'https://www.youtube.com',
-                                    playerVars: {
-                                      'autoplay': 1,
-                                      'playsinline': 1,
-                                      'controls': 0,
-                                      'loop': 1,
-                                      'playlist': '$videoId',
-                                      'rel': 0,
-                                      'enablejsapi': 1,
-                                      'origin': 'https://www.youtube.com',
-                                      'widget_referrer': 'https://www.youtube.com/'
-                                    },
-                                    events: {
-                                      'onReady': function(e) {
-                                        try { e.target.unMute(); } catch(err) {}
-                                        try { e.target.playVideo(); } catch(err) {}
-                                      }
-                                    }
-                                  });
-                                }
-                              </script>
-                            </body>
-                            </html>
-                        """.trimIndent()
-
-                        loadDataWithBaseURL("https://www.youtube.com", embedHtml, "text/html", "UTF-8", null)
+                        loadUrl("https://m.youtube.com/shorts/$videoId")
                     }
                 },
                 update = { view ->
-                    // Keep loaded
+                    webViewRef = view
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -480,15 +579,30 @@ fun ShortsPlayerView(
                     detectTapGestures(
                         onTap = {
                             isPlayingState = !isPlayingState
-                            if (isPlayingState) {
-                                exoPlayer.play()
+                            if (useWebPlayerFallback) {
+                                val js = if (isPlayingState) {
+                                    "(function(){ window.__vixzUserPaused=false; var v=document.querySelector('video'); if(v) v.play(); })();"
+                                } else {
+                                    "(function(){ window.__vixzUserPaused=true; var v=document.querySelector('video'); if(v) v.pause(); })();"
+                                }
+                                webViewRef?.evaluateJavascript(js, null)
                             } else {
-                                exoPlayer.pause()
+                                if (isPlayingState) {
+                                    exoPlayer.play()
+                                } else {
+                                    exoPlayer.pause()
+                                }
                             }
                         },
                         onDoubleTap = { offset ->
                             val w = size.width
-                            if (offset.x < w / 2f) {
+                            if (useWebPlayerFallback) {
+                                val deltaSec = if (offset.x < w / 2f) -5 else 5
+                                webViewRef?.evaluateJavascript(
+                                    "(function(){ var v=document.querySelector('video'); if(v) v.currentTime = Math.max(0, v.currentTime + ($deltaSec)); })();",
+                                    null
+                                )
+                            } else if (offset.x < w / 2f) {
                                 val target = (exoPlayer.currentPosition - 5000L).coerceAtLeast(0L)
                                 exoPlayer.seekTo(target)
                             } else {
@@ -701,7 +815,12 @@ fun ShortsPlayerView(
                 },
                 onValueChangeFinished = {
                     isScrubbing = false
-                    exoPlayer.seekTo(scrubPositionMs.toLong())
+                    if (useWebPlayerFallback) {
+                        val sec = scrubPositionMs / 1000f
+                        webViewRef?.evaluateJavascript("(function(){ var v=document.querySelector('video'); if(v) v.currentTime=$sec; })();", null)
+                    } else {
+                        exoPlayer.seekTo(scrubPositionMs.toLong())
+                    }
                 },
                 valueRange = 0f..durMs.toFloat(),
                 colors = SliderDefaults.colors(

@@ -184,7 +184,7 @@ fun HomeScreen(
     val focusRequester = remember { FocusRequester() }
     // Sort state hoisted here so top bar can access it
     var selectedSort by remember { mutableStateOf("Newest") }
-    val sortCycle = listOf("Newest", "Default", "Oldest")
+    val sortCycle = listOf("Newest", "Oldest", "Most Popular", "Longest", "Shortest", "Default")
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
     val strings = com.example.util.LocalAppStrings.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -968,146 +968,21 @@ fun HomeScreen(
                 }
             }
 
-
-            if (isSearchExpanded && searchTextFieldValue.text.isNotEmpty()) {
-                // Sleek Cursor Navigation & Precision Control Strip
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 2.dp)
-                ) {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        item {
-                            Text(
-                                text = "Cursor:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.5f)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable {
-                                        searchTextFieldValue = searchTextFieldValue.copy(
-                                            selection = TextRange.Zero
-                                        )
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("⇤ Start", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = YouTubeRed)
-                                }
-                            }
-                        }
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable {
-                                        val cur = searchTextFieldValue.selection.start
-                                        if (cur > 0) {
-                                            searchTextFieldValue = searchTextFieldValue.copy(
-                                                selection = TextRange(cur - 1)
-                                            )
-                                        }
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("◀ Left", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                }
-                            }
-                        }
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable {
-                                        val cur = searchTextFieldValue.selection.end
-                                        if (cur < searchTextFieldValue.text.length) {
-                                            searchTextFieldValue = searchTextFieldValue.copy(
-                                                selection = TextRange(cur + 1)
-                                            )
-                                        }
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("Right ▶", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                }
-                            }
-                        }
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable {
-                                        searchTextFieldValue = searchTextFieldValue.copy(
-                                            selection = TextRange(searchTextFieldValue.text.length)
-                                        )
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("End ⇥", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                }
-                            }
-                        }
-                        item {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF333333)),
-                                modifier = Modifier
-                                    .height(26.dp)
-                                    .clickable {
-                                        searchTextFieldValue = searchTextFieldValue.copy(
-                                            selection = TextRange(0, searchTextFieldValue.text.length)
-                                        )
-                                    }
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("Select All", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             if (searchQuery.isNotEmpty()) {
                 // Search Sort Bar & Upload Date Filter Bar
+                val searchSortOptions = listOf(
+                    "🕒 Latest" to "Latest",
+                    "⏳ Oldest" to "Oldest",
+                    "🔥 Most Popular" to "Most Popular",
+                    "⭐ Relevance" to "Relevance",
+                    "📈 Top Rated" to "Top Rated",
+                    "🎬 Longest" to "Longest",
+                    "⚡ Shortest" to "Shortest"
+                )
+                var showAllSortMenu by remember { mutableStateOf(false) }
+
                 Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    // Row 1: Search Sort Mode Selector (Latest, Most Popular, Relevance)
+                    // Row 1: Search Sort Mode Selector
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1118,26 +993,47 @@ fun HomeScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text(
-                            text = "Default: Latest",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = YouTubeRed,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Box {
+                            Text(
+                                text = "All Options: $searchSortOption ▾",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = YouTubeRed,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .clickable { showAllSortMenu = true }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                            DropdownMenu(
+                                expanded = showAllSortMenu,
+                                onDismissRequest = { showAllSortMenu = false }
+                            ) {
+                                searchSortOptions.forEach { (label, rawOpt) ->
+                                    val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = label,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        },
+                                        onClick = {
+                                            onSearchSortOptionSelected(rawOpt)
+                                            showAllSortMenu = false
+                                            dismissKeyboard()
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
-                    val searchSortOptions = listOf("🕒 Latest", "🔥 Most Popular", "⭐ Relevance")
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(searchSortOptions) { opt ->
-                            val rawOpt = when {
-                                opt.contains("Latest") -> "Latest"
-                                opt.contains("Popular") -> "Most Popular"
-                                else -> "Relevance"
-                            }
+                        items(searchSortOptions) { (opt, rawOpt) ->
                             val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
                             FilterChip(
                                 selected = isSelected,
@@ -1412,12 +1308,27 @@ fun HomeScreen(
                 if (searchQuery.isNotBlank()) {
                     val pubSecMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                     val viewCountMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
+                    val durationMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
                     when (searchSortOption) {
                         "Most Popular" -> timeFilteredList.sortedWith(
                             compareByDescending<VideoEntity> { viewCountMap[it.youtubeId] ?: 0L }
                                 .thenBy { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                         )
-                        "Relevance" -> timeFilteredList
+                        "Oldest" -> timeFilteredList.sortedWith(
+                            compareByDescending<VideoEntity> { pubSecMap[it.youtubeId] ?: 0L }
+                                .thenBy { it.addedTimestamp }
+                        )
+                        "Longest" -> timeFilteredList.sortedWith(
+                            compareByDescending<VideoEntity> { durationMap[it.youtubeId] ?: 0 }
+                                .thenByDescending { viewCountMap[it.youtubeId] ?: 0L }
+                        )
+                        "Shortest" -> timeFilteredList.sortedWith(
+                            compareBy<VideoEntity> {
+                                val sec = durationMap[it.youtubeId] ?: 0
+                                if (sec > 0) sec else Int.MAX_VALUE
+                            }.thenBy { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
+                        )
+                        "Relevance", "Top Rated" -> timeFilteredList
                         else -> timeFilteredList.sortedWith( // "Latest" (Default)
                             compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                                 .thenByDescending { it.addedTimestamp }
@@ -1437,6 +1348,29 @@ fun HomeScreen(
                                 .thenBy { it.addedTimestamp }
                         )
                     }
+                    "Most Popular" -> {
+                        val viewCountMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
+                        rankedDisplayList.sortedWith(
+                            compareByDescending<VideoEntity> { viewCountMap[it.youtubeId] ?: 0L }
+                                .thenByDescending { it.addedTimestamp }
+                        )
+                    }
+                    "Longest" -> {
+                        val durationMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
+                        rankedDisplayList.sortedWith(
+                            compareByDescending<VideoEntity> { durationMap[it.youtubeId] ?: 0 }
+                        )
+                    }
+                    "Shortest" -> {
+                        val durationMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
+                        rankedDisplayList.sortedWith(
+                            compareBy<VideoEntity> {
+                                val sec = durationMap[it.youtubeId] ?: 0
+                                if (sec > 0) sec else Int.MAX_VALUE
+                            }
+                        )
+                    }
+                    "Default" -> rankedDisplayList
                     else -> {
                         val pubSecMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                         rankedDisplayList.sortedWith(

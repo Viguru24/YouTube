@@ -577,18 +577,22 @@ fun PlayerScreen(
                                 Spacer(modifier = Modifier.height(6.dp))
 
                                 // Action Buttons Row (Picture-Only Icons: Like | Dislike | AI Chat | Watch Later | Organize | Share | Download)
-                                Row(
+                                BoxWithConstraints(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState())
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(vertical = 4.dp)
                                 ) {
+                                    val actionBtnSize = ((maxWidth - 24.dp) / 7f).coerceIn(28.dp, 36.dp)
+                                    val actionIconSize = (actionBtnSize * 0.48f).coerceIn(14.dp, 18.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                     // 1. 👍 Like Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable {
                                                 localIsFavorite = !localIsFavorite
@@ -606,7 +610,7 @@ fun PlayerScreen(
                                                 imageVector = if (localIsFavorite) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
                                                 contentDescription = "Like",
                                                 tint = if (localIsFavorite) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -614,7 +618,7 @@ fun PlayerScreen(
                                     // 2. 👎 Dislike Button (Picture Only: downvotes & skips to next video)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable { handleDislikeAndNext() },
                                         shape = CircleShape,
@@ -626,7 +630,7 @@ fun PlayerScreen(
                                                 imageVector = if (localIsDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
                                                 contentDescription = "I don't like",
                                                 tint = if (localIsDisliked) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -634,7 +638,7 @@ fun PlayerScreen(
                                     // 3. ✨ AI Chat Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable { showAiSummaryModal = true },
                                         shape = CircleShape,
@@ -646,7 +650,7 @@ fun PlayerScreen(
                                                 imageVector = Icons.Filled.AutoAwesome,
                                                 contentDescription = "AI Chat",
                                                 tint = YouTubeRed,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -654,7 +658,7 @@ fun PlayerScreen(
                                     // 4. Watch Later Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable { onWatchLaterToggle(video) },
                                         shape = CircleShape,
@@ -666,7 +670,7 @@ fun PlayerScreen(
                                                 imageVector = if (video.isWatchLater) Icons.Filled.Bookmark else Icons.Outlined.WatchLater,
                                                 contentDescription = "Watch Later",
                                                 tint = if (video.isWatchLater) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -674,7 +678,7 @@ fun PlayerScreen(
                                     // 5. Organize Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable { showSaveToSubjectDialog = true },
                                         shape = CircleShape,
@@ -685,7 +689,7 @@ fun PlayerScreen(
                                                 imageVector = Icons.Filled.PlaylistAdd,
                                                 contentDescription = "Organize",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -693,7 +697,7 @@ fun PlayerScreen(
                                     // 6. Share Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable {
                                                 val sendIntent = android.content.Intent().apply {
@@ -712,7 +716,7 @@ fun PlayerScreen(
                                                 imageVector = Icons.Filled.Share,
                                                 contentDescription = "Share",
                                                 tint = MaterialTheme.colorScheme.onSurface,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(actionIconSize)
                                             )
                                         }
                                     }
@@ -720,7 +724,7 @@ fun PlayerScreen(
                                     // 7. Download Button (Picture Only)
                                     Surface(
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(actionBtnSize)
                                             .clip(CircleShape)
                                             .clickable {
                                                 if (isDownloaded) onDeleteDownloadClick() else onDownloadClick()
@@ -735,12 +739,12 @@ fun PlayerScreen(
                                                     imageVector = Icons.Filled.CheckCircle,
                                                     contentDescription = "Downloaded",
                                                     tint = Color(0xFF4CAF50),
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(actionIconSize)
                                                 )
                                             } else if (downloadProgress in 1..99) {
                                                 CircularProgressIndicator(
                                                     progress = { downloadProgress / 100f },
-                                                    modifier = Modifier.size(18.dp),
+                                                    modifier = Modifier.size(actionIconSize),
                                                     color = YouTubeRed,
                                                     strokeWidth = 2.dp
                                                 )
@@ -749,10 +753,11 @@ fun PlayerScreen(
                                                     imageVector = Icons.Filled.Download,
                                                     contentDescription = "Download Video",
                                                     tint = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(actionIconSize)
                                                 )
                                             }
                                         }
+                                    }
                                     }
                                 }
                             }

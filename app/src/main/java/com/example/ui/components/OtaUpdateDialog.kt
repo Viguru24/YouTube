@@ -53,6 +53,7 @@ fun OtaUpdateDialog(
 
     var isChecking by remember { mutableStateOf(true) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var stableInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     var isDownloading by remember { mutableStateOf(false) }
@@ -65,6 +66,7 @@ fun OtaUpdateDialog(
             try {
                 val result = updateManager.checkForUpdates()
                 updateInfo = result
+                stableInfo = updateManager.fetchStableInfo()
             } catch (e: Exception) {
                 errorMessage = e.localizedMessage ?: "Failed to connect to sovereign VPS"
             } finally {
@@ -355,6 +357,50 @@ fun OtaUpdateDialog(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White,
                                 fontSize = 13.5.sp
+                            )
+                        }
+                    }
+
+                    if (stableInfo != null && !isDownloading) {
+                        val sInfo = stableInfo!!
+                        OutlinedButton(
+                            onClick = {
+                                if (updateManager.currentVersionCode > sInfo.versionCode) {
+                                    Toast.makeText(
+                                        context,
+                                        "Downloading Stable v${sInfo.versionName} (Build ${sInfo.versionCode}). Note: Android requires uninstalling newer Build ${updateManager.currentVersionCode} or rolling back via OTA.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                                isDownloading = true
+                                scope.launch {
+                                    val success = updateManager.downloadAndInstallUpdate(
+                                        apkUrl = sInfo.apkUrl,
+                                        onProgress = { p -> downloadProgress = p }
+                                    )
+                                    isDownloading = false
+                                    if (success) {
+                                        onDismiss()
+                                    } else {
+                                        Toast.makeText(context, "Failed to download stable package.", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.6f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF34D399)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .testTag("restore_stable_button")
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF34D399))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Go Back to Stable (v${sInfo.versionName} • Build ${sInfo.versionCode})",
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF34D399),
+                                fontSize = 12.5.sp
                             )
                         }
                     }

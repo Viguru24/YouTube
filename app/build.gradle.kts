@@ -29,7 +29,7 @@ android {
     applicationId = "com.aistudio.youtubeplayer.vixz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 45
+    versionCode = 48
     versionName = "2.2.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -76,8 +76,8 @@ android {
     }
   }
   compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
   }
   buildFeatures {
     compose = true
@@ -144,7 +144,7 @@ dependencies {
   implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
   implementation("androidx.media3:media3-datasource-okhttp:1.3.1")
   implementation("androidx.media3:media3-ui:1.3.1")
-  implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.4")
+  implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
   implementation("org.mozilla:rhino:1.7.15")
   implementation("com.pierfrancescosoffritti.androidyoutubeplayer:core:13.0.0")
   implementation("androidx.documentfile:documentfile:1.0.1")

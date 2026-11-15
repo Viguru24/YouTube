@@ -41,14 +41,19 @@
 
 ## 🆕 What's New in v2.2.2
 
-- ⚡ **Feed Rendering & Recommendation Engine Performance Overhaul:**
-  - **Batch Recommendation Reasoning:** Replaced iterative single-item evaluation with `RecommendationEngine.getRecommendationReasons()`, which precomputes lookup sets once and processes all video badges in $O(N)$ time.
-  - **Background Thread Offloading:** Shifted feed filtering, sorting, and recommendation scoring off the main UI thread onto `Dispatchers.Default` using Compose `produceState`, preventing frame drops and UI freezes during feed scrolling and search.
-  - **Timestamp Caching & Compiled Regex:** Precompiled `PUBLISHED_TIME_REGEX` and added `PUBLISHED_TIME_CACHE` in `YouTubeUtils`, eliminating repeated expensive regex compilation and parsing during scroll.
-  - **Database Query Batching:** Added `VideoDao.getVideosByIds()` to query only relevant video records instead of scanning the full database with `getAllVideosDirect()`.
-  - **ViewModel Flow Debounce:** Added a 150ms debounce and background dispatcher to `repository.allVideos` in `YouTubeViewModel`, preventing excessive UI recompositions during active syncs.
-- 🔄 **Direct OTA Updates in UI:** Added 1-tap Over-The-Air update checks to the Settings Dialog and Library screen.
-- 🖥️ **Windows Desktop Display & Avatar Enhancements:** Improved Google profile name resolution, email fallback derivation, and avatar circular clipping.
+- 🎬 **Native Playback & Stream Extraction Overhaul (`NewPipeExtractor v0.27.1` + BotGuard `poToken`):**
+  - **Upgraded Extractor Engine:** Upgraded to `NewPipeExtractor v0.27.1` on Java 17 (`VISIONOS` HLS master playlists & adaptive 1080p/720p streams) for fast ~1s native `ExoPlayer` startup without 403/bot blocks.
+  - **BotGuard `poToken` Provider:** Added `BotGuardPoTokenProvider` (`botguard_potoken.html`) executing YouTube's `/api/jnn/v1` BotGuard VM offscreen plus `YoutubeJavaScriptPlayerManager` signature & `n`-parameter deobfuscation for `WEB` InnerTube fallbacks.
+  - **Clean Auth Header Separation:** Prevented web session cookies (`NPDownloader`) from interfering with native non-browser stream requests (`ANDROID_VR`, `IOS`, `VISIONOS`).
+- 🖥️ **Full-Bleed Fallback Player & Continuous Audio Fix:**
+  - **Zero "Window Within Window":** Eliminated the `m.youtube.com` left drawer overlay (`.ytmDrawerLayoutContainerDrawerLayout`) and `48px` top offset so fallback video renders crisp and full-bleed (`100vw × 100vh`) in both `YouTubePlayerView` and `ShortsPlayerView`.
+  - **No More 6-Second Sound Drop:** Stopped/cleared `ExoPlayer` before entering fallback to prevent `AudioFocus` conflicts, and replaced the 3-second unmute timer with persistent `volumechange` / `playing` listeners synced to player mute state.
+  - **Shorts Fallback Controls:** Routed single-tap Play/Pause, double-tap `±5s` seek, and bottom scrubber to the WebView video element when Shorts fallback is active.
+- ⚡ **Instant Cold-Start Cache & Feed Performance:**
+  - **Zero-Wait Startup Feed:** Preserved cached discovery videos and deferred expired-download cleanup in `YouTubeViewModel` so Home renders cached videos immediately instead of waiting ~7 seconds on `"Loading Latest videos..."`.
+  - **O(N) Recommendation & Background Offloading:** Batch `RecommendationEngine.getRecommendationReasons()`, `produceState` filtering/sorting on `Dispatchers.Default`, compiled `PUBLISHED_TIME_REGEX` caching, and `VideoDao.getVideosByIds()`.
+- 🎨 **UI & OTA Tooling:**
+  - Icon-only subscription indicator on Home `VideoCard` tiles, responsive 7-button player action row, 1-tap Sovereign OTA updates in Settings & Library, and `-MarkStable` / `ROLLBACK_TO_STABLE.bat` recovery scripts.
 
 ---
 

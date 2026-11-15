@@ -3,14 +3,69 @@
 
 param(
     [string]$Notes = "",
-    [switch]$InstallOnDevice
+    [switch]$InstallOnDevice,
+    [switch]$MarkStable,
+    [switch]$RollbackToStable
 )
 
 $AdminKey = "test_secret_4666"
 $AppSlug = "youtube"
 $UploadUrl = "https://api.cosmowhisper.com/updates/$AppSlug/upload"
+$StableDir = Join-Path $PSScriptRoot "release\stable"
+$StableApk = Join-Path $StableDir "Vixz-YouTube-Player-stable.apk"
+$StableMeta = Join-Path $StableDir "stable-version.json"
 
 Set-Location $PSScriptRoot
+
+if ($RollbackToStable) {
+    Write-Host ""
+    Write-Host "========================================================" -ForegroundColor Yellow
+    Write-Host "  YouTube (Vixz) OTA ROLLBACK TO STABLE" -ForegroundColor Yellow
+    Write-Host "========================================================" -ForegroundColor Yellow
+    Write-Host ""
+
+    if (-not (Test-Path $StableApk)) {
+        Write-Error "[!] Stable APK not found at $StableApk. Mark a stable build first with -MarkStable."
+        exit 1
+    }
+
+    $stableInfo = if (Test-Path $StableMeta) { Get-Content $StableMeta -Raw | ConvertFrom-Json } else { $null }
+    $stableVerName = if ($stableInfo -and $stableInfo.versionName) { $stableInfo.versionName } else { "2.2.2" }
+    $stableOrigCode = if ($stableInfo -and $stableInfo.versionCode) { $stableInfo.versionCode } else { 46 }
+
+    # Bump versionCode above current so Android OTA clients accept the rollback package
+    $GradleFile = Join-Path $PSScriptRoot "app\build.gradle.kts"
+    $newCode = $stableOrigCode + 1
+    if (Test-Path $GradleFile) {
+        $content = Get-Content -Path $GradleFile -Raw
+        if ($content -match 'versionCode\s*=\s*(\d+)') {
+            $oldCode = [int]$matches[1]
+            $newCode = $oldCode + 1
+            $content = $content -replace "versionCode\s*=\s*$oldCode", "versionCode = $newCode"
+            Set-Content -Path $GradleFile -Value $content -NoNewline
+            Write-Host "[+] Bumped OTA versionCode for rollback acceptance: $oldCode -> $newCode" -ForegroundColor Green
+        }
+    }
+
+    $RollbackNotes = if ([string]::IsNullOrWhiteSpace($Notes)) {
+        "Rollback to Stable v$stableVerName (build $stableOrigCode)."
+    } else { $Notes }
+
+    Write-Host "[*] Uploading stable APK ($StableApk) to VPS..." -ForegroundColor Yellow
+    $curlOut = & curl.exe -s -S -X POST -H "x-admin-key: $AdminKey" -F "apk=@$StableApk" -F "appId=$AppSlug" -F "versionCode=$newCode" -F "versionName=$stableVerName" -F "releaseNotes=$RollbackNotes" $UploadUrl
+    $ServerResponse = $curlOut | ConvertFrom-Json
+    if ($ServerResponse.success) {
+        $ReleaseDir = Join-Path $PSScriptRoot "release"
+        if (Test-Path $ReleaseDir) {
+            Copy-Item -Path $StableApk -Destination (Join-Path $ReleaseDir "Vixz-YouTube-Player-latest.apk") -Force
+        }
+        Write-Host "[OK] ROLLBACK TO STABLE v$stableVerName SUCCESSFUL! (OTA code: $newCode)" -ForegroundColor Green
+    } else {
+        Write-Error "[!] Rollback upload rejected by server: $curlOut"
+        exit 1
+    }
+    exit 0
+}
 
 Write-Host ""
 Write-Host "========================================================" -ForegroundColor Cyan
@@ -109,6 +164,24 @@ try {
         Write-Host "     VPS has published the new APK package." -ForegroundColor Green
         Write-Host "     Android devices will automatically detect and prompt to update." -ForegroundColor White
         Write-Host ""
+
+        if ($MarkStable) {
+            New-Item -ItemType Directory -Force -Path $StableDir | Out-Null
+            Copy-Item -Path $ApkPath -Destination $StableApk -Force
+            $hash = (Get-FileHash $StableApk -Algorithm SHA256).Hash
+            $size = (Get-Item $StableApk).Length
+            $metaObj = @{
+                appId = $AppSlug
+                versionCode = [int]$VersionCode
+                versionName = $VersionName
+                markedStableAt = (Get-Date -Format "o")
+                sha256 = $hash
+                sizeBytes = $size
+                apkFile = "Vixz-YouTube-Player-stable.apk"
+            } | ConvertTo-Json -Depth 3
+            Set-Content -Path $StableMeta -Value $metaObj
+            Write-Host "[+] Marked v$VersionName (code $VersionCode) as STABLE snapshot." -ForegroundColor Green
+        }
     } else {
         Write-Error "[!] Upload rejected by server: $curlOut"
     }

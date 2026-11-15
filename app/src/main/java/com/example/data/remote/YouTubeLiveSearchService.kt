@@ -340,7 +340,8 @@ object YouTubeLiveSearchService {
         subscribedChannels: List<String> = emptyList(),
         batchIndex: Int = 0,
         batchSize: Int = 16,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
+        onBatchUpdate: ((List<VideoEntity>) -> Unit)? = null
     ): List<VideoEntity> = withContext(Dispatchers.IO) {
         val channels = if (subscribedChannels.isNotEmpty()) {
             subscribedChannels
@@ -360,7 +361,7 @@ object YouTubeLiveSearchService {
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
-        val channelSemaphore = Semaphore(4) // 4 parallel requests to prevent network & OkHttp thread congestion
+        val channelSemaphore = Semaphore(12) // High-concurrency pool for fast first-frame startup
 
         // Fast-path: Check per-channel cache first without network call
         val uncachedChannels = mutableListOf<String>()
@@ -386,30 +387,53 @@ object YouTubeLiveSearchService {
             return@withContext cachedConsolidated
         }
 
-        // Process uncached channels (batching up to 12 channels per refresh cycle to stay blazing fast)
-        val channelsToFetch = if (uncachedChannels.size > 12 && !forceRefresh) {
-            uncachedChannels.take(12)
+        // Fast startup cap: fetch first 12 channels immediately (~1s), and up to 16 more in Wave 2
+        // instead of hammering 100+ channels on every cold start.
+        val firstWave = uncachedChannels.take(12)
+        val remainingWave = if (uncachedChannels.size > 12 && (forceRefresh || batchIndex > 0)) {
+            uncachedChannels.drop(12).take(16)
         } else {
-            uncachedChannels
+            emptyList()
         }
 
-        val jobs = channelsToFetch.map { channel ->
-            async {
-                channelSemaphore.withPermit {
-                    try {
-                        val fetched = kotlinx.coroutines.withTimeoutOrNull(3500L) {
-                            fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
-                        } ?: emptyList()
-                        results.addAll(fetched.take(15))
-                    } catch (t: Throwable) {
-                        logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${t.message}")
+        suspend fun fetchWave(wave: List<String>) {
+            val waveJobs = wave.map { channel ->
+                async {
+                    channelSemaphore.withPermit {
+                        try {
+                            val fetched = kotlinx.coroutines.withTimeoutOrNull(3000L) {
+                                fetchChannelLatestVideos(channel, forceRefresh = forceRefresh)
+                            } ?: emptyList()
+                            results.addAll(fetched.take(15))
+                        } catch (t: Throwable) {
+                            logD("YouTubeLiveSearchService", "Channel fetch error '$channel': ${t.message}")
+                        }
                     }
                 }
             }
+            waveJobs.awaitAll()
         }
-        jobs.awaitAll()
 
-        val finalResults = results
+        fetchWave(firstWave)
+
+        if (onBatchUpdate != null && results.isNotEmpty() && remainingWave.isNotEmpty()) {
+            val wave1Consolidated = synchronized(results) { results.toList() }
+                .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                .distinctBy { it.youtubeId }
+                .sortedWith(
+                    compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenByDescending { it.addedTimestamp }
+                )
+            if (wave1Consolidated.isNotEmpty()) {
+                onBatchUpdate(wave1Consolidated)
+            }
+        }
+
+        if (remainingWave.isNotEmpty()) {
+            fetchWave(remainingWave)
+        }
+
+        val finalResults = synchronized(results) { results.toList() }
             .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
             .distinctBy { it.youtubeId }
             .sortedWith(
@@ -582,6 +606,16 @@ object YouTubeLiveSearchService {
                     logD("YouTubeLiveSearchService", "Popular search error: ${e.message}")
                 }
             })
+        } else if (effectiveSort == "Top Rated") {
+            jobs.add(async {
+                try {
+                    val rated = searchWebHtml(trimmed, customSortParam = "&sp=CAE%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(rated)
+                } catch (e: Exception) {
+                    logD("YouTubeLiveSearchService", "Top Rated search error: ${e.message}")
+                }
+            })
         } else {
             jobs.add(async {
                 try {
@@ -677,7 +711,27 @@ object YouTubeLiveSearchService {
                         .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                 )
             }
-            "Relevance" -> {
+            "Oldest" -> {
+                distinctList.sortedWith(
+                    compareByDescending<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                        .thenBy { it.addedTimestamp }
+                )
+            }
+            "Longest" -> {
+                distinctList.sortedWith(
+                    compareByDescending<VideoEntity> { YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
+                        .thenByDescending { YouTubeUtils.parseViewCount(it.viewCountText) }
+                )
+            }
+            "Shortest" -> {
+                distinctList.sortedWith(
+                    compareBy<VideoEntity> {
+                        val sec = YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                        if (sec > 0) sec else Int.MAX_VALUE
+                    }.thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                )
+            }
+            "Relevance", "Top Rated" -> {
                 distinctList
             }
             else -> {
@@ -1165,9 +1219,15 @@ object YouTubeLiveSearchService {
                     val badges = r.optJSONArray("badges")
                     if (!isInvalid && badges != null) {
                         for (b in 0 until badges.length()) {
-                            val badge = badges.optJSONObject(b)
-                            val label = badge?.optJSONObject("metadataBadgeRenderer")?.optString("label", "") ?: ""
-                            if (label.contains("Members only", ignoreCase = true) || label.contains("sponsor", ignoreCase = true)) {
+                            val badge = badges.optJSONObject(b)?.optJSONObject("metadataBadgeRenderer")
+                            val label = badge?.optString("label", "") ?: ""
+                            val style = badge?.optString("style", "") ?: ""
+                            if (style.contains("MEMBERS_ONLY", ignoreCase = true) ||
+                                label.contains("Members only", ignoreCase = true) ||
+                                label.contains("Available to members", ignoreCase = true) ||
+                                label.contains("sponsor", ignoreCase = true) ||
+                                label.contains("Buy or rent", ignoreCase = true) ||
+                                label.contains("Paid", ignoreCase = true)) {
                                 isInvalid = true
                                 break
                             }

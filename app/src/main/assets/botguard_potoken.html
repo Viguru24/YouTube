@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title></title>
+<script>
+function loadBotGuard(challengeData) {
+  this.vm = this[challengeData.globalName];
+  this.program = challengeData.program;
+  this.vmFunctions = {};
+  this.syncSnapshotFunction = null;
+
+  if (!this.vm)
+    throw new Error('[BotGuardClient]: VM not found in the global object');
+
+  if (!this.vm.a)
+    throw new Error('[BotGuardClient]: Could not load program');
+
+  const self = this;
+  const vmFunctionsCallback = function (
+    asyncSnapshotFunction,
+    shutdownFunction,
+    passEventFunction,
+    checkCameraFunction
+  ) {
+    self.vmFunctions = {
+      asyncSnapshotFunction: asyncSnapshotFunction,
+      shutdownFunction: shutdownFunction,
+      passEventFunction: passEventFunction,
+      checkCameraFunction: checkCameraFunction
+    };
+  };
+
+  this.syncSnapshotFunction = this.vm.a(
+    this.program,
+    vmFunctionsCallback,
+    true,
+    this.userInteractionElement,
+    function () {},
+    [[], []]
+  )[0];
+
+  return new Promise(function (resolve, reject) {
+    var i = 0;
+    var refreshIntervalId = setInterval(function () {
+      if (self.vmFunctions && self.vmFunctions.asyncSnapshotFunction) {
+        clearInterval(refreshIntervalId);
+        resolve(self);
+        return;
+      }
+      if (i >= 10000) {
+        clearInterval(refreshIntervalId);
+        reject(new Error('asyncSnapshotFunction is null even after 10 seconds'));
+      }
+      i += 1;
+    }, 1);
+  });
+}
+
+function snapshot(args) {
+  const self = this;
+  return new Promise(function (resolve, reject) {
+    if (!self.vmFunctions || !self.vmFunctions.asyncSnapshotFunction)
+      return reject(new Error('[BotGuardClient]: Async snapshot function not found'));
+
+    self.vmFunctions.asyncSnapshotFunction(
+      function (response) { resolve(response); },
+      [
+        args.contentBinding,
+        args.signedTimestamp,
+        args.webPoSignalOutput,
+        args.skipPrivacyBuffer
+      ]
+    );
+  });
+}
+
+function runBotGuard(challengeData) {
+  const interpreterJavascript =
+    challengeData.interpreterJavascript &&
+    challengeData.interpreterJavascript.privateDoNotAccessOrElseSafeScriptWrappedValue;
+
+  if (interpreterJavascript) {
+    new Function(interpreterJavascript)();
+  } else {
+    throw new Error('Could not load BotGuard VM');
+  }
+
+  const webPoSignalOutput = [];
+  return loadBotGuard({
+    globalName: challengeData.globalName,
+    globalObj: this,
+    program: challengeData.program
+  }).then(function (botguard) {
+    return botguard.snapshot({ webPoSignalOutput: webPoSignalOutput });
+  }).then(function (botguardResponse) {
+    return {
+      webPoSignalOutput: webPoSignalOutput,
+      botguardResponse: botguardResponse
+    };
+  });
+}
+
+function obtainPoToken(webPoSignalOutput, integrityToken, identifier) {
+  const getMinter = webPoSignalOutput[0];
+  if (!getMinter) throw new Error('PMD:Undefined');
+
+  const mintCallback = getMinter(integrityToken);
+  if (!(mintCallback instanceof Function)) throw new Error('APF:Failed');
+
+  const result = mintCallback(identifier);
+  if (!result) throw new Error('YNJ:Undefined');
+  if (!(result instanceof Uint8Array)) throw new Error('ODM:Invalid');
+
+  return result;
+}
+</script>
+</head>
+<body></body>
+</html>

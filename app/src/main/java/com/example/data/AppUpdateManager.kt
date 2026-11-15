@@ -41,6 +41,33 @@ class AppUpdateManager(
     private val groupToken = "81e5632c_pin_group"
 
     /**
+     * Fetches metadata for the dedicated `youtube-stable` OTA channel.
+     */
+    suspend fun fetchStableInfo(): UpdateInfo? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("$baseUrl/youtube-stable/version.json?token=$groupToken")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 6000
+            connection.readTimeout = 6000
+            connection.setRequestProperty("x-group-token", groupToken)
+            connection.setRequestProperty("x-app-id", "youtube-stable")
+
+            if (connection.responseCode == 200) {
+                val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(responseText)
+                return@withContext UpdateInfo(
+                    versionCode = json.getInt("versionCode"),
+                    versionName = json.getString("versionName"),
+                    apkUrl = json.getString("apkUrl"),
+                    releaseNotes = json.optString("releaseNotes", "Marked Stable Release")
+                )
+            }
+        } catch (_: Exception) { }
+        return@withContext null
+    }
+
+    /**
      * Checks if a newer APK is available on the sovereign VPS.
      */
     suspend fun checkForUpdates(): UpdateInfo? = withContext(Dispatchers.IO) {

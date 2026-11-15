@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
         const val ACTION_PIP_CONTROL = "com.example.PIP_CONTROL"
         const val EXTRA_PIP_ACTION = "pip_action"
         const val PIP_ACTION_PLAY_PAUSE = "play_pause"
+        const val PIP_ACTION_PAUSE = "pause"
+        const val PIP_ACTION_PLAY = "play"
         const val PIP_ACTION_REWIND = "rewind"
         const val PIP_ACTION_FORWARD = "forward"
         const val PIP_ACTION_CLOSE = "close"
@@ -53,13 +55,35 @@ class MainActivity : ComponentActivity() {
             val action = intent?.getStringExtra(EXTRA_PIP_ACTION)
             android.util.Log.d("MainActivity", "Received PiP control action: $action")
             when (action) {
-                PIP_ACTION_PLAY_PAUSE -> {
-                    viewModel.togglePlayPause()
-                    val newPlaying = !viewModel.isPlayerPlaying.value
-                    viewModel.setPlayerPlaying(newPlaying)
+                PIP_ACTION_PAUSE -> {
+                    viewModel.pausePlayer()
+                    viewModel.setPlayerPlaying(false)
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                         try {
-                            setPictureInPictureParams(buildPipParams(newPlaying))
+                            setPictureInPictureParams(buildPipParams(false))
+                        } catch (e: Exception) { }
+                    }
+                }
+                PIP_ACTION_PLAY -> {
+                    viewModel.resumePlayer()
+                    viewModel.setPlayerPlaying(true)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        try {
+                            setPictureInPictureParams(buildPipParams(true))
+                        } catch (e: Exception) { }
+                    }
+                }
+                PIP_ACTION_PLAY_PAUSE -> {
+                    val willPlay = !viewModel.isPlayerPlaying.value
+                    if (willPlay) {
+                        viewModel.resumePlayer()
+                    } else {
+                        viewModel.pausePlayer()
+                    }
+                    viewModel.setPlayerPlaying(willPlay)
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        try {
+                            setPictureInPictureParams(buildPipParams(willPlay))
                         } catch (e: Exception) { }
                     }
                 }
@@ -83,10 +107,10 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
 
-        // Register PiP control broadcast receiver with RECEIVER_NOT_EXPORTED for security
+        // Register PiP control broadcast receiver with RECEIVER_EXPORTED so SystemUI can deliver PiP RemoteAction broadcasts
         val filter = android.content.IntentFilter(ACTION_PIP_CONTROL)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
+            registerReceiver(pipReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(pipReceiver, filter)
         }
@@ -109,6 +133,10 @@ class MainActivity : ComponentActivity() {
 
         // Synchronize and restore YouTube auth cookies across CookieManager & SharedPreferences
         // BEFORE NewPipe init, so authenticated requests work immediately on cold start.
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+        }
+
         try {
             val effectiveCookies = com.example.util.CookieHelper.syncAndPersistCookies(this)
             if (effectiveCookies.isNotBlank()) {
@@ -119,11 +147,14 @@ class MainActivity : ComponentActivity() {
             android.util.Log.w("MainActivity", "Cookie sync failed: ${e.message}")
         }
 
-        // Initialize NewPipe Extractor for native YouTube stream extraction
+        // Initialize NewPipe Extractor & BotGuard PoToken provider for native stream extraction
         try {
+            com.example.data.remote.BotGuardPoTokenProvider.init(this)
             org.schabi.newpipe.extractor.NewPipe.init(
                 com.example.data.remote.NPDownloader.getInstance()
             )
+            org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExtractor
+                .setPoTokenProvider(com.example.data.remote.BotGuardPoTokenProvider)
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "NewPipe Extractor init failed: ${e.message}")
         }
@@ -244,13 +275,31 @@ class MainActivity : ComponentActivity() {
 
         val actions = mutableListOf<android.app.RemoteAction>()
 
-        // Single clean Play / Pause / Resume Action
+        // 1. Rewind 10s Action
+        val rewindIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            101,
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_REWIND),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_rew),
+                "Rewind",
+                "Rewind 10 seconds",
+                rewindIntent
+            )
+        )
+
+        // 2. Single clean Play / Pause / Resume Action (distinct requestCodes prevent SystemUI PendingIntent caching)
         val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
         val playPauseText = if (isPlaying) "Pause" else "Play"
+        val playPauseActionExtra = if (isPlaying) PIP_ACTION_PAUSE else PIP_ACTION_PLAY
+        val playPauseRequestCode = if (isPlaying) 102 else 104
         val playPauseIntent = android.app.PendingIntent.getBroadcast(
             this,
-            102,
-            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_PLAY_PAUSE),
+            playPauseRequestCode,
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, playPauseActionExtra),
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
         )
         actions.add(
@@ -259,6 +308,22 @@ class MainActivity : ComponentActivity() {
                 playPauseText,
                 playPauseText,
                 playPauseIntent
+            )
+        )
+
+        // 3. Fast Forward 10s Action
+        val forwardIntent = android.app.PendingIntent.getBroadcast(
+            this,
+            103,
+            android.content.Intent(ACTION_PIP_CONTROL).setPackage(packageName).putExtra(EXTRA_PIP_ACTION, PIP_ACTION_FORWARD),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        actions.add(
+            android.app.RemoteAction(
+                android.graphics.drawable.Icon.createWithResource(this, android.R.drawable.ic_media_ff),
+                "Forward",
+                "Forward 10 seconds",
+                forwardIntent
             )
         )
 

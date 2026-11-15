@@ -4,15 +4,24 @@ All notable changes, fixes, and improvements across the Android client and Windo
 
 ---
 
-## 🚀 Release v2.2.2 — Feed Rendering & Recommendation Engine Performance Overhaul (November 7, 2026)
+## 🚀 Release v2.2.2 — Native Playback Hardening, BotGuard poToken, Full-Bleed Layout & Instant Startup (November 15, 2026)
 
-### ⚡ 1. High-Performance Feed & Recommendation Computations
+### 🎬 1. Native Stream Extraction & BotGuard `poToken` Engine
+- **NewPipeExtractor v0.27.1 & Java 17:** Upgraded `NewPipeExtractor` to `v0.27.1` (`VISIONOS` HLS master playlists and 1080p/720p adaptive streams), restoring ~1s native `ExoPlayer` startup across live streams, VODs, and Shorts.
+- **BotGuard `poToken` Integration (`BotGuardPoTokenProvider.kt` & `botguard_potoken.html`):** Added an offscreen network-blocked WebView BotGuard VM runner for `/api/jnn/v1/Create` and `/api/jnn/v1/GenerateIT` alongside `YoutubeJavaScriptPlayerManager` signature and `n`-parameter deobfuscation for `WEB` InnerTube fallbacks.
+- **Native Request Isolation (`NPDownloader.kt` & `YouTubeStreamExtractor.kt`):** Separated browser auth cookies from native mobile InnerTube clients and aligned `VISIONOS`/`IOS`/`ANDROID` User-Agents cleanly.
+
+### 🖥️ 2. Full-Bleed Fallback Layout & Continuous Audio
+- **Eliminated "Window Within Window":** In `YouTubePlayerView.kt` and `ShortsPlayerView.kt`, hid `m.youtube.com`'s left drawer container (`.ytmDrawerLayoutContainerDrawerLayout`), `ytm-mobile-topbar-renderer`, and `#player-container-id` offsets so fallback playback spans `100vw × 100vh`.
+- **Fixed 6-Second Audio Drop:** Explicitly called `exoPlayer.stop()` and `exoPlayer.clearMediaItems()` when activating WebView fallback to eliminate `AudioFocus` conflicts, and replaced the 3-second unmute interval with persistent `volumechange` / `playing` listeners synced to mute state.
+- **Shorts Fallback Gestures:** Wired tap Play/Pause, double-tap `±5s` seek, and scrubber seeking directly to the WebView `<video>` element in fallback mode.
+
+### ⚡ 3. Instant Cold-Start & Feed Rendering Overhaul
 *(See comprehensive architecture deep-dive: [docs/v2.2.2_performance_architecture.md](docs/v2.2.2_performance_architecture.md))*
-- **Batch Recommendation Reasoning:** Replaced iterative single-item evaluation with `RecommendationEngine.getRecommendationReasons()`, which precomputes lookup sets once and processes all video badges in $O(N)$ time.
-- **Background Thread Offloading:** Shifted feed filtering, sorting, and recommendation scoring off the main UI thread onto `Dispatchers.Default` using Compose `produceState`, preventing frame drops and UI freezes during feed scrolling and search.
-- **Timestamp Caching & Compiled Regex:** Precompiled `PUBLISHED_TIME_REGEX` and added `PUBLISHED_TIME_CACHE` in `YouTubeUtils`, eliminating repeated expensive regex compilation and parsing during scroll.
-- **Database Query Batching:** Added `VideoDao.getVideosByIds()` to query only relevant video records instead of scanning the full database with `getAllVideosDirect()`.
-- **ViewModel Flow Debounce:** Added a 150ms debounce and background dispatcher to `repository.allVideos` in `YouTubeViewModel`, preventing excessive UI recompositions during active syncs.
+- **Instant Cached Home Feed (`YouTubeViewModel.kt`):** Preserved cached discovery videos on startup, stopped clearing `_categoryVideos` on `"⚡ Latest"` before network refresh, and deferred `checkAndCleanExpiredDownloads()` until after cached videos are emitted.
+- **Batch Recommendation Reasoning & Background Offloading:** `RecommendationEngine.getRecommendationReasons()` precomputes lookup sets once ($O(N)$), while Compose `produceState` runs feed filtering and sorting on `Dispatchers.Default`.
+- **Timestamp Caching & DB Batching:** Added `PUBLISHED_TIME_CACHE` / `PUBLISHED_TIME_REGEX` in `YouTubeUtils`, `VideoDao.getVideosByIds()`, and a 150ms flow debounce in `YouTubeViewModel`.
+- **UI & OTA Tooling:** Icon-only subscription indicator on `VideoCard.kt`, responsive 7-button player action row (`PlayerScreen.kt`), 1-tap OTA updates in Settings & Library, and `-MarkStable` / `ROLLBACK_TO_STABLE.bat` recovery scripts.
 
 ---
 

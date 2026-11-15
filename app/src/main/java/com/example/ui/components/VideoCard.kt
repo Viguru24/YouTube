@@ -172,8 +172,8 @@ fun VideoCard(
                         val isLeftEdge = startX <= edgeThresholdPx
                         val isRightEdge = startX >= (cardWidth - edgeThresholdPx)
 
-                        // Never intercept touches in the top-right button area (Star & Watch Later)
-                        if (startX >= (cardWidth - 55f * density) && down.position.y <= 35f * density) {
+                        // Never intercept touches in the top-right button area (Quick Delete X, Menu & Star)
+                        if (startX >= (cardWidth - 70f * density) && down.position.y <= 40f * density) {
                             return@awaitEachGesture
                         }
 
@@ -435,39 +435,71 @@ fun VideoCard(
 
                     if (recommendationReason.isNotBlank()) {
                         Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = recommendationReason,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = YouTubeRed,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 10.sp
-                        )
+                        if (recommendationReason.contains("Subscribed", ignoreCase = true)) {
+                            Icon(
+                                imageVector = Icons.Filled.Subscriptions,
+                                contentDescription = "Subscribed",
+                                tint = YouTubeRed,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        } else {
+                            Text(
+                                text = recommendationReason,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = YouTubeRed,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = 10.sp
+                            )
+                        }
                     }
                 }
 
-                // 3. Right side Actions (3-dots menu & quick Favorite star)
+                // 3. Right side Actions (Quick Delete X, 3-dots menu & quick Favorite star)
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Box {
-                        IconButton(
-                            onClick = { showMenu = true },
-                            modifier = Modifier.size(28.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clip(CircleShape)
+                                .clickable { onDeleteClick(video) }
+                                .testTag("video_card_delete_x_${video.youtubeId}"),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Filled.MoreVert,
-                                contentDescription = "More Options",
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Delete Video",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
 
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
+                        Box {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .clickable { showMenu = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.MoreVert,
+                                    contentDescription = "More Options",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
                             DropdownMenuItem(
                                 text = { Text(if (video.isFavorite) "Remove from Favorites" else "Save to Favorites") },
                                 onClick = {
@@ -525,6 +557,7 @@ fun VideoCard(
                                 }
                             )
                         }
+                    }
                     }
 
                     // Quick Favorite Star Toggle
