@@ -23,6 +23,9 @@
 | 🖥️ **Windows (Modern App)** | `MSIX Installer (v2.1.0)` | x64 (Clean sandboxed installation) | [**📥 Download MSIX**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.msix) |
 | 🖥️ **Windows (Standalone)** | `Portable EXE (v2.1.0)` | x64 (Self-contained, zero setup) | [**📥 Download Portable EXE**](https://github.com/Viguru24/YouTube/raw/main/release/VixzDesktop-latest.exe) |
 
+> **🔄 Download once — never come back to GitHub for updates!**  
+> Vixz includes **automatic Over-The-Air (OTA) updates**: new versions arrive directly inside the app on your phone. Whenever an update is ready, you get a prompt and install it with **one tap** — no more returning to GitHub to manually download APK files.
+
 <br/>
 
 <p align="center">
@@ -41,6 +44,9 @@
 
 ## 🆕 What's New in v2.2.2
 
+- 🔄 **Automatic In-App Updates (OTA — No More Returning to GitHub):**
+  - **What OTA means:** **Over-The-Air (OTA) updates** deliver new versions of Vixz straight to your phone **inside the app itself**.
+  - **Download once, stay updated forever:** Once you install `v2.2.2`, you **don't have to come back to GitHub** to hunt for or download future APKs manually. Vixz checks for updates automatically and lets you install new releases with **one tap** (or anytime via **Settings / Library → Check for Updates**).
 - 🎬 **Native Playback & Stream Extraction Overhaul (`NewPipeExtractor v0.27.1` + BotGuard `poToken`):**
   - **Upgraded Extractor Engine:** Upgraded to `NewPipeExtractor v0.27.1` on Java 17 (`VISIONOS` HLS master playlists & adaptive 1080p/720p streams) for fast ~1s native `ExoPlayer` startup without 403/bot blocks.
   - **BotGuard `poToken` Provider:** Added `BotGuardPoTokenProvider` (`botguard_potoken.html`) executing YouTube's `/api/jnn/v1` BotGuard VM offscreen plus `YoutubeJavaScriptPlayerManager` signature & `n`-parameter deobfuscation for `WEB` InnerTube fallbacks.
