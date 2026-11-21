@@ -386,7 +386,9 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     val searchQuery = MutableStateFlow("")
     val selectedCategory = MutableStateFlow("⚡ Latest") // Default is strictly "Latest"
     val selectedTimeFilter = MutableStateFlow("Any Time")
-    val searchSortOption = MutableStateFlow("Latest") // "Latest" (Default), "Most Popular", "Relevance"
+    val selectedDurationFilter = MutableStateFlow("Any Duration")
+    val selectedTypeFilter = MutableStateFlow("All")
+    val searchSortOption = MutableStateFlow("Latest") // "Latest" (Default), "Most Viewed", "Longest", "Shortest", "Oldest", "Top Rated", "Relevance"
 
     fun setSearchQuery(query: String) {
         searchQuery.value = query
@@ -396,17 +398,19 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setSearchSortOption(option: String) {
-        if (searchSortOption.value == option) return
-        searchSortOption.value = option
+        val normalized = com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(option)
+        if (searchSortOption.value == normalized) return
+        searchSortOption.value = normalized
         val current = _liveSearchResults.value
         if (current.isNotEmpty()) {
-            _liveSearchResults.value = sortVideos(current, option)
+            _liveSearchResults.value = sortVideos(current, normalized)
         }
     }
 
     fun sortVideos(list: List<VideoEntity>, sortOption: String): List<VideoEntity> {
-        return when (sortOption) {
-            "Most Popular" -> list.sortedWith(
+        val normalized = com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(sortOption)
+        return when (normalized) {
+            "Most Viewed", "Top Rated" -> list.sortedWith(
                 compareByDescending<VideoEntity> { YouTubeUtils.parseViewCount(it.viewCountText) }
                     .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
             )
@@ -424,7 +428,7 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                     if (sec > 0) sec else Int.MAX_VALUE
                 }.thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
             )
-            "Relevance", "Top Rated" -> list
+            "Relevance" -> list
             else -> list.sortedWith( // "Latest" (Default)
                 compareBy<VideoEntity> { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
                     .thenByDescending { it.addedTimestamp }
@@ -620,6 +624,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private data class SearchFilterRequest(
+        val query: String,
+        val sort: String,
+        val timeFilter: String,
+        val durationFilter: String,
+        val typeFilter: String
+    )
+
     // In-memory instant search cache to speed up back-and-forth navigation
     private val _searchCache = java.util.concurrent.ConcurrentHashMap<String, List<VideoEntity>>()
 
@@ -710,13 +722,17 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
             kotlinx.coroutines.flow.combine(
                 searchQuery.debounce(100L),
                 searchSortOption,
-                selectedTimeFilter
-            ) { query, sort, timeFilter -> Triple(query, sort, timeFilter) }
-                .collectLatest { (query, sort, timeFilter) ->
+                selectedTimeFilter,
+                selectedDurationFilter,
+                selectedTypeFilter
+            ) { query, sort, timeFilter, durationFilter, typeFilter ->
+                SearchFilterRequest(query, sort, timeFilter, durationFilter, typeFilter)
+            }
+                .collectLatest { (query, sort, timeFilter, durationFilter, typeFilter) ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
                         currentSearchBatchIndex = 0
-                        val cacheKey = "${trimmed.lowercase()}:$sort:$timeFilter"
+                        val cacheKey = "${trimmed.lowercase()}:$sort:$timeFilter:$durationFilter:$typeFilter"
 
                         // Step 0: Check Instant In-Memory Cache first (<1ms)
                         val memoryCached = _searchCache[cacheKey]
@@ -732,15 +748,18 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
 
                         // Step B: Live Network Search in background without blocking
                         try {
+                            val normalizedSort = com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(sort)
                             val realVideos = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideos(
                                 query = trimmed,
-                                sortByUploadDate = (sort == "Latest"),
+                                sortByUploadDate = (normalizedSort == "Latest"),
                                 forceRefresh = false,
-                                sortOption = sort,
-                                timeFilter = timeFilter
+                                sortOption = normalizedSort,
+                                timeFilter = timeFilter,
+                                durationFilter = durationFilter,
+                                typeFilter = typeFilter
                             )
                             if (realVideos.isNotEmpty()) {
-                                val sorted = sortVideos(realVideos.distinctBy { it.youtubeId }, sort)
+                                val sorted = sortVideos(realVideos.distinctBy { it.youtubeId }, normalizedSort)
                                 _liveSearchResults.value = sorted
                                 _searchCache[cacheKey] = sorted
                                 repository.saveVideos(sorted)
@@ -908,6 +927,8 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
                 searchQuery.value = ""
                 selectedCategory.value = "⚡ Latest"
                 selectedTimeFilter.value = "Any Time"
+                selectedDurationFilter.value = "Any Duration"
+                selectedTypeFilter.value = "All"
 
                 com.example.data.remote.YouTubeLiveSearchService.clearCache()
 
@@ -1130,7 +1151,14 @@ class YouTubeViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 currentSearchBatchIndex++
-                val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(currentQuery, currentSearchBatchIndex)
+                val newBatch = com.example.data.remote.YouTubeLiveSearchService.searchRealYouTubeVideosBatch(
+                    query = currentQuery,
+                    batchIndex = currentSearchBatchIndex,
+                    sortOption = searchSortOption.value,
+                    timeFilter = selectedTimeFilter.value,
+                    durationFilter = selectedDurationFilter.value,
+                    typeFilter = selectedTypeFilter.value
+                )
                 if (newBatch.isNotEmpty()) {
                     val updated = (_liveSearchResults.value + newBatch).distinctBy { it.youtubeId }
                     _liveSearchResults.value = sortVideos(updated, searchSortOption.value)

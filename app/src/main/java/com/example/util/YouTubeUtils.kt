@@ -9,6 +9,125 @@ object YouTubeUtils {
         "(?:youtube(?:-nocookie)?\\.com/(?:[^/\\n\\s]+/.+/|(?:v|e(?:mbed)?|live)/|.*[?&]v=)|youtu\\.be/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})",
         Pattern.CASE_INSENSITIVE
     )
+    private val RAW_ID_REGEX = Regex("[a-zA-Z0-9_-]{11}")
+    private val NON_ALNUM_REGEX = Regex("[^\\p{Alnum}]+")
+    private val COMPACT_VIEW_REGEX = Regex("""(?i).*\b\d+(?:\.\d+)?\s*[KMB]\s*(?:views?|watching)?.*""")
+    private val NUMERIC_VIEW_REGEX = Regex("""([\d,\.]{3,})""")
+    private val SMALL_VIEW_REGEX = Regex("""(?i)^(\d+)\s*(views?|watching)?$""")
+
+    private val FOREIGN_PHRASES = listOf(
+        // Spanish & Portuguese
+        "en vivo", "ao vivo", "capitulo completo", "capítulo completo", "pelicula completa", "película completa",
+        "filme completo", "todos los capitulos", "resumen del partido", "mejores momentos", "melhores momentos",
+        "primera vez", "primeira vez", "en directo", "ultima hora", "última hora", "noticias de hoy",
+        "notícias de hoje", "buenos dias", "buenas noches", "como hacer", "cómo hacer", "conferencia de prensa",
+        "canal oficial", "video oficial", "vídeo oficial", "letra oficial", "musica cristiana", "música cristiana",
+        "telenovela completa", "serie completa", "novela das", "futebol ao vivo", "jogo ao vivo", "gols da rodada",
+
+        // French
+        "en direct", "bande annonce", "bande-annonce", "film complet", "journal télévisé", "tous les épisodes",
+        "chanson officielle", "clip officiel", "les meilleurs moments", "pour les enfants",
+
+        // German
+        "ganzer film", "auf deutsch", "deutsche nachrichten", "live übertragung", "ganze folge",
+
+        // Italian
+        "in diretta", "film completo", "canzone ufficiale", "tutti gli episodi", "conferenza stampa",
+
+        // Turkish
+        "canlı yayın", "canli yayin", "full izle", "tek parça", "tek parca", "son dakika", "yeni bölüm", "yeni bolum",
+        "türkçe dublaj", "turkce dublaj", "türkçe altyazı", "turkce altyazi",
+
+        // Indonesian / Malay
+        "alur cerita", "film sub indo", "sub indo", "live streaming indonesia", "sinopsis film", "rekap film",
+        "berita terkini", "lagu terbaru",
+
+        // South Asian / Hindi / Urdu / Pakistani / Indian Media Networks & Keywords
+        "kaise kare", "kaise banaye", "taaza khabar", "aaj ki taaza", "pakistani drama", "indian drama",
+        "full episode", "full drama", "naat sharif", "bayan video", "tarjuma quran", "qawwali live",
+        "new song lyrical", "desi comedy", "dekhie kya hua", "kya hua jab", "dekho kya hua", "sune aur dekhe",
+        "har pal geo", "ary digital", "hum tv", "green entertainment", "express entertainment", "aaj tak",
+        "abp news", "zee news", "geo news", "bol news", "samaa tv", "dunya news", "express news",
+        "shemaroo filmi", "goldmines telefilms", "t-series", "speed records", "desh ki baat", "aaj ki badi khabar",
+        "breaking news pakistan", "breaking news india", "live news hindi", "khabrein aaj ki",
+        "india today", "republic bharat", "republic world", "republic tv", "times now", "tv9 bharatvarsh",
+        "india tv", "news18", "news 18", "wion news", "dainik bhaskar", "amar ujala", "hindustan times",
+        "zee cinema", "zee music", "sony music india", "colors tv", "dangal tv", "yrf music", "tips official",
+        "south movie hindi", "hindi dubbed", "full movie hindi", "hindi song", "hindi songs", "punjabi song",
+        "bhojpuri song", "latest hindi", "new hindi", "village cooking", "village food", "drishti ias",
+        "physics wallah", "khan sir", "virat kohli", "rohit sharma", "team india", "ipl 2024", "ipl 2025", "ipl 2026",
+        "rahul gandhi", "narendra modi", "yogi adityanath", "arvind kejriwal", "amit shah",
+        "mr indian hacker", "crazy xyz", "fact mine", "anand facts", "a2 motivation", "pawan sahu",
+        "sourav joshi", "total gaming", "triggered insaan", "fukra insaan", "round2hell", "round 2 hell",
+        "ashish chanchlani", "carryminati", "bb ki vines", "technical guruji", "manoj dey", "tech burner",
+        "trakin tech", "dushyant kukreja", "priyanka chauhan", "sandeep maheshwari", "vivek bindra",
+        "dhruv rathee", "khan gs", "study iq", "techno gamerz", "payal gaming", "desi gamers",
+        "free fire india", "bgmi", "battlegrounds mobile india", "pubg mobile india", "bollywood spy",
+        "viral bhayani", "manav manglani", "instant bollywood", "punjab kesari", "navbharat times",
+        "amar ujala", "dainik bhaskar", "hindustan times", "times now navbharat",
+        "aaj ki", "bhai ki", "bhai ka", "kya hoga", "kya hota", "dekh kar", "dekh ke", "dekh lo",
+        "wait for twist", "wait for the twist", "asli sach", "asli chehra", "viral video india",
+        "indian viral", "indian meme", "desi meme", "desi jugad", "desi jugaad", "cricket shorts", "ipl shorts",
+
+        // Filipino / Tagalog
+        "buong episode", "balita ngayon", "ulat balita", "pilipinas balita"
+    )
+
+    private val FOREIGN_WORDS = setOf(
+        // Spanish & Portuguese
+        "capitulo", "capítulo", "pelicula", "película", "noticias", "notícias", "futebol", "novela", "telenovela",
+        "desenho", "dublado", "legendado", "cancion", "canción", "jornal", "gols", "español", "espanol",
+        "português", "portugues", "episodio", "episódio", "temporada", "resumo", "estreno", "estrenos",
+        "receta", "recetas", "subtitulado", "subtitulada", "dublada", "jogos",
+
+        // French
+        "épisode", "français", "francais", "actualités", "actualites", "découverte", "émission", "emission",
+
+        // German
+        "folge", "deutsch", "nachrichten", "zusammenfassung", "höhepunkte", "spieltag", "übertragung",
+
+        // Italian
+        "puntata", "notizie", "italiano", "riassunto",
+
+        // Turkish
+        "bölüm", "bolum", "fragman", "dizi", "özet", "ozet", "türkçe", "turkce", "haberler",
+
+        // Indonesian / Malay
+        "terbaru", "berita", "lengkap", "sinopsis", "lirik", "lucu", "ngakak",
+
+        // South Asian / Hindi / Urdu / Pakistani / Tamil / Telugu / Bengali (Romanized & Media Networks)
+        "kaise", "kare", "karen", "wala", "wali", "wale", "nahin", "nhi", "nahi", "kya", "hain", "dekho",
+        "dekhie", "sunao", "batao", "sikhe", "samachar", "kahani", "dulhan", "bhabhi", "gaana",
+        "bhajan", "aarti", "chalisa", "tarjuma", "tilawat", "khutba", "qawwali", "mujra", "dhamaka",
+        "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada", "marathi", "urdu",
+        "bangla", "bengali", "gujarati", "desi", "bollywood", "tollywood", "kollywood", "mollywood",
+        "pakistan", "pakistani", "bharat", "hindustan", "ary", "geotv", "geonews", "aajtak", "abpnews",
+        "tseries", "humtv", "zeetv", "zeenews", "ndtv", "setindia", "sabtv", "shemaroo", "goldmines",
+        "sonotek", "haryanvi", "bolnews", "samaatv", "expressnews", "dunyanews", "dawnnews", "arydigital",
+        "arynews", "harpalgeo", "ptvnews", "suntv", "vijaytv", "zeetelugu", "starplus", "starbharat",
+        "sonytv", "ddnational", "rajshri", "speedrecords", "geetmp3", "whitehillmusic", "desimusicfactory",
+        "adityamusic", "adithya", "telly", "tashan", "fitoor", "aarambhi", "puli", "sanu", "oli",
+        "sholay", "ghazal", "mushaira", "manqabat", "noha", "marsiya", "majlis",
+        "khabar", "khabrain", "rishta", "tamasha", "nuskha", "ilaaj", "totkay", "wazifa", "wazaif",
+        "rohani", "kundli", "rashifal", "rashi", "dharma", "mandir", "masjid", "dargah", "satsang",
+        "pravachan", "katha", "sindh", "sindhi", "baloch", "balochi", "pashto", "kashmir", "kashmiri",
+        "wion", "wionews", "timesnow", "indiatoday", "indiatv", "republicworld", "tv9", "ddnews", "lallantop",
+        "sansad", "doordarshan", "crore", "crores", "lakh", "lakhs", "rupee", "rupees", "inr",
+        "delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "punjab", "haryana",
+        "bihar", "kerala", "gujarat", "maharashtra", "rajasthan", "modi", "bjp", "ipl", "bcci", "kohli",
+        "bhai", "bhaiya", "didi", "chachi", "chacha", "mama", "mami", "dada", "dadi", "nana", "nani",
+        "sahab", "saheb", "pandit", "panditji", "sharmaji", "guptaji", "yadav", "tiwari", "mishra",
+        "pandey", "chauhan", "rathore", "rajput", "jaat", "gujjar", "maratha", "brahmin", "kisan",
+        "jawan", "deshbhakt", "deshbhakti", "hindustani", "sanatan", "sanatani", "hindu", "hindutva",
+        "mahadev", "bholenath", "bajrangbali", "ganpati", "iskcon", "swaminarayan", "sadhu", "maharaj",
+        "guruji", "babaji", "dangal", "kabaddi", "dhoni", "hardik", "thala", "ict", "namo",
+        "pappu", "kejriwal", "yogi", "dhruv", "rathee", "carryminati", "chanchlani", "sourav", "joshi",
+        "insaan", "mythpat", "ujjwal", "raistar", "jugaad", "jugad", "bhindi", "paneer", "roti", "paratha",
+        "biryani", "samosa", "chai", "dhabha", "dhaba", "chutney", "rasgulla", "gulabjamun", "golgappa",
+
+        // Filipino / Tagalog
+        "teleserye", "balita", "pinoy", "pilipinas"
+    )
 
     /**
      * Checks if input contains an explicit YouTube URL (youtube.com or youtu.be).
@@ -30,7 +149,7 @@ object YouTubeUtils {
             return matcher.group(1)
         }
         // Only accept raw 11-char ID if it contains digits or symbols (YouTube IDs are base64-like, not plain words)
-        if (trimmed.length == 11 && trimmed.matches(Regex("[a-zA-Z0-9_-]{11}"))) {
+        if (trimmed.length == 11 && trimmed.matches(RAW_ID_REGEX)) {
             val hasDigitsOrSymbols = trimmed.any { it.isDigit() || it == '-' || it == '_' }
             val isNotAllAlpha = !trimmed.all { it.isLetter() }
             if (hasDigitsOrSymbols && isNotAllAlpha) {
@@ -105,127 +224,13 @@ object YouTubeUtils {
         }
 
         // 2. Exact multi-word foreign phrases (Spanish, Portuguese, French, German, Italian, Turkish, Indonesian, Hindi/Urdu, etc.)
-        val foreignPhrases = listOf(
-            // Spanish & Portuguese
-            "en vivo", "ao vivo", "capitulo completo", "capítulo completo", "pelicula completa", "película completa",
-            "filme completo", "todos los capitulos", "resumen del partido", "mejores momentos", "melhores momentos",
-            "primera vez", "primeira vez", "en directo", "ultima hora", "última hora", "noticias de hoy",
-            "notícias de hoje", "buenos dias", "buenas noches", "como hacer", "cómo hacer", "conferencia de prensa",
-            "canal oficial", "video oficial", "vídeo oficial", "letra oficial", "musica cristiana", "música cristiana",
-            "telenovela completa", "serie completa", "novela das", "futebol ao vivo", "jogo ao vivo", "gols da rodada",
-
-            // French
-            "en direct", "bande annonce", "bande-annonce", "film complet", "journal télévisé", "tous les épisodes",
-            "chanson officielle", "clip officiel", "les meilleurs moments", "pour les enfants",
-
-            // German
-            "ganzer film", "auf deutsch", "deutsche nachrichten", "live übertragung", "ganze folge",
-
-            // Italian
-            "in diretta", "film completo", "canzone ufficiale", "tutti gli episodi", "conferenza stampa",
-
-            // Turkish
-            "canlı yayın", "canli yayin", "full izle", "tek parça", "tek parca", "son dakika", "yeni bölüm", "yeni bolum",
-            "türkçe dublaj", "turkce dublaj", "türkçe altyazı", "turkce altyazi",
-
-            // Indonesian / Malay
-            "alur cerita", "film sub indo", "sub indo", "live streaming indonesia", "sinopsis film", "rekap film",
-            "berita terkini", "lagu terbaru",
-
-            // South Asian / Hindi / Urdu / Pakistani / Indian Media Networks & Keywords
-            "kaise kare", "kaise banaye", "taaza khabar", "aaj ki taaza", "pakistani drama", "indian drama",
-            "full episode", "full drama", "naat sharif", "bayan video", "tarjuma quran", "qawwali live",
-            "new song lyrical", "desi comedy", "dekhie kya hua", "kya hua jab", "dekho kya hua", "sune aur dekhe",
-            "har pal geo", "ary digital", "hum tv", "green entertainment", "express entertainment", "aaj tak",
-            "abp news", "zee news", "geo news", "bol news", "samaa tv", "dunya news", "express news",
-            "shemaroo filmi", "goldmines telefilms", "t-series", "speed records", "desh ki baat", "aaj ki badi khabar",
-            "breaking news pakistan", "breaking news india", "live news hindi", "khabrein aaj ki",
-            "india today", "republic bharat", "republic world", "republic tv", "times now", "tv9 bharatvarsh",
-            "india tv", "news18", "news 18", "wion news", "dainik bhaskar", "amar ujala", "hindustan times",
-            "zee cinema", "zee music", "sony music india", "colors tv", "dangal tv", "yrf music", "tips official",
-            "south movie hindi", "hindi dubbed", "full movie hindi", "hindi song", "hindi songs", "punjabi song",
-            "bhojpuri song", "latest hindi", "new hindi", "village cooking", "village food", "drishti ias",
-            "physics wallah", "khan sir", "virat kohli", "rohit sharma", "team india", "ipl 2024", "ipl 2025", "ipl 2026",
-            "rahul gandhi", "narendra modi", "yogi adityanath", "arvind kejriwal", "amit shah",
-            "mr indian hacker", "crazy xyz", "fact mine", "anand facts", "a2 motivation", "pawan sahu",
-            "sourav joshi", "total gaming", "triggered insaan", "fukra insaan", "round2hell", "round 2 hell",
-            "ashish chanchlani", "carryminati", "bb ki vines", "technical guruji", "manoj dey", "tech burner",
-            "trakin tech", "dushyant kukreja", "priyanka chauhan", "sandeep maheshwari", "vivek bindra",
-            "dhruv rathee", "khan gs", "study iq", "techno gamerz", "payal gaming", "desi gamers",
-            "free fire india", "bgmi", "battlegrounds mobile india", "pubg mobile india", "bollywood spy",
-            "viral bhayani", "manav manglani", "instant bollywood", "punjab kesari", "navbharat times",
-            "amar ujala", "dainik bhaskar", "hindustan times", "times now navbharat",
-            "aaj ki", "bhai ki", "bhai ka", "kya hoga", "kya hota", "dekh kar", "dekh ke", "dekh lo",
-            "wait for twist", "wait for the twist", "asli sach", "asli chehra", "viral video india",
-            "indian viral", "indian meme", "desi meme", "desi jugad", "desi jugaad", "cricket shorts", "ipl shorts",
-
-            // Filipino / Tagalog
-            "buong episode", "balita ngayon", "ulat balita", "pilipinas balita"
-        )
-
-        if (foreignPhrases.any { fullText.contains(it) }) return true
+        if (FOREIGN_PHRASES.any { fullText.contains(it) }) return true
 
         // 3. Foreign standalone keywords matched as whole tokens to avoid false positives in English words
-        val foreignWords = setOf(
-            // Spanish & Portuguese
-            "capitulo", "capítulo", "pelicula", "película", "noticias", "notícias", "futebol", "novela", "telenovela",
-            "desenho", "dublado", "legendado", "cancion", "canción", "jornal", "gols", "español", "espanol",
-            "português", "portugues", "episodio", "episódio", "temporada", "resumo", "estreno", "estrenos",
-            "receta", "recetas", "subtitulado", "subtitulada", "dublada", "jogos",
-
-            // French
-            "épisode", "français", "francais", "actualités", "actualites", "découverte", "émission", "emission",
-
-            // German
-            "folge", "deutsch", "nachrichten", "zusammenfassung", "höhepunkte", "spieltag", "übertragung",
-
-            // Italian
-            "puntata", "notizie", "italiano", "riassunto",
-
-            // Turkish
-            "bölüm", "bolum", "fragman", "dizi", "özet", "ozet", "türkçe", "turkce", "haberler",
-
-            // Indonesian / Malay
-            "terbaru", "berita", "lengkap", "sinopsis", "lirik", "lucu", "ngakak",
-
-            // South Asian / Hindi / Urdu / Pakistani / Tamil / Telugu / Bengali (Romanized & Media Networks)
-            "kaise", "kare", "karen", "wala", "wali", "wale", "nahin", "nhi", "nahi", "kya", "hain", "dekho",
-            "dekhie", "sunao", "batao", "sikhe", "samachar", "kahani", "dulhan", "bhabhi", "gaana",
-            "bhajan", "aarti", "chalisa", "tarjuma", "tilawat", "khutba", "qawwali", "mujra", "dhamaka",
-            "hindi", "tamil", "telugu", "punjabi", "bhojpuri", "malayalam", "kannada", "marathi", "urdu",
-            "bangla", "bengali", "gujarati", "desi", "bollywood", "tollywood", "kollywood", "mollywood",
-            "pakistan", "pakistani", "bharat", "hindustan", "ary", "geotv", "geonews", "aajtak", "abpnews",
-            "tseries", "humtv", "zeetv", "zeenews", "ndtv", "setindia", "sabtv", "shemaroo", "goldmines",
-            "sonotek", "haryanvi", "bolnews", "samaatv", "expressnews", "dunyanews", "dawnnews", "arydigital",
-            "arynews", "harpalgeo", "ptvnews", "suntv", "vijaytv", "zeetelugu", "starplus", "starbharat",
-            "sonytv", "ddnational", "rajshri", "speedrecords", "geetmp3", "whitehillmusic", "desimusicfactory",
-            "adityamusic", "adithya", "telly", "tashan", "fitoor", "aarambhi", "puli", "sanu", "oli",
-            "sholay", "ghazal", "mushaira", "manqabat", "noha", "marsiya", "majlis",
-            "khabar", "khabrain", "rishta", "tamasha", "nuskha", "ilaaj", "totkay", "wazifa", "wazaif",
-            "rohani", "kundli", "rashifal", "rashi", "dharma", "mandir", "masjid", "dargah", "satsang",
-            "pravachan", "katha", "sindh", "sindhi", "baloch", "balochi", "pashto", "kashmir", "kashmiri",
-            "wion", "wionews", "timesnow", "indiatoday", "indiatv", "republicworld", "tv9", "ddnews", "lallantop",
-            "sansad", "doordarshan", "crore", "crores", "lakh", "lakhs", "rupee", "rupees", "inr",
-            "delhi", "mumbai", "kolkata", "chennai", "bengaluru", "bangalore", "hyderabad", "punjab", "haryana",
-            "bihar", "kerala", "gujarat", "maharashtra", "rajasthan", "modi", "bjp", "ipl", "bcci", "kohli",
-            "bhai", "bhaiya", "didi", "chachi", "chacha", "mama", "mami", "dada", "dadi", "nana", "nani",
-            "sahab", "saheb", "pandit", "panditji", "sharmaji", "guptaji", "yadav", "tiwari", "mishra",
-            "pandey", "chauhan", "rathore", "rajput", "jaat", "gujjar", "maratha", "brahmin", "kisan",
-            "jawan", "deshbhakt", "deshbhakti", "hindustani", "sanatan", "sanatani", "hindu", "hindutva",
-            "mahadev", "bholenath", "bajrangbali", "ganpati", "iskcon", "swaminarayan", "sadhu", "maharaj",
-            "guruji", "babaji", "dangal", "kabaddi", "dhoni", "hardik", "thala", "ict", "namo",
-            "pappu", "kejriwal", "yogi", "dhruv", "rathee", "carryminati", "chanchlani", "sourav", "joshi",
-            "insaan", "mythpat", "ujjwal", "raistar", "jugaad", "jugad", "bhindi", "paneer", "roti", "paratha",
-            "biryani", "samosa", "chai", "dhabha", "dhaba", "chutney", "rasgulla", "gulabjamun", "golgappa",
-
-            // Filipino / Tagalog
-            "teleserye", "balita", "pinoy", "pilipinas"
-        )
-
         // Split text by punctuation, symbols, and whitespace
-        val tokens = fullText.split("[^\\p{Alnum}]+".toRegex()).filter { it.isNotBlank() }
+        val tokens = fullText.split(NON_ALNUM_REGEX).filter { it.isNotBlank() }
         for (token in tokens) {
-            if (foreignWords.contains(token)) {
+            if (FOREIGN_WORDS.contains(token)) {
                 return true
             }
         }
@@ -297,12 +302,12 @@ object YouTubeUtils {
         val clean = raw.replace('\u00A0', ' ').trim()
 
         // Already in compact format: e.g. "1.2M views", "450K views", "12B views"
-        if (clean.matches(Regex("""(?i).*\b\d+(?:\.\d+)?\s*[KMB]\s*(?:views?|watching)?.*"""))) {
+        if (clean.matches(COMPACT_VIEW_REGEX)) {
             return if (clean.endsWith("views", ignoreCase = true) || clean.endsWith("watching", ignoreCase = true)) clean else "$clean views"
         }
 
         // Extract numeric part (e.g. "2,177,000", "2.177.000", "21769")
-        val match = Regex("""([\d,\.]{3,})""").find(clean)
+        val match = NUMERIC_VIEW_REGEX.find(clean)
         if (match != null) {
             val numStr = match.groupValues[1].replace(",", "").replace(".", "")
             val count = numStr.toLongOrNull()
@@ -317,7 +322,7 @@ object YouTubeUtils {
             }
         }
 
-        val smallMatch = Regex("""(?i)^(\d+)\s*(views?|watching)?$""").find(clean)
+        val smallMatch = SMALL_VIEW_REGEX.find(clean)
         if (smallMatch != null) {
             val smallCount = smallMatch.groupValues[1].toLongOrNull()
             if (smallCount != null) {

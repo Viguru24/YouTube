@@ -2,6 +2,10 @@ package com.example.ui.components
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
+import android.webkit.JavascriptInterface
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,6 +62,7 @@ fun YouTubePlayerView(
     playerCommandFlow: SharedFlow<String>? = null,
     onPlayingStateChanged: (Boolean) -> Unit = {},
     onNextVideo: () -> Unit = {},
+    hasNextVideo: Boolean = false,
     onPreviousVideo: () -> Unit = {},
     isFavorite: Boolean = false,
     isWatchLater: Boolean = false,
@@ -87,6 +92,10 @@ fun YouTubePlayerView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val currentOnNextVideo by rememberUpdatedState(onNextVideo)
+    val currentHasNextVideo by rememberUpdatedState(hasNextVideo)
+    val currentOnPlayingStateChanged by rememberUpdatedState(onPlayingStateChanged)
+    val currentOnPositionUpdate by rememberUpdatedState(onPositionUpdate)
 
     var streamUrl by remember(videoId) { mutableStateOf<String?>(null) }
     var isPlayingLocalOffline by remember(videoId) { mutableStateOf(false) }
@@ -113,9 +122,9 @@ fun YouTubePlayerView(
     var selectedQuality by remember(videoId) { mutableStateOf("Auto") }
 
     // Video Playback State
-    var isPlayingState by remember { mutableStateOf(true) }
+    var isPlayingState by remember(videoId) { mutableStateOf(true) }
     var isMutedState by remember { mutableStateOf(false) }
-    var currentPosMs by remember { mutableLongStateOf(0L) }
+    var currentPosMs by remember(videoId) { mutableLongStateOf(0L) }
     var totalDurationMs by remember(videoId) {
         val parsedSec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(videoDurationText)
         mutableLongStateOf(if (parsedSec > 0) parsedSec * 1000L else 0L)
@@ -144,9 +153,9 @@ fun YouTubePlayerView(
     var localIsFavorite by remember(videoId, isFavorite) { mutableStateOf(isFavorite) }
     var localIsDisliked by remember(videoId, isDisliked) { mutableStateOf(isDisliked) }
 
-    // Autoplay Next Video State (persisted across sessions)
+    // Autoplay Next Video State (persisted across sessions; OFF by default so finished videos stop cleanly)
     val playerPrefs = remember(context) { context.getSharedPreferences("vixz_player_prefs", Context.MODE_PRIVATE) }
-    var isAutoplayEnabled by remember { mutableStateOf(playerPrefs.getBoolean("autoplay_enabled", true)) }
+    var isAutoplayEnabled by remember { mutableStateOf(playerPrefs.getBoolean("autoplay_enabled", false)) }
 
     // Sleep Timer State
     var showSleepTimerDialog by remember { mutableStateOf(false) }
@@ -182,7 +191,11 @@ fun YouTubePlayerView(
 
     fun takeScreenshot() {
         coroutineScope.launch {
-            val bmp = ScreenshotManager.capturePlayerFrame(playerViewRef, activity)
+            val bmp = ScreenshotManager.capturePlayerFrame(
+                playerView = if (useWebPlayerFallback) null else playerViewRef,
+                activity = activity,
+                fallbackView = if (useWebPlayerFallback) webViewRef else null
+            )
             delay(100)
             if (bmp != null) {
                 val (uri, _) = ScreenshotManager.saveScreenshot(
@@ -238,11 +251,100 @@ fun YouTubePlayerView(
             .setSeekBackIncrementMs(10_000)
             .build().apply {
                 playWhenReady = true
+                repeatMode = Player.REPEAT_MODE_OFF
                 setAudioAttributes(audioAttributes, true)
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_NETWORK)
                 volume = if (isMutedState) 0f else 1.0f
             }
+    }
+
+    fun playVideoUnified() {
+        if (streamUrl != null && !useWebPlayerFallback) {
+            if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                exoPlayer.seekTo(0L)
+                currentPosMs = 0L
+                savedPositionMs = 0L
+            }
+            exoPlayer.playWhenReady = true
+            exoPlayer.play()
+        } else {
+            webViewRef?.evaluateJavascript(
+                "if (window.__vixzPlay) window.__vixzPlay(); else { window.__vixzEnded = false; window.__vixzUserPaused = false; var v = document.querySelector('video'); if (v) { if (v.ended) v.currentTime = 0; v.play(); } }",
+                null
+            )
+        }
+        isPlayingState = true
+        currentOnPlayingStateChanged(true)
+    }
+
+    fun pauseVideoUnified() {
+        if (streamUrl != null && !useWebPlayerFallback) {
+            exoPlayer.playWhenReady = false
+            exoPlayer.pause()
+        } else {
+            webViewRef?.evaluateJavascript(
+                "if (window.__vixzPause) window.__vixzPause(); else { window.__vixzUserPaused = true; var v = document.querySelector('video'); if (v) v.pause(); }",
+                null
+            )
+        }
+        isPlayingState = false
+        currentOnPlayingStateChanged(false)
+        areControlsVisible = true
+        controlsKeepAliveTrigger = System.currentTimeMillis()
+    }
+
+    fun seekToMsUnified(targetMs: Long) {
+        val clampedMs = if (totalDurationMs > 0) targetMs.coerceIn(0L, totalDurationMs) else targetMs.coerceAtLeast(0L)
+        currentPosMs = clampedMs
+        savedPositionMs = clampedMs
+        if (streamUrl != null && !useWebPlayerFallback) {
+            exoPlayer.seekTo(clampedMs)
+        } else {
+            val targetSec = clampedMs / 1000.0
+            webViewRef?.evaluateJavascript(
+                "if (window.__vixzSeekTo) window.__vixzSeekTo($targetSec); else if (window.seekToSeconds) window.seekToSeconds($targetSec); else { var v = document.querySelector('video'); if (v) v.currentTime = $targetSec; }",
+                null
+            )
+        }
+        val sec = (clampedMs / 1000).toInt()
+        if (sec >= 0) {
+            playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
+            currentOnPositionUpdate(sec)
+        }
+    }
+
+    fun setSpeedUnified(speed: Float) {
+        selectedSpeed = speed
+        exoPlayer.playbackParameters = PlaybackParameters(speed)
+        if (useWebPlayerFallback) {
+            webViewRef?.evaluateJavascript(
+                "if (window.__vixzSetSpeed) window.__vixzSetSpeed($speed); else { window.__vixzDesiredSpeed = $speed; var v = document.querySelector('video'); if (v) v.playbackRate = $speed; }",
+                null
+            )
+        }
+    }
+
+    fun retryNativeStream() {
+        useWebPlayerFallback = false
+        isLoading = true
+        isFirstFrameRendered = false
+        hasPreparedMedia = false
+        coroutineScope.launch {
+            val result = kotlinx.coroutines.withTimeoutOrNull(10000L) {
+                YouTubeStreamExtractor.extractVideoStreams(videoId)
+            }
+            if (result != null && !result.primaryStreamUrl.isNullOrEmpty()) {
+                streamResult = result
+                availableQualities = result.availableQualities
+                selectedQuality = "Auto"
+                streamUrl = result.primaryStreamUrl
+            } else {
+                useWebPlayerFallback = true
+                Toast.makeText(context, "Native stream unavailable, staying on seamless player", Toast.LENGTH_SHORT).show()
+            }
+            isLoading = false
+        }
     }
 
     // ExoPlayer Listener for playback events, buffering, and auto-resume
@@ -267,10 +369,16 @@ fun YouTubePlayerView(
                     Player.STATE_ENDED -> {
                         isBuffering = false
                         isSwitchingQuality = null
+                        exoPlayer.playWhenReady = false
+                        exoPlayer.pause()
+                        isPlayingState = false
+                        currentOnPlayingStateChanged(false)
+                        areControlsVisible = true
+                        controlsKeepAliveTrigger = System.currentTimeMillis()
                         playerPrefs.edit().putInt("resume_pos_sec_${videoId}", 0).apply()
-                        onPositionUpdate(0)
-                        if (isAutoplayEnabled) {
-                            onNextVideo()
+                        currentOnPositionUpdate(0)
+                        if (isAutoplayEnabled && currentHasNextVideo) {
+                            currentOnNextVideo()
                             Toast.makeText(context, "Autoplay: Playing Next Video ⏭️", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -288,7 +396,7 @@ fun YouTubePlayerView(
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
-                onPlayingStateChanged(isPlaying)
+                currentOnPlayingStateChanged(isPlaying)
                 if (!isPlaying) {
                     areControlsVisible = true
                     controlsKeepAliveTrigger = System.currentTimeMillis()
@@ -313,11 +421,11 @@ fun YouTubePlayerView(
         onDispose {
             try {
                 exoPlayer.removeListener(listener)
-                val pos = exoPlayer.currentPosition
+                val pos = if (useWebPlayerFallback) currentPosMs else exoPlayer.currentPosition
                 savedPositionMs = pos
                 val sec = (pos / 1000).toInt().coerceAtLeast(0)
                 playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
-                onPositionUpdate(sec)
+                currentOnPositionUpdate(sec)
             } catch (e: Exception) { }
             exoPlayer.release()
         }
@@ -327,67 +435,25 @@ fun YouTubePlayerView(
     LaunchedEffect(playerCommandFlow) {
         playerCommandFlow?.collect { cmd ->
             when {
-                cmd == "PAUSE" -> {
-                    if (streamUrl != null && !useWebPlayerFallback) {
-                        exoPlayer.pause()
-                    } else {
-                        webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
-                    }
-                    isPlayingState = false
-                    onPlayingStateChanged(false)
-                    areControlsVisible = true
-                    controlsKeepAliveTrigger = System.currentTimeMillis()
-                }
-                cmd == "PLAY" -> {
-                    if (streamUrl != null && !useWebPlayerFallback) {
-                        exoPlayer.play()
-                    } else {
-                        webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
-                    }
-                    isPlayingState = true
-                    onPlayingStateChanged(true)
-                }
+                cmd == "PAUSE" -> pauseVideoUnified()
+                cmd == "PLAY" -> playVideoUnified()
                 cmd == "TOGGLE_PLAY_PAUSE" -> {
                     val isPlayingNow = if (streamUrl != null && !useWebPlayerFallback) {
                         exoPlayer.playWhenReady || exoPlayer.isPlaying
                     } else {
                         isPlayingState
                     }
-                    if (isPlayingNow) {
-                        if (streamUrl != null && !useWebPlayerFallback) {
-                            exoPlayer.pause()
-                        } else {
-                            webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
-                        }
-                        isPlayingState = false
-                        onPlayingStateChanged(false)
-                        areControlsVisible = true
-                        controlsKeepAliveTrigger = System.currentTimeMillis()
-                    } else {
-                        if (streamUrl != null && !useWebPlayerFallback) {
-                            exoPlayer.play()
-                        } else {
-                            webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
-                        }
-                        isPlayingState = true
-                        onPlayingStateChanged(true)
-                    }
+                    if (isPlayingNow) pauseVideoUnified() else playVideoUnified()
                 }
                 cmd.startsWith("SEEK_FORWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
-                    if (streamUrl != null && !useWebPlayerFallback) {
-                        exoPlayer.seekTo(exoPlayer.currentPosition + sec * 1000L)
-                    } else {
-                        webViewRef?.evaluateJavascript("if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(cur + $sec); } else { var v = document.querySelector('video'); if (v) v.currentTime = v.currentTime + $sec; }", null)
-                    }
+                    val basePos = if (streamUrl != null && !useWebPlayerFallback) exoPlayer.currentPosition else currentPosMs
+                    seekToMsUnified(basePos + sec * 1000L)
                 }
                 cmd.startsWith("SEEK_BACKWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_BACKWARD_").toIntOrNull() ?: 10
-                    if (streamUrl != null && !useWebPlayerFallback) {
-                        exoPlayer.seekTo((exoPlayer.currentPosition - sec * 1000L).coerceAtLeast(0L))
-                    } else {
-                        webViewRef?.evaluateJavascript("if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(Math.max(0, cur - $sec)); } else { var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - $sec); }", null)
-                    }
+                    val basePos = if (streamUrl != null && !useWebPlayerFallback) exoPlayer.currentPosition else currentPosMs
+                    seekToMsUnified((basePos - sec * 1000L).coerceAtLeast(0L))
                 }
             }
         }
@@ -411,17 +477,27 @@ fun YouTubePlayerView(
         }
     }
 
-    // Position ticker: updates playback position, checks SponsorBlock, and matches CC lines
-    LaunchedEffect(exoPlayer, hasPreparedMedia, sponsorSegments, isDraggingScrubber, captionsEnabled, captionSegments) {
-        if (hasPreparedMedia) {
+    // Position ticker: updates playback position, checks SponsorBlock, and matches CC lines across native & fallback modes
+    LaunchedEffect(exoPlayer, hasPreparedMedia, useWebPlayerFallback, sponsorSegments, isDraggingScrubber, captionsEnabled, captionSegments) {
+        if (hasPreparedMedia || useWebPlayerFallback) {
             var lastSavedSec = -1
             while (isActive) {
                 try {
-                    val pos = exoPlayer.currentPosition
-                    if (pos > 0 && !isDraggingScrubber) {
-                        savedPositionMs = pos
-                        currentPosMs = pos
+                    if (!useWebPlayerFallback && hasPreparedMedia) {
+                        val nativePos = exoPlayer.currentPosition
+                        if (nativePos > 0 && !isDraggingScrubber) {
+                            savedPositionMs = nativePos
+                            currentPosMs = nativePos
+                        }
+                        val dur = exoPlayer.duration
+                        if (dur > 0) {
+                            totalDurationMs = dur
+                        }
+                        isPlayingState = exoPlayer.isPlaying
+                    }
 
+                    val pos = currentPosMs
+                    if (pos > 0 && !isDraggingScrubber) {
                         val currentSec = (pos / 1000).toInt()
                         if (currentSec > 0 && (currentSec - lastSavedSec >= 5 || lastSavedSec == -1)) {
                             lastSavedSec = currentSec
@@ -440,7 +516,7 @@ fun YouTubePlayerView(
                         }
 
                         // Automatic SponsorBlock In-Video Segment Skip
-                        if (sponsorSegments.isNotEmpty()) {
+                        if (isPlayingState && sponsorSegments.isNotEmpty()) {
                             val segment = sponsorSegments.firstOrNull { seg ->
                                 val key = "${seg.startMs}_${seg.endMs}"
                                 key !in skippedSegmentIds && pos >= seg.startMs && pos < (seg.endMs - 500)
@@ -449,7 +525,7 @@ fun YouTubePlayerView(
                                 val key = "${segment.startMs}_${segment.endMs}"
                                 skippedSegmentIds.add(key)
                                 val targetSeek = (segment.endMs + 100).coerceAtMost(if (totalDurationMs > 0) totalDurationMs else (segment.endMs + 100))
-                                exoPlayer.seekTo(targetSeek)
+                                seekToMsUnified(targetSeek)
                                 val startFormatted = formatMs(segment.startMs)
                                 val endFormatted = formatMs(segment.endMs)
                                 val message = "⏭️ Skipped ${segment.category.replaceFirstChar { it.uppercase() }} ($startFormatted → $endFormatted)"
@@ -458,13 +534,8 @@ fun YouTubePlayerView(
                             }
                         }
                     }
-                    val dur = exoPlayer.duration
-                    if (dur > 0) {
-                        totalDurationMs = dur
-                    }
-                    isPlayingState = exoPlayer.isPlaying
                 } catch (e: Exception) { }
-                delay(100)
+                delay(if (useWebPlayerFallback) 250L else 100L)
             }
         }
     }
@@ -475,8 +546,7 @@ fun YouTubePlayerView(
             if (sleepTimerEndOfVideo) {
                 while (isSleepTimerActive && isActive) {
                     if (totalDurationMs > 0 && currentPosMs >= (totalDurationMs - 1500L)) {
-                        exoPlayer.pause()
-                        isPlayingState = false
+                        pauseVideoUnified()
                         isSleepTimerActive = false
                         sleepTimerEndOfVideo = false
                         wasPausedBySleepTimer = true
@@ -490,8 +560,7 @@ fun YouTubePlayerView(
                     delay(1000L)
                     sleepTimerRemainingSec -= 1
                     if (sleepTimerRemainingSec <= 0) {
-                        exoPlayer.pause()
-                        isPlayingState = false
+                        pauseVideoUnified()
                         isSleepTimerActive = false
                         wasPausedBySleepTimer = true
                         Toast.makeText(context, "🌙 Sleep Timer finished. Tap 🌙 to resume for ${lastSleepDurationMinutes}m.", Toast.LENGTH_LONG).show()
@@ -688,12 +757,15 @@ fun YouTubePlayerView(
             if (targetSeekMs > 0) {
                 exoPlayer.seekTo(targetSeekMs)
             }
+            exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
             exoPlayer.volume = if (isMutedState) 0f else 1.0f
             exoPlayer.prepare()
             if (!hasPreparedMedia || isPlayingState) {
+                exoPlayer.playWhenReady = true
                 exoPlayer.play()
                 isPlayingState = true
             } else {
+                exoPlayer.playWhenReady = false
                 exoPlayer.pause()
             }
             hasPreparedMedia = true
@@ -710,7 +782,17 @@ fun YouTubePlayerView(
         }
     }
 
-    val shouldShowControls = !isInPipMode && (streamUrl != null && !useWebPlayerFallback && !isLoading) && areControlsVisible
+    // Sync mute and playback speed to fallback WebView only when those settings change
+    LaunchedEffect(isMutedState, selectedSpeed, useWebPlayerFallback) {
+        if (useWebPlayerFallback) {
+            webViewRef?.evaluateJavascript(
+                "(function(){ window.__vixzDesiredMuted = $isMutedState; window.__vixzDesiredSpeed = $selectedSpeed; var v=document.querySelector('video'); if(v){ v.muted = $isMutedState; if(!$isMutedState) v.volume = 1.0; if(Math.abs(v.playbackRate - $selectedSpeed) > 0.01) v.playbackRate = $selectedSpeed; } })();",
+                null
+            )
+        }
+    }
+
+    val shouldShowControls = !isInPipMode && (streamUrl != null || useWebPlayerFallback) && !isLoading && areControlsVisible
 
     // Main Player Composables Tree
     Box(
@@ -726,6 +808,7 @@ fun YouTubePlayerView(
                 useWebPlayerFallback = useWebPlayerFallback,
                 webViewRef = webViewRef,
                 totalDurationMs = totalDurationMs,
+                currentPosMs = currentPosMs,
                 zoomScale = zoomScale,
                 panOffsetX = panOffsetX,
                 panOffsetY = panOffsetY,
@@ -738,7 +821,10 @@ fun YouTubePlayerView(
                 isPlayingState = isPlayingState,
                 onPlayingStateChange = { isPlayingState = it },
                 areControlsVisible = areControlsVisible,
-                onControlsVisibilityChange = { areControlsVisible = it },
+                onControlsVisibilityChange = { visible ->
+                    areControlsVisible = visible
+                    if (visible) controlsKeepAliveTrigger = System.currentTimeMillis()
+                },
                 onPlayPauseFeedback = { playPauseFeedbackState = it },
                 onSeekFeedback = { forwardRewindFeedback = it },
                 onAdjustingBrightness = { isAdjustingBrightness = it },
@@ -748,7 +834,12 @@ fun YouTubePlayerView(
                 activity = activity,
                 audioManager = audioManager,
                 maxAudioVolume = maxAudioVolume,
-                coroutineScope = coroutineScope
+                coroutineScope = coroutineScope,
+                onSeekToMs = { targetMs -> seekToMsUnified(targetMs) },
+                onPlayPauseToggle = { willPlay ->
+                    if (willPlay) playVideoUnified() else pauseVideoUnified()
+                },
+                onInteraction = { controlsKeepAliveTrigger = System.currentTimeMillis() }
             )
     ) {
         // 1. Video Surface Layer (ExoPlayer texture or fallback WebView)
@@ -779,9 +870,23 @@ fun YouTubePlayerView(
                     }
             )
         } else if (useWebPlayerFallback || (streamUrl == null && !isLoading)) {
+            val cachedResumeSec = playerPrefs.getInt("resume_pos_sec_${videoId}", -1)
+            val initialStartSec = when {
+                savedPositionMs > 0L -> (savedPositionMs / 1000L).toInt()
+                startSeconds > 0 -> startSeconds
+                cachedResumeSec > 0 -> cachedResumeSec
+                else -> 0
+            }
             AndroidView(
                 factory = { ctx ->
-                    android.webkit.WebView(ctx).apply {
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    object : android.webkit.WebView(ctx) {
+                        override fun onTouchEvent(event: MotionEvent?): Boolean = false
+                        override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+                    }.apply {
+                        isClickable = false
+                        isFocusable = false
+                        isFocusableInTouchMode = false
                         layoutParams = android.view.ViewGroup.LayoutParams(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -811,6 +916,56 @@ fun YouTubePlayerView(
                             cookieManager.flush()
                         }
 
+                        val wvInstance = this
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun onMetrics(posSec: Double, durSec: Double, paused: Boolean, buffering: Boolean) {
+                                mainHandler.post {
+                                    if (webViewRef !== wvInstance) return@post
+                                    if (!isDraggingScrubber && posSec >= 0.0) {
+                                        val newPosMs = (posSec * 1000.0).toLong().coerceAtLeast(0L)
+                                        currentPosMs = newPosMs
+                                        savedPositionMs = newPosMs
+                                    }
+                                    if (durSec > 0.0) {
+                                        totalDurationMs = (durSec * 1000.0).toLong()
+                                    }
+                                    val playing = !paused
+                                    if (isPlayingState != playing) {
+                                        isPlayingState = playing
+                                        currentOnPlayingStateChanged(playing)
+                                        if (!playing) {
+                                            areControlsVisible = true
+                                            controlsKeepAliveTrigger = System.currentTimeMillis()
+                                        }
+                                    }
+                                    isBuffering = buffering
+                                }
+                            }
+
+                            @JavascriptInterface
+                            fun onEnded() {
+                                mainHandler.post {
+                                    if (webViewRef !== wvInstance) return@post
+                                    isBuffering = false
+                                    isPlayingState = false
+                                    currentOnPlayingStateChanged(false)
+                                    areControlsVisible = true
+                                    controlsKeepAliveTrigger = System.currentTimeMillis()
+                                    wvInstance.evaluateJavascript(
+                                        "if (window.__vixzPause) window.__vixzPause(); else { window.__vixzEnded = true; window.__vixzUserPaused = true; var v = document.querySelector('video'); if (v) v.pause(); }",
+                                        null
+                                    )
+                                    playerPrefs.edit().putInt("resume_pos_sec_${videoId}", 0).apply()
+                                    currentOnPositionUpdate(0)
+                                    if (isAutoplayEnabled && currentHasNextVideo) {
+                                        currentOnNextVideo()
+                                        Toast.makeText(context, "Autoplay: Playing Next Video ⏭️", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        }, "VixzBridge")
+
                         webChromeClient = object : android.webkit.WebChromeClient() {
                             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                                 android.util.Log.d("WebViewPlayer", "[Console] ${consoleMessage?.message()}")
@@ -829,6 +984,65 @@ fun YouTubePlayerView(
                                         if (typeof window.__vixzDesiredMuted === 'undefined') {
                                             window.__vixzDesiredMuted = $isMutedState;
                                         }
+                                        if (typeof window.__vixzDesiredSpeed === 'undefined') {
+                                            window.__vixzDesiredSpeed = $selectedSpeed;
+                                        }
+                                        if (typeof window.__vixzUserPaused === 'undefined') {
+                                            window.__vixzUserPaused = false;
+                                        }
+                                        if (typeof window.__vixzEnded === 'undefined') {
+                                            window.__vixzEnded = false;
+                                        }
+                                        var initialStartSec = $initialStartSec;
+
+                                        window.__vixzPlay = function() {
+                                            window.__vixzEnded = false;
+                                            window.__vixzUserPaused = false;
+                                            var v = document.querySelector('video');
+                                            if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                } catch(e) {}
+                                                if (v.ended || (isFinite(v.duration) && v.duration > 0 && v.currentTime >= v.duration - 0.5)) {
+                                                    v.currentTime = 0;
+                                                }
+                                                if (window.__vixzDesiredSpeed) v.playbackRate = window.__vixzDesiredSpeed;
+                                                v.play().catch(function(){});
+                                            }
+                                            reportMetrics();
+                                        };
+                                        window.__vixzPause = function() {
+                                            window.__vixzUserPaused = true;
+                                            var v = document.querySelector('video');
+                                            if (v) v.pause();
+                                            reportMetrics();
+                                        };
+                                        window.__vixzSeekTo = function(sec) {
+                                            var v = document.querySelector('video');
+                                            if (v) {
+                                                var target = Math.max(0, sec);
+                                                if (isFinite(v.duration) && v.duration > 0) target = Math.min(target, v.duration);
+                                                if (!isFinite(v.duration) || v.duration <= 0 || target < v.duration - 0.5) {
+                                                    window.__vixzEnded = false;
+                                                }
+                                                v.currentTime = target;
+                                            }
+                                            reportMetrics();
+                                        };
+                                        window.__vixzSeekBy = function(delta) {
+                                            var v = document.querySelector('video');
+                                            if (v) window.__vixzSeekTo((v.currentTime || 0) + delta);
+                                        };
+                                        window.__vixzSetSpeed = function(spd) {
+                                            window.__vixzDesiredSpeed = spd;
+                                            var v = document.querySelector('video');
+                                            if (v) v.playbackRate = spd;
+                                        };
+                                        window.playVideo = window.__vixzPlay;
+                                        window.pauseVideo = window.__vixzPause;
+                                        window.seekToSeconds = window.__vixzSeekTo;
+
                                         function enforceAudio(v) {
                                             if (!v) return;
                                             var wantMuted = !!window.__vixzDesiredMuted;
@@ -846,6 +1060,55 @@ fun YouTubePlayerView(
                                                 if (!v.muted) v.muted = true;
                                             }
                                         }
+
+                                        function reportMetrics() {
+                                            try {
+                                                var v = document.querySelector('video');
+                                                if (!v || !window.VixzBridge) return;
+                                                var pos = isFinite(v.currentTime) ? v.currentTime : 0;
+                                                var dur = (isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+                                                var paused = !!window.__vixzUserPaused || !!window.__vixzEnded || !!v.ended || (!!v.__vixzHasStarted && v.paused);
+                                                var buffering = !paused && !v.paused && !v.ended && v.readyState < 3;
+                                                window.VixzBridge.onMetrics(pos, dur, paused, buffering);
+                                            } catch(e) {}
+                                        }
+
+                                        function handleVideoEnded(v) {
+                                            var alreadyEnded = !!window.__vixzEnded;
+                                            window.__vixzEnded = true;
+                                            window.__vixzUserPaused = true;
+                                            if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                    v.pause();
+                                                } catch(e) {}
+                                            }
+                                            try {
+                                                var cancelBtn = document.querySelector('.ytm-autonav-cancel-button, .ytp-autonav-endscreen-upnext-cancel-button');
+                                                if (cancelBtn) cancelBtn.click();
+                                            } catch(e) {}
+                                            reportMetrics();
+                                            if (!alreadyEnded && window.VixzBridge) {
+                                                window.VixzBridge.onEnded();
+                                            }
+                                        }
+
+                                        function skipAds() {
+                                            try {
+                                                var skipBtns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button');
+                                                for (var i = 0; i < skipBtns.length; i++) {
+                                                    try { skipBtns[i].click(); } catch(e) {}
+                                                }
+                                                var v = document.querySelector('video');
+                                                if (v && document.querySelector('.ad-showing, .ad-interrupting')) {
+                                                    v.muted = true;
+                                                    v.playbackRate = 16.0;
+                                                    if (isFinite(v.duration) && v.duration > 0) v.currentTime = v.duration - 0.1;
+                                                }
+                                            } catch(e) {}
+                                        }
+
                                         function applyCleanPlayer() {
                                             var style = document.getElementById('vixz-clean-player-css');
                                             if (!style && document.head) {
@@ -861,7 +1124,10 @@ fun YouTubePlayerView(
                                                     ytm-item-section-renderer, ytm-comments-entry-point-header-renderer,
                                                     ytm-engagement-panel-section-list-renderer, .watch-below-the-player,
                                                     #below, #related, #comments, ytm-pivot-bar-renderer,
-                                                    .player-controls-content, .ytp-chrome-top, .ytp-unmute {
+                                                    .player-controls-content, .player-controls-background, .player-controls-pb,
+                                                    .ytp-chrome-top, .ytp-chrome-bottom, .ytp-unmute, .ytp-pause-overlay,
+                                                    ytm-custom-control, .ytm-autonav-bar, .ytm-endscreen-overlay,
+                                                    .ytp-autonav-endscreen-upnext-container {
                                                         display: none !important;
                                                         width: 0 !important;
                                                         max-width: 0 !important;
@@ -911,23 +1177,74 @@ fun YouTubePlayerView(
                                                 `;
                                                 document.head.appendChild(style);
                                             }
+                                            skipAds();
+                                            try {
+                                                var mp = document.getElementById('movie_player');
+                                                if (mp && mp.setAutonavState) mp.setAutonavState(1);
+                                            } catch(e) {}
+                                            var isAd = !!document.querySelector('.ad-showing, .ad-interrupting');
                                             var v = document.querySelector('video');
                                             if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                } catch(e) {}
                                                 if (!v.__vixzBound) {
                                                     v.__vixzBound = true;
+                                                    try {
+                                                        Object.defineProperty(v, 'loop', {
+                                                            get: function() { return false; },
+                                                            set: function() {},
+                                                            configurable: true
+                                                        });
+                                                    } catch(e) {}
                                                     v.addEventListener('volumechange', function() { enforceAudio(v); });
-                                                    v.addEventListener('loadedmetadata', function() { enforceAudio(v); });
-                                                    v.addEventListener('playing', function() { enforceAudio(v); });
+                                                    v.addEventListener('loadedmetadata', function() {
+                                                        enforceAudio(v);
+                                                        if (initialStartSec > 0 && !v.__vixzInitialSeekDone) {
+                                                            v.__vixzInitialSeekDone = true;
+                                                            if (v.currentTime < 2) v.currentTime = initialStartSec;
+                                                        }
+                                                        reportMetrics();
+                                                    });
+                                                    v.addEventListener('durationchange', reportMetrics);
+                                                    v.addEventListener('playing', function() {
+                                                        v.__vixzHasStarted = true;
+                                                        enforceAudio(v);
+                                                        if (window.__vixzDesiredSpeed) v.playbackRate = window.__vixzDesiredSpeed;
+                                                        reportMetrics();
+                                                    });
+                                                    v.addEventListener('play', function() {
+                                                        v.__vixzHasStarted = true;
+                                                        reportMetrics();
+                                                    });
+                                                    v.addEventListener('pause', reportMetrics);
+                                                    v.addEventListener('waiting', reportMetrics);
+                                                    v.addEventListener('ended', function() {
+                                                        if (document.querySelector('.ad-showing, .ad-interrupting')) return;
+                                                        handleVideoEnded(v);
+                                                    });
                                                 }
                                                 enforceAudio(v);
-                                                if (v.paused && !window.__vixzUserPaused) {
+                                                if (!isAd && window.__vixzDesiredSpeed && Math.abs(v.playbackRate - window.__vixzDesiredSpeed) > 0.01) {
+                                                    v.playbackRate = window.__vixzDesiredSpeed;
+                                                }
+                                                if (!isAd && v.ended && !window.__vixzEnded) {
+                                                    handleVideoEnded(v);
+                                                }
+                                                if (!isAd && (window.__vixzEnded || window.__vixzUserPaused)) {
+                                                    if (!v.paused) {
+                                                        try { v.pause(); } catch(e) {}
+                                                    }
+                                                } else if (v.paused && !v.ended && !window.__vixzEnded && !window.__vixzUserPaused) {
                                                     v.play().catch(function(){});
                                                 }
+                                                reportMetrics();
                                             }
                                         }
                                         applyCleanPlayer();
                                         if (window.__vixzCleanTimer) clearInterval(window.__vixzCleanTimer);
-                                        window.__vixzCleanTimer = setInterval(applyCleanPlayer, 450);
+                                        window.__vixzCleanTimer = setInterval(applyCleanPlayer, 250);
                                     })();
                                 """.trimIndent(), null)
                                 isFirstFrameRendered = true
@@ -935,6 +1252,9 @@ fun YouTubePlayerView(
 
                             override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                                 val u = request?.url?.toString() ?: ""
+                                if (u.contains("/watch?v=") && !u.contains("v=$videoId")) {
+                                    return true
+                                }
                                 if (u.contains("youtube.com") || u.contains("youtube-nocookie.com") || u.contains("youtu.be") || u.startsWith("data:")) {
                                     return false
                                 }
@@ -943,17 +1263,24 @@ fun YouTubePlayerView(
                         }
 
                         // Load mobile YouTube watch page directly (bypasses embed X-Frame-Options & playback restrictions)
-                        val watchUrl = "https://m.youtube.com/watch?v=$videoId${if (startSeconds > 0) "&t=${startSeconds}s" else ""}"
+                        val watchUrl = "https://m.youtube.com/watch?v=$videoId${if (initialStartSec > 0) "&t=${initialStartSec}s" else ""}"
                         loadUrl(watchUrl)
                         webViewRef = this
+                        onPlayerReady(this)
                     }
                 },
                 update = { view ->
                     webViewRef = view
-                    view.evaluateJavascript(
-                        "(function(){ window.__vixzDesiredMuted = $isMutedState; var v=document.querySelector('video'); if(v){ v.muted = $isMutedState; if(!$isMutedState) v.volume = 1.0; } })();",
-                        null
-                    )
+                },
+                onRelease = { view ->
+                    if (webViewRef === view) webViewRef = null
+                    try {
+                        view.evaluateJavascript("if (window.__vixzCleanTimer) clearInterval(window.__vixzCleanTimer); var v=document.querySelector('video'); if(v) v.pause();", null)
+                        view.removeJavascriptInterface("VixzBridge")
+                        view.stopLoading()
+                        view.loadUrl("about:blank")
+                        view.destroy()
+                    } catch (e: Exception) { }
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -1026,50 +1353,6 @@ fun YouTubePlayerView(
             modifier = Modifier.align(Alignment.TopEnd)
         )
 
-        // Web Stream Fallback Indicator & Retry Pill
-        if (useWebPlayerFallback && !isInPipMode) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Black.copy(alpha = 0.75f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
-                modifier = Modifier
-                    .padding(start = 14.dp, top = if (isFullscreen) 16.dp else 12.dp)
-                    .align(Alignment.TopStart)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "🌐 Web Stream Mirror",
-                        color = Color.White.copy(alpha = 0.9f),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "• Retry Native",
-                        color = YouTubeRed,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable {
-                            useWebPlayerFallback = false
-                            isLoading = true
-                            coroutineScope.launch {
-                                val result = YouTubeStreamExtractor.extractVideoStreams(videoId)
-                                if (result.primaryStreamUrl != null) {
-                                    streamUrl = result.primaryStreamUrl
-                                } else {
-                                    useWebPlayerFallback = true
-                                }
-                                isLoading = false
-                            }
-                        }
-                    )
-                }
-            }
-        }
-
         // 5. Fullscreen Top Header Bar (Back button + Video title + Views + Publish date)
         PlayerTopHeader(
             isFullscreen = isFullscreen,
@@ -1133,26 +1416,17 @@ fun YouTubePlayerView(
                 controlsKeepAliveTrigger = System.currentTimeMillis()
             },
             onScrubberDragFinished = { targetMs ->
-                exoPlayer.seekTo(targetMs)
+                seekToMsUnified(targetMs)
                 isDraggingScrubber = false
                 controlsKeepAliveTrigger = System.currentTimeMillis()
-                val sec = (targetMs / 1000).toInt()
-                if (sec >= 0) {
-                    playerPrefs.edit().putInt("resume_pos_sec_${videoId}", sec).apply()
-                    onPositionUpdate(sec)
-                }
             },
             isPlayingState = isPlayingState,
             onPlayPauseClick = {
-                if (exoPlayer.isPlaying) {
-                    exoPlayer.pause()
-                    isPlayingState = false
+                if (isPlayingState) {
+                    pauseVideoUnified()
                     playPauseFeedbackState = false
-                    areControlsVisible = true
-                    controlsKeepAliveTrigger = System.currentTimeMillis()
                 } else {
-                    exoPlayer.play()
-                    isPlayingState = true
+                    playVideoUnified()
                     playPauseFeedbackState = true
                     controlsKeepAliveTrigger = System.currentTimeMillis()
                 }
@@ -1168,8 +1442,7 @@ fun YouTubePlayerView(
             onWatchLaterToggle = onWatchLaterToggle,
             selectedSpeed = selectedSpeed,
             onSpeedChange = { s ->
-                selectedSpeed = s
-                exoPlayer.playbackParameters = PlaybackParameters(s)
+                setSpeedUnified(s)
             },
             onSpeedFeedback = { speedFeedbackState = it },
             onTakeScreenshot = { takeScreenshot() },
@@ -1189,8 +1462,7 @@ fun YouTubePlayerView(
                     wasPausedBySleepTimer = false
                     sleepTimerRemainingSec = lastSleepDurationMinutes * 60
                     isSleepTimerActive = true
-                    exoPlayer.play()
-                    isPlayingState = true
+                    playVideoUnified()
                     Toast.makeText(context, "🌙 Resumed for ${lastSleepDurationMinutes}m", Toast.LENGTH_SHORT).show()
                 } else {
                     showSleepTimerDialog = !showSleepTimerDialog
@@ -1211,8 +1483,9 @@ fun YouTubePlayerView(
             onRotate180 = onRotate180,
             onToggleDebugConsole = onToggleDebugConsole,
             onSwitchStreamUrl = { targetUrl, quality ->
-                val currentPos = exoPlayer.currentPosition
+                val currentPos = if (useWebPlayerFallback) currentPosMs else exoPlayer.currentPosition
                 savedPositionMs = currentPos
+                useWebPlayerFallback = false
                 controlsKeepAliveTrigger = System.currentTimeMillis()
                 if (streamUrl != targetUrl) {
                     isSwitchingQuality = quality
@@ -1222,6 +1495,8 @@ fun YouTubePlayerView(
             showSettingsMenu = showSettingsMenu,
             onSettingsMenuChange = { showSettingsMenu = it },
             onInteraction = { controlsKeepAliveTrigger = System.currentTimeMillis() },
+            useWebPlayerFallback = useWebPlayerFallback,
+            onRetryNativeStream = { retryNativeStream() },
             isFullscreen = isFullscreen,
             onToggleFullscreen = onToggleFullscreen,
             coroutineScope = coroutineScope,

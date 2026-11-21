@@ -1,6 +1,10 @@
 package com.example.ui.components
 
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
 import android.view.ViewGroup
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -41,6 +45,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -78,6 +83,8 @@ fun ShortsPlayerView(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val currentOnPlayingStateChanged by rememberUpdatedState(onPlayingStateChanged)
+    val currentOnPositionUpdate by rememberUpdatedState(onPositionUpdate)
     var streamUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isPlayingState by remember { mutableStateOf(true) }
@@ -127,25 +134,38 @@ fun ShortsPlayerView(
             setAudioAttributes(audioAttributes, true)
             setHandleAudioBecomingNoisy(true)
             setWakeMode(C.WAKE_MODE_NETWORK)
-            repeatMode = ExoPlayer.REPEAT_MODE_ONE // Shorts loop automatically
+            repeatMode = Player.REPEAT_MODE_OFF
         }
     }
 
+    var currentPositionMs by remember { mutableLongStateOf(0L) }
+    var totalDurationMs by remember { mutableLongStateOf(0L) }
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubPositionMs by remember { mutableFloatStateOf(0f) }
+
     DisposableEffect(Unit) {
-        val listener = object : androidx.media3.common.Player.Listener {
+        val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 isFirstFrameRendered = true
                 isLoading = false
             }
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == androidx.media3.common.Player.STATE_READY) {
-                    isFirstFrameRendered = true
-                    isLoading = false
+                when (state) {
+                    Player.STATE_READY -> {
+                        isFirstFrameRendered = true
+                        isLoading = false
+                    }
+                    Player.STATE_ENDED -> {
+                        exoPlayer.playWhenReady = false
+                        exoPlayer.pause()
+                        isPlayingState = false
+                        currentOnPlayingStateChanged(false)
+                    }
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 isPlayingState = isPlaying
-                onPlayingStateChanged(isPlaying)
+                currentOnPlayingStateChanged(isPlaying)
             }
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 addLog("⚠️ ExoPlayer Playback Error (${error.errorCodeName}): ${error.message} -> activating fallback")
@@ -160,7 +180,7 @@ fun ShortsPlayerView(
             try {
                 exoPlayer.removeListener(listener)
                 val finalSec = (exoPlayer.currentPosition / 1000).toInt().coerceAtLeast(0)
-                onPositionUpdate(finalSec)
+                currentOnPositionUpdate(finalSec)
             } catch (e: Exception) { }
             exoPlayer.release()
             MediaPlaybackService.stop(context)
@@ -172,21 +192,27 @@ fun ShortsPlayerView(
             when {
                 cmd == "PAUSE" -> {
                     if (!useWebPlayerFallback) {
+                        exoPlayer.playWhenReady = false
                         exoPlayer.pause()
                     } else {
-                        webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
+                        webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { window.__vixzUserPaused = true; var v = document.querySelector('video'); if (v) v.pause(); }", null)
                     }
                     isPlayingState = false
-                    onPlayingStateChanged(false)
+                    currentOnPlayingStateChanged(false)
                 }
                 cmd == "PLAY" -> {
                     if (!useWebPlayerFallback) {
+                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                            exoPlayer.seekTo(0L)
+                            currentPositionMs = 0L
+                        }
+                        exoPlayer.playWhenReady = true
                         exoPlayer.play()
                     } else {
-                        webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
+                        webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { window.__vixzEnded = false; window.__vixzUserPaused = false; var v = document.querySelector('video'); if (v) { if (v.ended) v.currentTime = 0; v.play(); } }", null)
                     }
                     isPlayingState = true
-                    onPlayingStateChanged(true)
+                    currentOnPlayingStateChanged(true)
                 }
                 cmd == "TOGGLE_PLAY_PAUSE" -> {
                     val isPlayingNow = if (!useWebPlayerFallback) {
@@ -196,29 +222,43 @@ fun ShortsPlayerView(
                     }
                     if (isPlayingNow) {
                         if (!useWebPlayerFallback) {
+                            exoPlayer.playWhenReady = false
                             exoPlayer.pause()
                         } else {
-                            webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { var v = document.querySelector('video'); if (v) v.pause(); }", null)
+                            webViewRef?.evaluateJavascript("if (window.pauseVideo) window.pauseVideo(); else { window.__vixzUserPaused = true; var v = document.querySelector('video'); if (v) v.pause(); }", null)
                         }
                         isPlayingState = false
-                        onPlayingStateChanged(false)
+                        currentOnPlayingStateChanged(false)
                     } else {
                         if (!useWebPlayerFallback) {
+                            if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                                exoPlayer.seekTo(0L)
+                                currentPositionMs = 0L
+                            }
+                            exoPlayer.playWhenReady = true
                             exoPlayer.play()
                         } else {
-                            webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { var v = document.querySelector('video'); if (v) v.play(); }", null)
+                            webViewRef?.evaluateJavascript("if (window.playVideo) window.playVideo(); else { window.__vixzEnded = false; window.__vixzUserPaused = false; var v = document.querySelector('video'); if (v) { if (v.ended) v.currentTime = 0; v.play(); } }", null)
                         }
                         isPlayingState = true
-                        onPlayingStateChanged(true)
+                        currentOnPlayingStateChanged(true)
                     }
                 }
                 cmd.startsWith("SEEK_FORWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_FORWARD_").toIntOrNull() ?: 10
-                    exoPlayer.seekTo(exoPlayer.currentPosition + sec * 1000L)
+                    if (!useWebPlayerFallback) {
+                        exoPlayer.seekTo(exoPlayer.currentPosition + sec * 1000L)
+                    } else {
+                        webViewRef?.evaluateJavascript("(function(){ var v=document.querySelector('video'); if(v) v.currentTime = v.currentTime + $sec; })();", null)
+                    }
                 }
                 cmd.startsWith("SEEK_BACKWARD_") -> {
                     val sec = cmd.substringAfter("SEEK_BACKWARD_").toIntOrNull() ?: 10
-                    exoPlayer.seekTo((exoPlayer.currentPosition - sec * 1000L).coerceAtLeast(0L))
+                    if (!useWebPlayerFallback) {
+                        exoPlayer.seekTo((exoPlayer.currentPosition - sec * 1000L).coerceAtLeast(0L))
+                    } else {
+                        webViewRef?.evaluateJavascript("(function(){ var v=document.querySelector('video'); if(v){ window.__vixzEnded=false; v.currentTime = Math.max(0, v.currentTime - $sec); } })();", null)
+                    }
                 }
             }
         }
@@ -227,29 +267,38 @@ fun ShortsPlayerView(
     LaunchedEffect(isPlayingState, useWebPlayerFallback) {
         if (!useWebPlayerFallback) {
             if (isPlayingState) {
+                if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(0L)
+                    currentPositionMs = 0L
+                }
+                exoPlayer.playWhenReady = true
                 exoPlayer.play()
             } else {
+                exoPlayer.playWhenReady = false
                 exoPlayer.pause()
             }
         }
     }
 
-    var currentPositionMs by remember { mutableLongStateOf(0L) }
-    var totalDurationMs by remember { mutableLongStateOf(0L) }
-    var isScrubbing by remember { mutableStateOf(false) }
-    var scrubPositionMs by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(exoPlayer, useWebPlayerFallback) {
         var lastSavedSec = 0
         while (isActive) {
             try {
-                if (!isScrubbing) {
-                    currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-                    val d = exoPlayer.duration
-                    if (d > 0) totalDurationMs = d
-                }
-                if (exoPlayer.isPlaying) {
-                    val posSec = (exoPlayer.currentPosition / 1000).toInt()
+                if (!useWebPlayerFallback) {
+                    if (!isScrubbing) {
+                        currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+                        val d = exoPlayer.duration
+                        if (d > 0) totalDurationMs = d
+                    }
+                    if (exoPlayer.isPlaying) {
+                        val posSec = (exoPlayer.currentPosition / 1000).toInt()
+                        if (posSec > 0 && Math.abs(posSec - lastSavedSec) >= 3) {
+                            lastSavedSec = posSec
+                            onPositionUpdate(posSec)
+                        }
+                    }
+                } else if (isPlayingState && currentPositionMs > 0L) {
+                    val posSec = (currentPositionMs / 1000).toInt()
                     if (posSec > 0 && Math.abs(posSec - lastSavedSec) >= 3) {
                         lastSavedSec = posSec
                         onPositionUpdate(posSec)
@@ -261,20 +310,18 @@ fun ShortsPlayerView(
     }
 
     // Real-time position ticker to update Closed Captions in Shorts
-    LaunchedEffect(exoPlayer, captionsEnabled, captionSegments) {
+    LaunchedEffect(exoPlayer, useWebPlayerFallback, captionsEnabled, captionSegments) {
         while (isActive) {
             try {
-                if (exoPlayer.isPlaying) {
-                    val pos = exoPlayer.currentPosition
-                    val currentSec = (pos / 1000).toInt()
-                    if (captionsEnabled && captionSegments.isNotEmpty()) {
-                        val matching = captionSegments
-                            .filter { it.timestampSeconds <= currentSec }
-                            .lastOrNull { (currentSec - it.timestampSeconds) <= 5 }
-                        activeCaptionText = matching?.text?.trim()
-                    } else {
-                        activeCaptionText = null
-                    }
+                val pos = if (useWebPlayerFallback) currentPositionMs else exoPlayer.currentPosition
+                val currentSec = (pos / 1000).toInt()
+                if (captionsEnabled && captionSegments.isNotEmpty() && (useWebPlayerFallback || exoPlayer.isPlaying)) {
+                    val matching = captionSegments
+                        .filter { it.timestampSeconds <= currentSec }
+                        .lastOrNull { (currentSec - it.timestampSeconds) <= 5 }
+                    activeCaptionText = matching?.text?.trim()
+                } else {
+                    activeCaptionText = null
                 }
             } catch (e: Exception) { }
             delay(100)
@@ -320,7 +367,9 @@ fun ShortsPlayerView(
                 val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
                 val mediaSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory)
                     .createMediaSource(MediaItem.fromUri(localUri))
+                exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
                 exoPlayer.setMediaSource(mediaSource)
+                exoPlayer.playWhenReady = true
                 exoPlayer.prepare()
                 exoPlayer.play()
                 addLog("⚡ Playing from offline storage")
@@ -392,7 +441,9 @@ fun ShortsPlayerView(
                     exoPlayer.setMediaSource(mediaSource)
                 }
 
+                exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
                 exoPlayer.volume = 1.0f
+                exoPlayer.playWhenReady = true
                 exoPlayer.prepare()
                 exoPlayer.play()
                 addLog("Stream extracted & ExoPlayer prepared (isHls=$isHls, videoOnly=$isVideoOnly): $directUrl")
@@ -441,7 +492,14 @@ fun ShortsPlayerView(
             // Automatic Fallback: High-Reliability YouTube Embed for Shorts (Fix Error 153)
             AndroidView(
                 factory = { ctx ->
-                    android.webkit.WebView(ctx).apply {
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    object : android.webkit.WebView(ctx) {
+                        override fun onTouchEvent(event: MotionEvent?): Boolean = false
+                        override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean = false
+                    }.apply {
+                        isClickable = false
+                        isFocusable = false
+                        isFocusableInTouchMode = false
                         webViewRef = this
                         layoutParams = android.view.ViewGroup.LayoutParams(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -460,6 +518,36 @@ fun ShortsPlayerView(
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
 
+                        val wvInstance = this
+                        addJavascriptInterface(object {
+                            @JavascriptInterface
+                            fun onMetrics(posSec: Double, durSec: Double, paused: Boolean) {
+                                mainHandler.post {
+                                    if (webViewRef !== wvInstance) return@post
+                                    if (!isScrubbing && posSec >= 0.0) {
+                                        currentPositionMs = (posSec * 1000.0).toLong().coerceAtLeast(0L)
+                                    }
+                                    if (durSec > 0.0) {
+                                        totalDurationMs = (durSec * 1000.0).toLong()
+                                    }
+                                    val playing = !paused
+                                    if (isPlayingState != playing) {
+                                        isPlayingState = playing
+                                        currentOnPlayingStateChanged(playing)
+                                    }
+                                }
+                            }
+
+                            @JavascriptInterface
+                            fun onEnded() {
+                                mainHandler.post {
+                                    if (webViewRef !== wvInstance) return@post
+                                    isPlayingState = false
+                                    currentOnPlayingStateChanged(false)
+                                }
+                            }
+                        }, "VixzShortsBridge")
+
                         webChromeClient = object : android.webkit.WebChromeClient() {
                             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                                 android.util.Log.d("ShortsWebPlayer", "[Console] ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})")
@@ -471,6 +559,34 @@ fun ShortsPlayerView(
                                 super.onPageFinished(view, url)
                                 view?.evaluateJavascript("""
                                     (function() {
+                                        if (typeof window.__vixzUserPaused === 'undefined') {
+                                            window.__vixzUserPaused = false;
+                                        }
+                                        if (typeof window.__vixzEnded === 'undefined') {
+                                            window.__vixzEnded = false;
+                                        }
+                                        window.playVideo = function() {
+                                            window.__vixzEnded = false;
+                                            window.__vixzUserPaused = false;
+                                            var v = document.querySelector('video');
+                                            if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                } catch(e) {}
+                                                if (v.ended || (isFinite(v.duration) && v.duration > 0 && v.currentTime >= v.duration - 0.5)) {
+                                                    v.currentTime = 0;
+                                                }
+                                                v.play().catch(function(){});
+                                            }
+                                            reportShortMetrics();
+                                        };
+                                        window.pauseVideo = function() {
+                                            window.__vixzUserPaused = true;
+                                            var v = document.querySelector('video');
+                                            if (v) v.pause();
+                                            reportShortMetrics();
+                                        };
                                         function enforceShortAudio(v) {
                                             if (!v) return;
                                             var u = document.querySelector('.ytp-unmute');
@@ -482,6 +598,32 @@ fun ShortsPlayerView(
                                             }
                                             if (v.muted) v.muted = false;
                                             if (v.volume < 0.99) v.volume = 1.0;
+                                        }
+                                        function reportShortMetrics() {
+                                            try {
+                                                var v = document.querySelector('video');
+                                                if (!v || !window.VixzShortsBridge) return;
+                                                var pos = isFinite(v.currentTime) ? v.currentTime : 0;
+                                                var dur = (isFinite(v.duration) && v.duration > 0) ? v.duration : 0;
+                                                var paused = !!window.__vixzUserPaused || !!window.__vixzEnded || !!v.ended || (!!v.__vixzHasStarted && v.paused);
+                                                window.VixzShortsBridge.onMetrics(pos, dur, paused);
+                                            } catch(e) {}
+                                        }
+                                        function handleShortEnded(v) {
+                                            var alreadyEnded = !!window.__vixzEnded;
+                                            window.__vixzEnded = true;
+                                            window.__vixzUserPaused = true;
+                                            if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                    v.pause();
+                                                } catch(e) {}
+                                            }
+                                            reportShortMetrics();
+                                            if (!alreadyEnded && window.VixzShortsBridge && window.VixzShortsBridge.onEnded) {
+                                                window.VixzShortsBridge.onEnded();
+                                            }
                                         }
                                         function applyCleanShort() {
                                             var style = document.getElementById('vixz-clean-short-css');
@@ -495,7 +637,7 @@ fun ShortsPlayerView(
                                                     sc-drawer,
                                                     ytm-mobile-topbar-renderer, header, ytm-pivot-bar-renderer,
                                                     .reel-player-overlay-actions, ytm-reel-player-overlay-renderer,
-                                                    .player-controls-content, .ytp-chrome-top, .ytp-unmute {
+                                                    .player-controls-content, .ytp-chrome-top, .ytp-chrome-bottom, .ytp-unmute {
                                                         display: none !important;
                                                         width: 0 !important;
                                                         max-width: 0 !important;
@@ -538,26 +680,55 @@ fun ShortsPlayerView(
                                             }
                                             var v = document.querySelector('video');
                                             if (v) {
+                                                try {
+                                                    v.loop = false;
+                                                    if (v.hasAttribute('loop')) v.removeAttribute('loop');
+                                                } catch(e) {}
                                                 if (!v.__vixzShortBound) {
                                                     v.__vixzShortBound = true;
+                                                    try {
+                                                        Object.defineProperty(v, 'loop', {
+                                                            get: function() { return false; },
+                                                            set: function() {},
+                                                            configurable: true
+                                                        });
+                                                    } catch(e) {}
                                                     v.addEventListener('volumechange', function() { enforceShortAudio(v); });
-                                                    v.addEventListener('loadedmetadata', function() { enforceShortAudio(v); });
-                                                    v.addEventListener('playing', function() { enforceShortAudio(v); });
+                                                    v.addEventListener('loadedmetadata', function() { enforceShortAudio(v); reportShortMetrics(); });
+                                                    v.addEventListener('playing', function() { v.__vixzHasStarted = true; enforceShortAudio(v); reportShortMetrics(); });
+                                                    v.addEventListener('play', function() { v.__vixzHasStarted = true; reportShortMetrics(); });
+                                                    v.addEventListener('pause', reportShortMetrics);
+                                                    v.addEventListener('ended', function() { handleShortEnded(v); });
                                                 }
                                                 enforceShortAudio(v);
-                                                if (v.paused && !window.__vixzUserPaused) {
+                                                if (v.ended && !window.__vixzEnded) {
+                                                    handleShortEnded(v);
+                                                }
+                                                if (window.__vixzEnded || window.__vixzUserPaused) {
+                                                    if (!v.paused) {
+                                                        try { v.pause(); } catch(e) {}
+                                                    }
+                                                } else if (v.paused && !v.ended && !window.__vixzEnded && !window.__vixzUserPaused) {
                                                     v.play().catch(function(){});
                                                 }
+                                                reportShortMetrics();
                                             }
                                         }
                                         applyCleanShort();
                                         if (window.__vixzShortTimer) clearInterval(window.__vixzShortTimer);
-                                        window.__vixzShortTimer = setInterval(applyCleanShort, 450);
+                                        window.__vixzShortTimer = setInterval(applyCleanShort, 250);
                                     })();
                                 """.trimIndent(), null)
                             }
                             override fun onReceivedError(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?, error: android.webkit.WebResourceError?) {
                                 android.util.Log.e("ShortsWebPlayer", "onReceivedError: ${error?.description} for ${request?.url}")
+                            }
+                            override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                                val u = request?.url?.toString() ?: ""
+                                if ((u.contains("/shorts/") || u.contains("/watch?v=")) && !u.contains(videoId)) {
+                                    return true
+                                }
+                                return false
                             }
                         }
 
@@ -566,6 +737,16 @@ fun ShortsPlayerView(
                 },
                 update = { view ->
                     webViewRef = view
+                },
+                onRelease = { view ->
+                    if (webViewRef === view) webViewRef = null
+                    try {
+                        view.evaluateJavascript("if (window.__vixzShortTimer) clearInterval(window.__vixzShortTimer); var v=document.querySelector('video'); if(v) v.pause();", null)
+                        view.removeJavascriptInterface("VixzShortsBridge")
+                        view.stopLoading()
+                        view.loadUrl("about:blank")
+                        view.destroy()
+                    } catch (e: Exception) { }
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -578,28 +759,36 @@ fun ShortsPlayerView(
                 .pointerInput(videoId) {
                     detectTapGestures(
                         onTap = {
-                            isPlayingState = !isPlayingState
+                            val willPlay = !isPlayingState
+                            isPlayingState = willPlay
                             if (useWebPlayerFallback) {
-                                val js = if (isPlayingState) {
-                                    "(function(){ window.__vixzUserPaused=false; var v=document.querySelector('video'); if(v) v.play(); })();"
+                                val js = if (willPlay) {
+                                    "if (window.playVideo) window.playVideo(); else { window.__vixzEnded=false; window.__vixzUserPaused=false; var v=document.querySelector('video'); if(v){ if(v.ended) v.currentTime=0; v.play(); } }"
                                 } else {
-                                    "(function(){ window.__vixzUserPaused=true; var v=document.querySelector('video'); if(v) v.pause(); })();"
+                                    "if (window.pauseVideo) window.pauseVideo(); else { window.__vixzUserPaused=true; var v=document.querySelector('video'); if(v) v.pause(); }"
                                 }
                                 webViewRef?.evaluateJavascript(js, null)
                             } else {
-                                if (isPlayingState) {
+                                if (willPlay) {
+                                    if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                                        exoPlayer.seekTo(0L)
+                                        currentPositionMs = 0L
+                                    }
+                                    exoPlayer.playWhenReady = true
                                     exoPlayer.play()
                                 } else {
+                                    exoPlayer.playWhenReady = false
                                     exoPlayer.pause()
                                 }
                             }
+                            currentOnPlayingStateChanged(willPlay)
                         },
                         onDoubleTap = { offset ->
                             val w = size.width
                             if (useWebPlayerFallback) {
                                 val deltaSec = if (offset.x < w / 2f) -5 else 5
                                 webViewRef?.evaluateJavascript(
-                                    "(function(){ var v=document.querySelector('video'); if(v) v.currentTime = Math.max(0, v.currentTime + ($deltaSec)); })();",
+                                    "(function(){ var v=document.querySelector('video'); if(v){ var t=Math.max(0, v.currentTime + ($deltaSec)); if(!isFinite(v.duration) || v.duration <= 0 || t < v.duration - 0.5) window.__vixzEnded=false; v.currentTime = t; } })();",
                                     null
                                 )
                             } else if (offset.x < w / 2f) {
@@ -675,21 +864,6 @@ fun ShortsPlayerView(
                         imageVector = Icons.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color.White
-                    )
-                }
-                Spacer(modifier = Modifier.width(6.dp))
-                // Picture-in-Picture Pop-up Button
-                IconButton(
-                    onClick = onEnterPip,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color.Black.copy(alpha = 0.45f), CircleShape)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PictureInPictureAlt,
-                        contentDescription = "Floating Pop-up Window",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
                     )
                 }
                 Spacer(modifier = Modifier.width(6.dp))
@@ -817,7 +991,7 @@ fun ShortsPlayerView(
                     isScrubbing = false
                     if (useWebPlayerFallback) {
                         val sec = scrubPositionMs / 1000f
-                        webViewRef?.evaluateJavascript("(function(){ var v=document.querySelector('video'); if(v) v.currentTime=$sec; })();", null)
+                        webViewRef?.evaluateJavascript("(function(){ var v=document.querySelector('video'); if(v){ if(!isFinite(v.duration) || v.duration <= 0 || $sec < v.duration - 0.5) window.__vixzEnded=false; v.currentTime=$sec; } })();", null)
                     } else {
                         exoPlayer.seekTo(scrubPositionMs.toLong())
                     }

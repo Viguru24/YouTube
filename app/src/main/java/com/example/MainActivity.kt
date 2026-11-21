@@ -38,6 +38,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: YouTubeViewModel by viewModels()
     private var isInPipMode by mutableStateOf(false)
+    private var exitedPipTimestampMs: Long = 0L
 
     companion object {
         const val ACTION_PIP_CONTROL = "com.example.PIP_CONTROL"
@@ -90,6 +91,7 @@ class MainActivity : ComponentActivity() {
                 PIP_ACTION_REWIND -> viewModel.seekBy(-10)
                 PIP_ACTION_FORWARD -> viewModel.seekBy(10)
                 PIP_ACTION_CLOSE -> {
+                    stopPlaybackOnPipDismiss()
                     viewModel.clearActiveVideo()
                     moveTaskToBack(true)
                 }
@@ -175,9 +177,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Automatically update PiP buttons when playing state changes
+        // Automatically keep PiP params (play/pause button, 16:9 aspect ratio, auto-enter for non-Shorts) in sync
         lifecycleScope.launch {
-            viewModel.isPlayerPlaying.collect { isPlaying ->
+            kotlinx.coroutines.flow.combine(
+                viewModel.isPlayerPlaying,
+                viewModel.activeVideo,
+                viewModel.isPlayingAsShort
+            ) { isPlaying, _, _ -> isPlaying }.collect { isPlaying ->
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     try {
                         setPictureInPictureParams(buildPipParams(isPlaying))
@@ -209,6 +215,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        exitedPipTimestampMs = 0L
         viewModel.triggerVpsSync()
     }
 
@@ -245,20 +252,44 @@ class MainActivity : ComponentActivity() {
         isInPictureInPictureMode: Boolean,
         newConfig: android.content.res.Configuration
     ) {
+        val wasInPip = isInPipMode
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isInPipMode = isInPictureInPictureMode
+        if (wasInPip && !isInPictureInPictureMode) {
+            exitedPipTimestampMs = android.os.SystemClock.elapsedRealtime()
+            // When user taps X / dismisses PiP, lifecycle drops to CREATED (stopped) instead of resuming full screen.
+            if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+                stopPlaybackOnPipDismiss()
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Some Android OEMs dispatch onStop() right after onPictureInPictureModeChanged(false) on PiP X dismiss.
+        val justExitedPip = (android.os.SystemClock.elapsedRealtime() - exitedPipTimestampMs) < 1500L
+        if (justExitedPip && !isInPipMode) {
+            stopPlaybackOnPipDismiss()
+        }
+    }
+
+    private fun stopPlaybackOnPipDismiss() {
+        viewModel.pausePlayer()
+        viewModel.setPlayerPlaying(false)
+        com.example.service.MediaPlaybackService.stop(this)
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val prefs = getSharedPreferences("vixz_player_prefs", MODE_PRIVATE)
         val autoPipEnabled = prefs.getBoolean("auto_pip_enabled", true)
-        if (autoPipEnabled && viewModel.activeVideo.value != null) {
+        if (autoPipEnabled && viewModel.activeVideo.value != null && viewModel.isPlayingAsShort.value != true) {
             enterPipMode()
         }
     }
 
     private fun enterPipMode() {
+        if (viewModel.isPlayingAsShort.value == true) return
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             val params = buildPipParams(viewModel.isPlayerPlaying.value)
             enterPictureInPictureMode(params)
@@ -270,8 +301,8 @@ class MainActivity : ComponentActivity() {
             throw UnsupportedOperationException("PiP requires Android 8.0+")
         }
 
-        val isShort = viewModel.isPlayingAsShort.value == true
-        val aspectRatio = if (isShort) android.util.Rational(9, 16) else android.util.Rational(16, 9)
+        // PiP pop-out is restricted to standard horizontal videos (16:9); Shorts do not use PiP.
+        val aspectRatio = android.util.Rational(16, 9)
 
         val actions = mutableListOf<android.app.RemoteAction>()
 
@@ -332,7 +363,9 @@ class MainActivity : ComponentActivity() {
             .setActions(actions)
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            val shouldAutoEnter = viewModel.activeVideo.value != null
+            val prefs = getSharedPreferences("vixz_player_prefs", MODE_PRIVATE)
+            val autoPipEnabled = prefs.getBoolean("auto_pip_enabled", true)
+            val shouldAutoEnter = autoPipEnabled && viewModel.activeVideo.value != null && viewModel.isPlayingAsShort.value != true
             builder.setAutoEnterEnabled(shouldAutoEnter)
         }
 
@@ -386,6 +419,8 @@ fun MainAppContent(
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val selectedTimeFilter by viewModel.selectedTimeFilter.collectAsStateWithLifecycle()
+    val selectedDurationFilter by viewModel.selectedDurationFilter.collectAsStateWithLifecycle()
+    val selectedTypeFilter by viewModel.selectedTypeFilter.collectAsStateWithLifecycle()
     val searchSortOption by viewModel.searchSortOption.collectAsStateWithLifecycle()
     val selectedSubscribedChannel by viewModel.selectedSubscribedChannel.collectAsStateWithLifecycle()
     val liveSearchResults by viewModel.liveSearchResults.collectAsStateWithLifecycle()
@@ -400,11 +435,12 @@ fun MainAppContent(
     val activeVideoId by viewModel.activeVideoId.collectAsStateWithLifecycle()
     val activeVideo by viewModel.activeVideo.collectAsStateWithLifecycle()
     val activeNotes by viewModel.activeNotes.collectAsStateWithLifecycle()
+    val isPlayerPlaying by viewModel.isPlayerPlaying.collectAsStateWithLifecycle()
 
-    // Start Foreground Media Playback Service with WakeLock when a video is played
-    LaunchedEffect(activeVideo?.youtubeId) {
+    // Start Foreground Media Playback Service with WakeLock only while a video is actively playing
+    LaunchedEffect(activeVideo?.youtubeId, isPlayerPlaying) {
         val v = activeVideo
-        if (v != null) {
+        if (v != null && isPlayerPlaying) {
             try {
                 val intent = android.content.Intent(context, com.example.service.MediaPlaybackService::class.java).apply {
                     putExtra(com.example.service.MediaPlaybackService.EXTRA_TITLE, v.title)
@@ -657,6 +693,10 @@ fun MainAppContent(
                             onLoadMore = { viewModel.loadMoreCategoryVideos() },
                             selectedTimeFilter = selectedTimeFilter,
                             onTimeFilterSelected = { viewModel.selectedTimeFilter.value = it },
+                            selectedDurationFilter = selectedDurationFilter,
+                            onDurationFilterSelected = { viewModel.selectedDurationFilter.value = it },
+                            selectedTypeFilter = selectedTypeFilter,
+                            onTypeFilterSelected = { viewModel.selectedTypeFilter.value = it },
                             searchSortOption = searchSortOption,
                             onSearchSortOptionSelected = { viewModel.setSearchSortOption(it) },
                             selectedSubscribedChannel = selectedSubscribedChannel,

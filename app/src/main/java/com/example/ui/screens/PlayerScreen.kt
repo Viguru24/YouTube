@@ -250,22 +250,28 @@ fun PlayerScreen(
         }
     }
 
-    val handleNextVideo: () -> Unit = {
-        val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
-        val next = when {
-            currentIndex != -1 && currentIndex < playlistVideos.size - 1 -> {
-                playlistVideos[currentIndex + 1]
+    val nextCandidateVideo = remember(video.youtubeId, playlistVideos, otherVideos) {
+        val distinctPlaylist = playlistVideos.distinctBy { it.youtubeId }
+        val currentIndex = distinctPlaylist.indexOfFirst { it.youtubeId == video.youtubeId }
+        when {
+            currentIndex != -1 && currentIndex < distinctPlaylist.size - 1 -> {
+                distinctPlaylist.drop(currentIndex + 1).firstOrNull { it.youtubeId != video.youtubeId }
             }
             otherVideos.isNotEmpty() -> {
-                otherVideos.first()
+                otherVideos.firstOrNull { it.youtubeId != video.youtubeId }
             }
-            playlistVideos.size > 1 -> {
-                playlistVideos.firstOrNull { it.youtubeId != video.youtubeId }
+            else -> {
+                distinctPlaylist.firstOrNull { it.youtubeId != video.youtubeId }
             }
-            else -> null
-        }
+        }?.takeIf { it.youtubeId != video.youtubeId }
+    }
+
+    val handleNextVideo: () -> Unit = {
+        val distinctPlaylist = playlistVideos.distinctBy { it.youtubeId }
+        val currentIndex = distinctPlaylist.indexOfFirst { it.youtubeId == video.youtubeId }
+        val next = nextCandidateVideo?.takeIf { it.youtubeId != video.youtubeId }
         if (next != null) {
-            if (currentIndex >= playlistVideos.size - 3 || playlistVideos.size <= 2) {
+            if (currentIndex >= distinctPlaylist.size - 3 || distinctPlaylist.size <= 2) {
                 onLoadMore()
             }
             onSelectOtherVideo(next)
@@ -359,6 +365,7 @@ fun PlayerScreen(
                         playerCommandFlow = playerCommandFlow,
                         onPlayingStateChanged = onPlayingStateChanged,
                         onNextVideo = handleNextVideo,
+                        hasNextVideo = nextCandidateVideo != null,
                         onPreviousVideo = {
                             val currentIndex = playlistVideos.indexOfFirst { it.youtubeId == video.youtubeId }
                             val prev = if (currentIndex > 0) {
@@ -801,7 +808,10 @@ fun PlayerScreen(
                 // Seek player to timestamp (supports both native ExoPlayer and WebView fallback)
                 try {
                     (webViewInstance as? androidx.media3.exoplayer.ExoPlayer)?.seekTo((seekSec * 1000L))
-                    (webViewInstance as? android.webkit.WebView)?.evaluateJavascript("if (window.player && player.seekTo) player.seekTo($seekSec, true);", null)
+                    (webViewInstance as? android.webkit.WebView)?.evaluateJavascript(
+                        "if (window.__vixzSeekTo) window.__vixzSeekTo($seekSec); else if (window.player && player.seekTo) player.seekTo($seekSec, true); else { var v=document.querySelector('video'); if(v) v.currentTime=$seekSec; }",
+                        null
+                    )
                 } catch (e: Exception) {}
             },
             onSaveToNotes = { summaryText ->

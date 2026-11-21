@@ -94,6 +94,10 @@ fun HomeScreen(
     onLoadMore: () -> Unit = {},
     selectedTimeFilter: String = "Any Time",
     onTimeFilterSelected: (String) -> Unit = {},
+    selectedDurationFilter: String = "Any Duration",
+    onDurationFilterSelected: (String) -> Unit = {},
+    selectedTypeFilter: String = "All",
+    onTypeFilterSelected: (String) -> Unit = {},
     searchSortOption: String = "Latest",
     onSearchSortOptionSelected: (String) -> Unit = {},
     selectedSubscribedChannel: String = "",
@@ -179,13 +183,62 @@ fun HomeScreen(
     var showAddChannelDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showProfileMenu by remember { mutableStateOf(false) }
-    var showSortSubMenu by remember { mutableStateOf(false) }
     var videoToSaveToSubject by remember { mutableStateOf<VideoEntity?>(null) }
     val focusRequester = remember { FocusRequester() }
-    // Sort state hoisted here so top bar can access it
-    var selectedSort by remember { mutableStateOf("Newest") }
-    val sortCycle = listOf("Newest", "Oldest", "Most Popular", "Longest", "Shortest", "Default")
+    // Unified Sort & Filters state: searchSortOption (from ViewModel) is the single source of truth for Feed & Search
+    val normalizedSort = com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(searchSortOption)
+    var showFilterBar by remember { mutableStateOf(false) }
+    var isFilterPanelCollapsedInSearch by remember { mutableStateOf(false) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotEmpty()) {
+            isFilterPanelCollapsedInSearch = false
+        }
+    }
+    val isSortFiltersPanelVisible = if (searchQuery.isNotEmpty()) !isFilterPanelCollapsedInSearch else showFilterBar
     val timeFilterOptions = listOf("Any Time", "Last Hour", "Today", "This Week", "This Month", "This Year")
+    val lengthFilterOptions = listOf(
+        "Any Length" to "Any Duration",
+        "< 4 min" to "Under 4 min",
+        "4–20 min" to "4 - 20 min",
+        "> 20 min" to "Over 20 min"
+    )
+    val typeFilterOptions = listOf(
+        "All" to "All",
+        "🎬 Videos" to "Videos",
+        "📱 Shorts" to "Shorts",
+        "🔴 Live" to "Live"
+    )
+    val applySortOption: (String) -> Unit = { option ->
+        onSearchSortOptionSelected(
+            com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(option)
+        )
+    }
+    val activeSortDisplayLabel = when (normalizedSort) {
+        "Latest" -> "Latest"
+        "Most Viewed" -> "Most Viewed"
+        "Longest" -> "Longest"
+        "Shortest" -> "Shortest"
+        "Oldest" -> "Oldest"
+        "Top Rated" -> "Top Rated"
+        "Relevance" -> "Recommended"
+        else -> normalizedSort
+    }
+    val isDefaultDuration = selectedDurationFilter.equals("Any Duration", ignoreCase = true) ||
+        selectedDurationFilter.equals("Any Length", ignoreCase = true)
+    val activeFilterCount = listOf(
+        normalizedSort != "Latest",
+        !selectedTimeFilter.equals("Any Time", ignoreCase = true),
+        !isDefaultDuration,
+        !selectedTypeFilter.equals("All", ignoreCase = true)
+    ).count { it }
+    val hasActiveFilter = activeFilterCount > 0
+    val resetAllSortAndFilters: () -> Unit = {
+        applySortOption("Latest")
+        onTimeFilterSelected("Any Time")
+        onDurationFilterSelected("Any Duration")
+        onTypeFilterSelected("All")
+        dismissKeyboard()
+    }
     val strings = com.example.util.LocalAppStrings.current
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -385,6 +438,26 @@ fun HomeScreen(
                                 .focusRequester(focusRequester)
                                 .testTag("search_text_field")
                         )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                if (searchQuery.isNotEmpty()) {
+                                    isFilterPanelCollapsedInSearch = !isFilterPanelCollapsedInSearch
+                                } else {
+                                    showFilterBar = !showFilterBar
+                                }
+                                dismissKeyboard()
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("search_filter_toggle_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Tune,
+                                contentDescription = "Sort & Filters",
+                                tint = if (isSortFiltersPanelVisible || hasActiveFilter) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             } else {
@@ -406,6 +479,10 @@ fun HomeScreen(
                                         coroutineScope.launch {
                                             gridState.scrollToItem(0)
                                         }
+                                        applySortOption("Latest")
+                                        onTimeFilterSelected("Any Time")
+                                        onDurationFilterSelected("Any Duration")
+                                        onTypeFilterSelected("All")
                                         onCategorySelected("⚡ Latest")
                                         onSearchQueryChanged("")
                                         onSubscribedChannelSelected("")
@@ -423,26 +500,40 @@ fun HomeScreen(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            // Persistent Recency / Time Filter Button (Always on Top-Left, Defaults to Latest)
+                            // Persistent Recency / Category Selector Button (Always on Top-Left, Defaults to Latest)
                             var showRecencyMenu by remember { mutableStateOf(false) }
                             val isFavActive = selectedCategory.contains("Favorite", ignoreCase = true) || selectedCategory.contains("Star", ignoreCase = true)
                             val isWlActive = selectedCategory.contains("Watch Later", ignoreCase = true)
-                            val is24hActive = !isFavActive && !isWlActive && (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true))
-                            val isHourActive = !isFavActive && !isWlActive && selectedCategory.contains("hour", ignoreCase = true)
-                            val isWeekActive = !isFavActive && !isWlActive && selectedCategory.contains("week", ignoreCase = true)
-                            val isMonthActive = !isFavActive && !isWlActive && selectedCategory.contains("month", ignoreCase = true)
-                            val isLatestActive = !isFavActive && !isWlActive && (selectedCategory.contains("Latest", ignoreCase = true) || (!is24hActive && !isHourActive && !isWeekActive && !isMonthActive && selectedCategory == "All"))
+                            val isHourActive = !isFavActive && !isWlActive && (selectedTimeFilter.equals("Last Hour", ignoreCase = true) || selectedCategory.contains("hour", ignoreCase = true))
+                            val is24hActive = !isFavActive && !isWlActive && !isHourActive && (selectedTimeFilter.equals("Today", ignoreCase = true) || selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true))
+                            val isWeekActive = !isFavActive && !isWlActive && (selectedTimeFilter.equals("This Week", ignoreCase = true) || selectedCategory.contains("week", ignoreCase = true))
+                            val isMonthActive = !isFavActive && !isWlActive && (selectedTimeFilter.equals("This Month", ignoreCase = true) || selectedCategory.contains("month", ignoreCase = true))
+                            val isYearActive = !isFavActive && !isWlActive && selectedTimeFilter.equals("This Year", ignoreCase = true)
+                            val isLatestActive = !isFavActive && !isWlActive && !is24hActive && !isHourActive && !isWeekActive && !isMonthActive && !isYearActive && (selectedCategory.contains("Latest", ignoreCase = true) || selectedCategory == "All")
 
                             val recencyLabel = when {
                                 isFavActive -> "⭐ Star"
                                 isWlActive -> "⏰ Later"
-                                is24hActive -> "24h"
                                 isHourActive -> "1h"
+                                is24hActive -> "24h"
                                 isWeekActive -> "Week"
                                 isMonthActive -> "Month"
+                                isYearActive -> "Year"
                                 selectedCategory.equals("All", ignoreCase = true) -> "All"
                                 !isLatestActive && selectedCategory.isNotBlank() -> selectedCategory
                                 else -> "Latest"
+                            }
+
+                            val selectTimeRangeFromMenu: (String) -> Unit = { timeOption ->
+                                showRecencyMenu = false
+                                dismissKeyboard()
+                                onTimeFilterSelected(timeOption)
+                                if (!selectedCategory.contains("Latest", ignoreCase = true) && !selectedCategory.equals("All", ignoreCase = true)) {
+                                    onCategorySelected("⚡ Latest")
+                                }
+                                if (selectedSubscribedChannel.isNotBlank()) {
+                                    onSubscribedChannelSelected("")
+                                }
                             }
 
                             Box {
@@ -460,7 +551,7 @@ fun HomeScreen(
                                         modifier = Modifier.padding(horizontal = 8.dp)
                                     ) {
                                         Icon(
-                                            imageVector = if (is24hActive || isHourActive || isWeekActive || isMonthActive) Icons.Filled.AccessTime else Icons.Filled.FlashOn,
+                                            imageVector = if (is24hActive || isHourActive || isWeekActive || isMonthActive || isYearActive) Icons.Filled.AccessTime else Icons.Filled.FlashOn,
                                             contentDescription = "Time Filter",
                                             tint = MaterialTheme.colorScheme.onSurface,
                                             modifier = Modifier.size(15.dp)
@@ -494,6 +585,7 @@ fun HomeScreen(
                                         onClick = {
                                             showRecencyMenu = false
                                             dismissKeyboard()
+                                            onTimeFilterSelected("Any Time")
                                             onCategorySelected("⚡ Latest")
                                             if (selectedSubscribedChannel.isNotBlank()) {
                                                 onSubscribedChannelSelected("")
@@ -501,54 +593,31 @@ fun HomeScreen(
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⏰ Last 24 Hours", fontWeight = if (is24hActive) FontWeight.Bold else FontWeight.Normal, color = if (is24hActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
-                                        onClick = {
-                                            showRecencyMenu = false
-                                            dismissKeyboard()
-                                            onCategorySelected("⏰ Last 24h")
-                                            if (selectedSubscribedChannel.isNotBlank()) {
-                                                onSubscribedChannelSelected("")
-                                            }
-                                        }
+                                        text = { Text("⏳ Last Hour", fontWeight = if (isHourActive) FontWeight.Bold else FontWeight.Normal, color = if (isHourActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = { selectTimeRangeFromMenu("Last Hour") }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⏳ Last Hour", fontWeight = if (isHourActive) FontWeight.Bold else FontWeight.Normal, color = if (isHourActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
-                                        onClick = {
-                                            showRecencyMenu = false
-                                            dismissKeyboard()
-                                            onCategorySelected("⏳ Last Hour")
-                                            if (selectedSubscribedChannel.isNotBlank()) {
-                                                onSubscribedChannelSelected("")
-                                            }
-                                        }
+                                        text = { Text("⏰ Today (Last 24h)", fontWeight = if (is24hActive) FontWeight.Bold else FontWeight.Normal, color = if (is24hActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = { selectTimeRangeFromMenu("Today") }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("📅 This Week", fontWeight = if (isWeekActive) FontWeight.Bold else FontWeight.Normal, color = if (isWeekActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
-                                        onClick = {
-                                            showRecencyMenu = false
-                                            dismissKeyboard()
-                                            onCategorySelected("📅 This Week")
-                                            if (selectedSubscribedChannel.isNotBlank()) {
-                                                onSubscribedChannelSelected("")
-                                            }
-                                        }
+                                        onClick = { selectTimeRangeFromMenu("This Week") }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("🗓️ This Month", fontWeight = if (isMonthActive) FontWeight.Bold else FontWeight.Normal, color = if (isMonthActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
-                                        onClick = {
-                                            showRecencyMenu = false
-                                            dismissKeyboard()
-                                            onCategorySelected("🗓️ This Month")
-                                            if (selectedSubscribedChannel.isNotBlank()) {
-                                                onSubscribedChannelSelected("")
-                                            }
-                                        }
+                                        onClick = { selectTimeRangeFromMenu("This Month") }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("⭐ All Feed Videos", fontWeight = if (selectedCategory == "All") FontWeight.Bold else FontWeight.Normal, color = if (selectedCategory == "All") YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        text = { Text("📆 This Year", fontWeight = if (isYearActive) FontWeight.Bold else FontWeight.Normal, color = if (isYearActive) YouTubeRed else MaterialTheme.colorScheme.onSurface) },
+                                        onClick = { selectTimeRangeFromMenu("This Year") }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("⭐ All Feed Videos", fontWeight = if (selectedCategory == "All" && selectedTimeFilter == "Any Time") FontWeight.Bold else FontWeight.Normal, color = if (selectedCategory == "All" && selectedTimeFilter == "Any Time") YouTubeRed else MaterialTheme.colorScheme.onSurface) },
                                         onClick = {
                                             showRecencyMenu = false
                                             dismissKeyboard()
+                                            onTimeFilterSelected("Any Time")
                                             onCategorySelected("All")
                                             if (selectedSubscribedChannel.isNotBlank()) {
                                                 onSubscribedChannelSelected("")
@@ -728,6 +797,18 @@ fun HomeScreen(
                             Icon(imageVector = Icons.Outlined.Search, contentDescription = "Search")
                         }
 
+                        // 1.3 Filters & Sort (YouTube Tune button)
+                        IconButton(
+                            onClick = { showFilterBar = !showFilterBar },
+                            modifier = Modifier.testTag("top_filter_toggle_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Tune,
+                                contentDescription = "Sort & Filters",
+                                tint = if (showFilterBar || hasActiveFilter) YouTubeRed else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
                         // 1.5 Voice Search 🎙️
                         IconButton(onClick = launchVoiceSearch) {
                             Icon(imageVector = Icons.Filled.Mic, contentDescription = "Voice Search", tint = MaterialTheme.colorScheme.onSurface)
@@ -850,10 +931,15 @@ fun HomeScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("🔀 ${strings.sortFeed} (${selectedSort})") },
+                                    text = {
+                                        Text(
+                                            text = "🎛️ Sort & Filters ($activeSortDisplayLabel)",
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    },
                                     onClick = {
                                         showProfileMenu = false
-                                        showSortSubMenu = true
+                                        showFilterBar = true
                                     }
                                 )
                                 DropdownMenuItem(
@@ -863,32 +949,6 @@ fun HomeScreen(
                                         onOpenManageTopicsAndCreators(0)
                                     }
                                 )
-                            }
-
-                            DropdownMenu(
-                                expanded = showSortSubMenu,
-                                onDismissRequest = { showSortSubMenu = false }
-                            ) {
-                                sortCycle.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = when (option) {
-                                                    "Newest" -> "Newest First 🕒"
-                                                    "Oldest" -> "Oldest First ⌛"
-                                                    else -> "Default (Recommended) ⭐"
-                                                },
-                                                fontWeight = if (selectedSort == option) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (selectedSort == option) YouTubeRed else MaterialTheme.colorScheme.onSurface,
-                                                fontSize = 13.sp
-                                            )
-                                        },
-                                        onClick = {
-                                            selectedSort = option
-                                            showSortSubMenu = false
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
@@ -968,145 +1028,326 @@ fun HomeScreen(
                 }
             }
 
-            if (searchQuery.isNotEmpty()) {
-                // Search Sort Bar & Upload Date Filter Bar
-                val searchSortOptions = listOf(
+            AnimatedVisibility(visible = isSortFiltersPanelVisible) {
+                // Exact primary sort tab order:
+                // 1st: Latest (default), 2nd: Most Viewed, then Length (Longest, Shortest), then other settings
+                val unifiedSortOptions = listOf(
                     "🕒 Latest" to "Latest",
-                    "⏳ Oldest" to "Oldest",
-                    "🔥 Most Popular" to "Most Popular",
-                    "⭐ Relevance" to "Relevance",
-                    "📈 Top Rated" to "Top Rated",
+                    "🔥 Most Viewed" to "Most Viewed",
                     "🎬 Longest" to "Longest",
-                    "⚡ Shortest" to "Shortest"
+                    "⚡ Shortest" to "Shortest",
+                    "⏳ Oldest" to "Oldest",
+                    "📈 Top Rated" to "Top Rated",
+                    "⭐ Recommended" to "Relevance"
                 )
-                var showAllSortMenu by remember { mutableStateOf(false) }
 
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    // Row 1: Search Sort Mode Selector
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF121215),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .testTag("unified_sort_filters_panel")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
                     ) {
-                        Text(
-                            text = "Sort Results:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Box {
-                            Text(
-                                text = "All Options: $searchSortOption ▾",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = YouTubeRed,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier
-                                    .clickable { showAllSortMenu = true }
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                            DropdownMenu(
-                                expanded = showAllSortMenu,
-                                onDismissRequest = { showAllSortMenu = false }
+                        // Unified Header Row: Sort & Filters + active count badge + single Reset + Done
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                searchSortOptions.forEach { (label, rawOpt) ->
-                                    val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = label,
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (isSelected) YouTubeRed else MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        onClick = {
-                                            onSearchSortOptionSelected(rawOpt)
-                                            showAllSortMenu = false
-                                            dismissKeyboard()
-                                        }
-                                    )
+                                Icon(
+                                    imageVector = Icons.Filled.Tune,
+                                    contentDescription = null,
+                                    tint = YouTubeRed,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Text(
+                                    text = "Sort & Filters",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFF4F4F5)
+                                )
+                                if (hasActiveFilter) {
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = YouTubeRed.copy(alpha = 0.18f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, YouTubeRed.copy(alpha = 0.45f))
+                                    ) {
+                                        Text(
+                                            text = "$activeFilterCount active",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = YouTubeRed,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    }
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        items(searchSortOptions) { (opt, rawOpt) ->
-                            val isSelected = searchSortOption.equals(rawOpt, ignoreCase = true)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { 
-                                    onSearchSortOptionSelected(rawOpt)
-                                    dismissKeyboard()
-                                },
-                                label = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                if (hasActiveFilter) {
                                     Text(
-                                        text = opt,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        fontSize = 12.sp
+                                        text = "Reset",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = YouTubeRed,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .clickable { resetAllSortAndFilters() }
+                                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                                            .testTag("reset_sort_filters_btn")
                                     )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = YouTubeRed,
-                                    selectedLabelColor = Color.White,
-                                    containerColor = Color(0xFF1E1E1E),
-                                    labelColor = Color(0xFFCCCCCC)
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
-                                    selected = isSelected,
-                                    borderColor = Color(0xFF333333),
-                                    selectedBorderColor = YouTubeRed,
-                                    borderWidth = 1.dp,
-                                    selectedBorderWidth = 1.5.dp
-                                ),
-                                modifier = Modifier.testTag("search_sort_chip_$rawOpt")
-                            )
+                                }
+                                Text(
+                                    text = "Done",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color(0xFFD4D4D8),
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            if (searchQuery.isNotEmpty()) {
+                                                isFilterPanelCollapsedInSearch = true
+                                            } else {
+                                                showFilterBar = false
+                                            }
+                                            dismissKeyboard()
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                    // Row 2: Upload Date / Time Selector Bar for Search Results
-                    Text(
-                        text = "Filter Upload Date:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-                    )
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        items(timeFilterOptions) { filter ->
-                            val isSelected = filter.equals(selectedTimeFilter, ignoreCase = true)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { 
-                                    onTimeFilterSelected(filter)
-                                    dismissKeyboard()
-                                },
-                                label = { Text(filter, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, fontSize = 12.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Color(0xFF2A2A2A),
-                                    selectedLabelColor = Color.White,
-                                    containerColor = Color(0xFF141414),
-                                    labelColor = Color(0xFFCCCCCC)
-                                ),
-                                border = FilterChipDefaults.filterChipBorder(
-                                    enabled = true,
+                        // Row 1: Primary Sort Tabs (1st: Latest, 2nd: Most Viewed, then Longest/Shortest & other settings)
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(unifiedSortOptions) { (label, sortKey) ->
+                                val isSelected = normalizedSort == sortKey
+                                FilterChip(
                                     selected = isSelected,
-                                    borderColor = Color(0xFF333333),
-                                    selectedBorderColor = Color.White,
-                                    borderWidth = 1.dp,
-                                    selectedBorderWidth = 1.5.dp
-                                ),
-                                modifier = Modifier.testTag("time_filter_chip_$filter")
-                            )
+                                    onClick = {
+                                        applySortOption(sortKey)
+                                        dismissKeyboard()
+                                    },
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = YouTubeRed,
+                                        selectedLabelColor = Color.White,
+                                        containerColor = Color(0xFF1C1C20),
+                                        labelColor = Color(0xFFD4D4D8)
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = Color(0xFF2E2E34),
+                                        selectedBorderColor = YouTubeRed,
+                                        borderWidth = 1.dp,
+                                        selectedBorderWidth = 1.5.dp
+                                    ),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .testTag("search_sort_chip_$sortKey")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.06f), modifier = Modifier.padding(horizontal = 12.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Row 2: Length Filter Chips (Any Length, < 4 min, 4–20 min, > 20 min)
+                        Text(
+                            text = "Length:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFA1A1AA),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(lengthFilterOptions) { (label, durKey) ->
+                                val isSelected = if (durKey == "Any Duration") {
+                                    isDefaultDuration
+                                } else {
+                                    selectedDurationFilter.equals(durKey, ignoreCase = true) ||
+                                        selectedDurationFilter.equals(label, ignoreCase = true)
+                                }
+                                val isActiveNonDefault = isSelected && durKey != "Any Duration"
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onDurationFilterSelected(durKey)
+                                        dismissKeyboard()
+                                    },
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = if (isActiveNonDefault) YouTubeRed.copy(alpha = 0.22f) else Color(0xFF27272A),
+                                        selectedLabelColor = Color.White,
+                                        containerColor = Color(0xFF18181B),
+                                        labelColor = Color(0xFFA1A1AA)
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = Color(0xFF27272A),
+                                        selectedBorderColor = if (isActiveNonDefault) YouTubeRed else Color(0xFF71717A),
+                                        borderWidth = 1.dp,
+                                        selectedBorderWidth = 1.5.dp
+                                    ),
+                                    modifier = Modifier
+                                        .height(32.dp)
+                                        .testTag("duration_filter_chip_$durKey")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Row 3: Upload Date Filter Chips
+                        Text(
+                            text = "Upload Date:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFA1A1AA),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(timeFilterOptions) { filter ->
+                                val isSelected = filter.equals(selectedTimeFilter, ignoreCase = true)
+                                val isActiveNonDefault = isSelected && !filter.equals("Any Time", ignoreCase = true)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onTimeFilterSelected(filter)
+                                        if (selectedCategory.contains("24h", ignoreCase = true) ||
+                                            selectedCategory.contains("hour", ignoreCase = true) ||
+                                            selectedCategory.contains("week", ignoreCase = true) ||
+                                            selectedCategory.contains("month", ignoreCase = true)
+                                        ) {
+                                            onCategorySelected("⚡ Latest")
+                                        }
+                                        dismissKeyboard()
+                                    },
+                                    label = {
+                                        Text(
+                                            text = filter,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = if (isActiveNonDefault) YouTubeRed.copy(alpha = 0.22f) else Color(0xFF27272A),
+                                        selectedLabelColor = Color.White,
+                                        containerColor = Color(0xFF18181B),
+                                        labelColor = Color(0xFFA1A1AA)
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = Color(0xFF27272A),
+                                        selectedBorderColor = if (isActiveNonDefault) YouTubeRed else Color(0xFF71717A),
+                                        borderWidth = 1.dp,
+                                        selectedBorderWidth = 1.5.dp
+                                    ),
+                                    modifier = Modifier
+                                        .height(32.dp)
+                                        .testTag("time_filter_chip_$filter")
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Row 4: Type Filter Chips (All, Videos, Shorts, Live)
+                        Text(
+                            text = "Type:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFA1A1AA),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            items(typeFilterOptions) { (label, typKey) ->
+                                val isSelected = typKey.equals(selectedTypeFilter, ignoreCase = true)
+                                val isActiveNonDefault = isSelected && !typKey.equals("All", ignoreCase = true)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onTypeFilterSelected(typKey)
+                                        dismissKeyboard()
+                                    },
+                                    label = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = if (isActiveNonDefault) YouTubeRed.copy(alpha = 0.22f) else Color(0xFF27272A),
+                                        selectedLabelColor = Color.White,
+                                        containerColor = Color(0xFF18181B),
+                                        labelColor = Color(0xFFA1A1AA)
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        enabled = true,
+                                        selected = isSelected,
+                                        borderColor = Color(0xFF27272A),
+                                        selectedBorderColor = if (isActiveNonDefault) YouTubeRed else Color(0xFF71717A),
+                                        borderWidth = 1.dp,
+                                        selectedBorderWidth = 1.5.dp
+                                    ),
+                                    modifier = Modifier
+                                        .height(32.dp)
+                                        .testTag("type_filter_chip_$typKey")
+                                )
+                            }
                         }
                     }
                 }
@@ -1137,14 +1378,16 @@ fun HomeScreen(
                 initialValue = candidateList,
                 candidateList,
                 liveSearchResults,
+                shortsQueue,
                 selectedSubscribedChannel,
                 subscribedChannelsList,
                 searchQuery,
                 extractedVideoId,
                 selectedCategory,
                 selectedTimeFilter,
-                searchSortOption,
-                selectedSort,
+                selectedDurationFilter,
+                selectedTypeFilter,
+                normalizedSort,
                 watchedIds,
                 dislikedVideoIds,
                 mutedChannelNames,
@@ -1153,13 +1396,18 @@ fun HomeScreen(
                 algorithmSettings
             ) {
                 value = withContext(Dispatchers.Default) {
+                val baseCandidates = if (selectedTypeFilter == "Shorts" && searchQuery.isBlank() && selectedSubscribedChannel.isBlank()) {
+                    (candidateList + shortsQueue).distinctBy { it.youtubeId }
+                } else {
+                    candidateList
+                }
                 val rawDisplayList = if (searchQuery.isNotBlank() && extractedVideoId == null) {
                     val searchList = if (liveSearchResults.isNotEmpty()) {
                         liveSearchResults
                     } else {
-                        candidateList.filter { 
-                            it.title.contains(searchQuery, ignoreCase = true) || 
-                            it.channelName.contains(searchQuery, ignoreCase = true) 
+                        baseCandidates.filter {
+                            it.title.contains(searchQuery, ignoreCase = true) ||
+                            it.channelName.contains(searchQuery, ignoreCase = true)
                         }
                     }
                     val historyMap = historyVideos.associateBy { it.youtubeId }
@@ -1178,14 +1426,14 @@ fun HomeScreen(
                         .distinctBy { it.youtubeId }
                 } else if (selectedSubscribedChannel.isNotBlank()) {
                     val targetCh = selectedSubscribedChannel.lowercase().trim()
-                    candidateList.filter { video ->
+                    baseCandidates.filter { video ->
                         val vCh = video.channelName.lowercase().trim()
                         (vCh.contains(targetCh) || targetCh.contains(vCh) || vCh.replace(" ", "") == targetCh.replace(" ", "") ||
                         (vCh.contains("youtube") && video.title.lowercase().contains(targetCh))) && !isVideoHidden(video)
                     }.distinctBy { it.youtubeId }
                 } else if (selectedCategory == "🔔 Subscriptions") {
                     val subSet = subscribedChannelsList.map { it.lowercase().trim() }.filter { it.isNotBlank() }
-                    candidateList.filter { video ->
+                    baseCandidates.filter { video ->
                         val vCh = video.channelName.lowercase().trim()
                         val vTitle = video.title.lowercase().trim()
                         (subSet.any { sub -> vCh.contains(sub) || sub.contains(vCh) || vCh.replace(" ", "") == sub.replace(" ", "") } ||
@@ -1193,13 +1441,13 @@ fun HomeScreen(
                         !isVideoHidden(video)
                     }.distinctBy { it.youtubeId }
                 } else if (selectedCategory.contains("Favorite", ignoreCase = true) || selectedCategory.contains("Star", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     allCandidate.filter { it.isFavorite && !isVideoHidden(it) }
                 } else if (selectedCategory.contains("Watch Later", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     allCandidate.filter { it.isWatchLater && !isVideoHidden(it) }
                 } else if (selectedCategory.contains("24h", ignoreCase = true) || selectedCategory.contains("24 hours", ignoreCase = true) || selectedCategory.contains("Last 24", ignoreCase = true) || selectedCategory.equals("Today", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     val within24h = allCandidate
                         .filter {
                             val timeLower = it.publishedTimeText.lowercase()
@@ -1207,58 +1455,40 @@ fun HomeScreen(
                             (sec <= 86400L || timeLower.contains("min") || timeLower.contains("hour") || timeLower.contains("today") || timeLower.contains("1 day") || timeLower.contains("just now")) &&
                             !isVideoHidden(it)
                         }
-                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
-
-                    if (within24h.isNotEmpty()) {
-                        within24h
-                    } else {
-                        allCandidate
-                            .filter { !isVideoHidden(it) }
-                            .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
-                            .take(25)
-                    }
+                    if (within24h.isNotEmpty()) within24h else allCandidate.filter { !isVideoHidden(it) }.take(25)
                 } else if (selectedCategory.contains("hour", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     val withinHour = allCandidate
                         .filter {
                             val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
                             (sec <= 3600L || it.publishedTimeText.lowercase().contains("min") || it.publishedTimeText.lowercase().contains("just now")) && !isVideoHidden(it)
                         }
-                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
                     if (withinHour.isNotEmpty()) withinHour else allCandidate.filter { !isVideoHidden(it) }.take(25)
                 } else if (selectedCategory.contains("week", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     val withinWeek = allCandidate
                         .filter {
                             val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
                             sec <= 604800L && !isVideoHidden(it)
                         }
-                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
                     if (withinWeek.isNotEmpty()) withinWeek else allCandidate.take(25)
                 } else if (selectedCategory.contains("month", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
                     val withinMonth = allCandidate
                         .filter {
                             val sec = com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText)
                             sec <= 2592000L && !isVideoHidden(it)
                         }
-                        .sortedWith(compareBy { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) })
                         .distinctBy { it.youtubeId }
                     if (withinMonth.isNotEmpty()) withinMonth else allCandidate.take(25)
-                } else if (selectedCategory.contains("Latest", ignoreCase = true)) {
-                    val allCandidate = (categoryVideos + videos).distinctBy { it.youtubeId }
-                    allCandidate
-                        .filter { !isVideoHidden(it) }
-                        .sortedWith(
-                            compareBy<VideoEntity> { com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                                .thenByDescending { it.addedTimestamp }
-                        )
-                        .distinctBy { it.youtubeId }
-                } else if (selectedCategory != "All") {
-                    val primaryMatches = candidateList
+                } else if (selectedCategory.contains("Latest", ignoreCase = true) || selectedCategory == "All") {
+                    val allCandidate = (baseCandidates + videos).distinctBy { it.youtubeId }
+                    allCandidate.filter { !isVideoHidden(it) }
+                } else {
+                    val primaryMatches = baseCandidates
                         .filter { (it.category.equals(selectedCategory, ignoreCase = true) ||
                                    it.title.contains(selectedCategory, ignoreCase = true) ||
                                    it.channelName.contains(selectedCategory, ignoreCase = true)) && !isVideoHidden(it) }
@@ -1270,14 +1500,9 @@ fun HomeScreen(
                     } else {
                         emptyList()
                     }
-                } else {
-                    // Main Home Feed: strictly filter out any video that has been watched, disliked, or muted!
-                    candidateList
-                        .filter { !isVideoHidden(it) }
-                        .distinctBy { it.youtubeId }
                 }
 
-                // Apply Upload Date Time Selector Filter to Feed and Search Results
+                // 1. Upload Date Filter
                 val timeFilteredList = if (selectedTimeFilter != "Any Time") {
                     val maxSeconds = when (selectedTimeFilter.lowercase().trim()) {
                         "last hour", "1 hour" -> 3600L
@@ -1296,88 +1521,91 @@ fun HomeScreen(
                     rawDisplayList
                 }
 
-                val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
-                    videos = timeFilteredList,
-                    favorites = videos.filter { it.isFavorite },
-                    watchHistory = historyVideos,
-                    mutedChannels = mutedChannels,
-                    dislikedVideoIds = dislikedVideoIds,
-                    settings = algorithmSettings
-                )
+                // 2. Length (Duration) Filter
+                val durationFilteredList = when {
+                    selectedDurationFilter.equals("Under 4 min", ignoreCase = true) ||
+                    selectedDurationFilter.equals("< 4 min", ignoreCase = true) -> timeFilteredList.filter {
+                        val sec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                        sec in 1..239
+                    }
+                    selectedDurationFilter.equals("4 - 20 min", ignoreCase = true) ||
+                    selectedDurationFilter.equals("4–20 min", ignoreCase = true) -> timeFilteredList.filter {
+                        val sec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                        sec in 240..1200
+                    }
+                    selectedDurationFilter.equals("Over 20 min", ignoreCase = true) ||
+                    selectedDurationFilter.equals("> 20 min", ignoreCase = true) -> timeFilteredList.filter {
+                        val sec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                        sec > 1200
+                    }
+                    else -> timeFilteredList
+                }
 
-                if (searchQuery.isNotBlank()) {
-                    val pubSecMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                    val viewCountMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
-                    val durationMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
-                    when (searchSortOption) {
-                        "Most Popular" -> timeFilteredList.sortedWith(
+                // 3. Content Type Filter (All / Videos / Shorts / Live)
+                val typeFilteredList = when (selectedTypeFilter) {
+                    "Shorts" -> durationFilteredList.filter {
+                        val sec = com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText)
+                        com.example.util.YouTubeUtils.isShortVideo(it) || sec in 1..60
+                    }
+                    "Videos" -> durationFilteredList.filter {
+                        !com.example.util.YouTubeUtils.isShortVideo(it) &&
+                        !it.publishedTimeText.contains("live", ignoreCase = true) &&
+                        !it.viewCountText.contains("watching", ignoreCase = true)
+                    }
+                    "Live" -> durationFilteredList.filter {
+                        (it.publishedTimeText.contains("live", ignoreCase = true) && !it.publishedTimeText.contains("streamed", ignoreCase = true)) ||
+                        it.viewCountText.contains("watching", ignoreCase = true) ||
+                        it.durationText.equals("LIVE", ignoreCase = true)
+                    }
+                    else -> durationFilteredList
+                }
+
+                fun applyVideoSort(source: List<VideoEntity>, sortMode: String): List<VideoEntity> {
+                    val canonicalSort = com.example.data.remote.YouTubeLiveSearchService.normalizeSortOption(sortMode)
+                    if (canonicalSort == "Relevance") return source
+                    val pubSecMap = source.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
+                    val viewCountMap = source.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
+                    val durationMap = source.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
+                    return when (canonicalSort) {
+                        "Most Viewed", "Top Rated" -> source.sortedWith(
                             compareByDescending<VideoEntity> { viewCountMap[it.youtubeId] ?: 0L }
                                 .thenBy { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                         )
-                        "Oldest" -> timeFilteredList.sortedWith(
+                        "Oldest" -> source.sortedWith(
                             compareByDescending<VideoEntity> { pubSecMap[it.youtubeId] ?: 0L }
                                 .thenBy { it.addedTimestamp }
                         )
-                        "Longest" -> timeFilteredList.sortedWith(
+                        "Longest" -> source.sortedWith(
                             compareByDescending<VideoEntity> { durationMap[it.youtubeId] ?: 0 }
                                 .thenByDescending { viewCountMap[it.youtubeId] ?: 0L }
                         )
-                        "Shortest" -> timeFilteredList.sortedWith(
+                        "Shortest" -> source.sortedWith(
                             compareBy<VideoEntity> {
                                 val sec = durationMap[it.youtubeId] ?: 0
                                 if (sec > 0) sec else Int.MAX_VALUE
                             }.thenBy { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                         )
-                        "Relevance", "Top Rated" -> timeFilteredList
-                        else -> timeFilteredList.sortedWith( // "Latest" (Default)
+                        else -> source.sortedWith( // "Latest"
                             compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
                                 .thenByDescending { it.addedTimestamp }
                         )
                     }
+                }
+
+                if (searchQuery.isNotBlank()) {
+                    applyVideoSort(typeFilteredList, normalizedSort)
                 } else if (selectedSubscribedChannel.isNotBlank()) {
-                    val pubSecMap = timeFilteredList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                    timeFilteredList.sortedWith(
-                        compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
-                            .thenByDescending { it.addedTimestamp }
+                    applyVideoSort(typeFilteredList, normalizedSort)
+                } else {
+                    val rankedDisplayList = com.example.data.repository.RecommendationEngine.scoreAndRankVideos(
+                        videos = typeFilteredList,
+                        favorites = videos.filter { it.isFavorite },
+                        watchHistory = historyVideos,
+                        mutedChannels = mutedChannels,
+                        dislikedVideoIds = dislikedVideoIds,
+                        settings = algorithmSettings
                     )
-                } else when (selectedSort) {
-                    "Oldest" -> {
-                        val pubSecMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                        rankedDisplayList.sortedWith(
-                            compareByDescending<VideoEntity> { pubSecMap[it.youtubeId] ?: 0L }
-                                .thenBy { it.addedTimestamp }
-                        )
-                    }
-                    "Most Popular" -> {
-                        val viewCountMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseViewCount(it.viewCountText) }
-                        rankedDisplayList.sortedWith(
-                            compareByDescending<VideoEntity> { viewCountMap[it.youtubeId] ?: 0L }
-                                .thenByDescending { it.addedTimestamp }
-                        )
-                    }
-                    "Longest" -> {
-                        val durationMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
-                        rankedDisplayList.sortedWith(
-                            compareByDescending<VideoEntity> { durationMap[it.youtubeId] ?: 0 }
-                        )
-                    }
-                    "Shortest" -> {
-                        val durationMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parseFormattedTimeToSeconds(it.durationText) }
-                        rankedDisplayList.sortedWith(
-                            compareBy<VideoEntity> {
-                                val sec = durationMap[it.youtubeId] ?: 0
-                                if (sec > 0) sec else Int.MAX_VALUE
-                            }
-                        )
-                    }
-                    "Default" -> rankedDisplayList
-                    else -> {
-                        val pubSecMap = rankedDisplayList.associate { it.youtubeId to com.example.util.YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
-                        rankedDisplayList.sortedWith(
-                            compareBy<VideoEntity> { pubSecMap[it.youtubeId] ?: Long.MAX_VALUE }
-                                .thenByDescending { it.addedTimestamp }
-                        )
-                    }
+                    applyVideoSort(rankedDisplayList, normalizedSort)
                 }
             }
             }
@@ -1420,27 +1648,44 @@ fun HomeScreen(
                             modifier = Modifier.size(72.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
+                        val isFilteredEmpty = hasActiveFilter && searchQuery.isEmpty() && candidateList.isNotEmpty()
                         Text(
-                            text = if (searchQuery.isNotEmpty()) "Searching YouTube for '$searchQuery'..." else if (selectedSubscribedChannel.isNotBlank()) "Fetching latest videos for '$selectedSubscribedChannel'..." else "Loading $selectedCategory videos...",
+                            text = when {
+                                isFilteredEmpty -> "No videos match your current Sort & Filters"
+                                searchQuery.isNotEmpty() -> "Searching YouTube for '$searchQuery'..."
+                                selectedSubscribedChannel.isNotBlank() -> "Fetching latest videos for '$selectedSubscribedChannel'..."
+                                else -> "Loading $selectedCategory videos..."
+                            },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Discover endless videos by scrolling or searching any topic!",
+                            text = if (isFilteredEmpty) "Try adjusting Length, Upload Date, or Type filters, or reset to see all videos." else "Discover endless videos by scrolling or searching any topic!",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 24.dp)
                         )
                         Spacer(modifier = Modifier.height(20.dp))
-                        Button(
-                            onClick = onOpenAddVideoDialog,
-                            colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
-                        ) {
-                            Icon(imageVector = Icons.Filled.Add, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (searchQuery.isNotEmpty()) "Add '$searchQuery' as Custom Video" else "Add Video")
+                        if (isFilteredEmpty) {
+                            Button(
+                                onClick = { resetAllSortAndFilters() },
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                            ) {
+                                Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Reset Sort & Filters")
+                            }
+                        } else {
+                            Button(
+                                onClick = onOpenAddVideoDialog,
+                                colors = ButtonDefaults.buttonColors(containerColor = YouTubeRed)
+                            ) {
+                                Icon(imageVector = Icons.Filled.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (searchQuery.isNotEmpty()) "Add '$searchQuery' as Custom Video" else "Add Video")
+                            }
                         }
                     }
                 }
@@ -1452,9 +1697,19 @@ fun HomeScreen(
                     }
                 }
 
-                val shortsList = remember(displayList, shortsQueue, algorithmSettings.shortsMode) {
-                    if (algorithmSettings.shortsMode == "Hidden") {
+                val shortsList = remember(displayList, shortsQueue, algorithmSettings.shortsMode, selectedTypeFilter, hasActiveFilter) {
+                    if (algorithmSettings.shortsMode == "Hidden" ||
+                        selectedTypeFilter == "Videos" ||
+                        selectedTypeFilter == "Live" ||
+                        selectedTypeFilter == "Shorts"
+                    ) {
                         emptyList()
+                    } else if (hasActiveFilter) {
+                        displayList.filter {
+                            com.example.util.YouTubeUtils.isShortVideo(it) &&
+                            !isVideoHidden(it) &&
+                            !com.example.util.YouTubeUtils.isForeignLanguageContent(it.title, it.channelName)
+                        }
                     } else {
                         val fromQueue = shortsQueue.filter {
                             !isVideoHidden(it) &&
@@ -1471,12 +1726,17 @@ fun HomeScreen(
                         }
                     }
                 }
-                val mainVideosList = remember(displayList) {
-                    displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
+                val mainVideosList = remember(displayList, selectedTypeFilter) {
+                    if (selectedTypeFilter == "Shorts") {
+                        displayList
+                    } else {
+                        displayList.filter { !com.example.util.YouTubeUtils.isShortVideo(it) }
+                    }
                 }
                 val recommendationReasons by produceState(
                     initialValue = emptyMap<String, String>(),
                     mainVideosList,
+                    videos,
                     historyVideos
                 ) {
                     value = withContext(Dispatchers.Default) {

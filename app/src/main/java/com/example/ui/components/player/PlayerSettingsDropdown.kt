@@ -38,7 +38,9 @@ fun PlayerSettingsDropdown(
     onToggleDebugConsole: () -> Unit,
     onSwitchStreamUrl: (targetUrl: String, quality: String) -> Unit,
     coroutineScope: CoroutineScope,
-    onInteraction: () -> Unit = {}
+    onInteraction: () -> Unit = {},
+    useWebPlayerFallback: Boolean = false,
+    onRetryNativeStream: () -> Unit = {}
 ) {
     var showSpeedSubMenu by remember(expanded) { mutableStateOf(false) }
     var showQualitySubMenu by remember(expanded) { mutableStateOf(false) }
@@ -53,8 +55,9 @@ fun PlayerSettingsDropdown(
         }
     ) {
         if (!showSpeedSubMenu && !showQualitySubMenu) {
+            val qualityDisplay = if (useWebPlayerFallback && selectedQuality == "Auto") "Auto (Adaptive)" else selectedQuality
             DropdownMenuItem(
-                text = { Text("Quality: $selectedQuality", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                text = { Text("Quality: $qualityDisplay", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
                 leadingIcon = { Icon(Icons.Filled.HighQuality, contentDescription = null, tint = YouTubeRed) },
                 onClick = {
                     onInteraction()
@@ -69,6 +72,17 @@ fun PlayerSettingsDropdown(
                     showSpeedSubMenu = true
                 }
             )
+            if (useWebPlayerFallback) {
+                DropdownMenuItem(
+                    text = { Text("Retry Native Stream Engine", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) },
+                    leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, tint = YouTubeRed) },
+                    onClick = {
+                        onInteraction()
+                        onDismissRequest()
+                        onRetryNativeStream()
+                    }
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Pop-Out Floating Player (PiP)", fontSize = 13.sp) },
                 leadingIcon = { Icon(Icons.Filled.PictureInPictureAlt, contentDescription = null, tint = YouTubeRed) },
@@ -132,6 +146,32 @@ fun PlayerSettingsDropdown(
                     showQualitySubMenu = false
                 }
             )
+            if (useWebPlayerFallback && availableQualities.isEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "✓ Auto (Adaptive)",
+                            fontWeight = FontWeight.Bold,
+                            color = YouTubeRed,
+                            fontSize = 13.sp
+                        )
+                    },
+                    onClick = {
+                        onInteraction()
+                        showQualitySubMenu = false
+                        onDismissRequest()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("🔄 Retry Native Stream Engine", fontSize = 13.sp) },
+                    onClick = {
+                        onInteraction()
+                        showQualitySubMenu = false
+                        onDismissRequest()
+                        onRetryNativeStream()
+                    }
+                )
+            }
             availableQualities.forEach { q ->
                 val isCurrent = q.equals(selectedQuality, ignoreCase = true)
                 val label = when (q) {
@@ -223,7 +263,6 @@ fun PlayerSettingsDropdown(
                         onSpeedSelected(s)
                         showSpeedSubMenu = false
                         onDismissRequest()
-                        exoPlayer.playbackParameters = PlaybackParameters(s)
                     }
                 )
             }

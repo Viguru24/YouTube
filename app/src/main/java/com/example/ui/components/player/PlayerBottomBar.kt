@@ -80,6 +80,8 @@ fun PlayerBottomBar(
     showSettingsMenu: Boolean = false,
     onSettingsMenuChange: (Boolean) -> Unit = {},
     onInteraction: () -> Unit = {},
+    useWebPlayerFallback: Boolean = false,
+    onRetryNativeStream: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
 
@@ -89,7 +91,7 @@ fun PlayerBottomBar(
         exit = fadeOut(animationSpec = tween(300)),
         modifier = modifier
     ) {
-        val isLiveStream = exoPlayer.isCurrentMediaItemLive
+        val isLiveStream = !useWebPlayerFallback && exoPlayer.isCurrentMediaItemLive
 
         Column(
             modifier = Modifier
@@ -267,7 +269,6 @@ fun PlayerBottomBar(
                                         val prev = speeds.lastOrNull { it < (selectedSpeed - 0.01f) } ?: selectedSpeed
                                         if (prev != selectedSpeed) {
                                             onSpeedChange(prev)
-                                            exoPlayer.playbackParameters = PlaybackParameters(prev)
                                             onSpeedFeedback("🐢 ${prev}x Speed")
                                             coroutineScope.launch {
                                                 delay(750)
@@ -293,7 +294,6 @@ fun PlayerBottomBar(
                                         onInteraction()
                                         if (selectedSpeed != 1.0f) {
                                             onSpeedChange(1.0f)
-                                            exoPlayer.playbackParameters = PlaybackParameters(1.0f)
                                             onSpeedFeedback("⚡ 1.0x Speed (Normal)")
                                             coroutineScope.launch {
                                                 delay(750)
@@ -314,7 +314,6 @@ fun PlayerBottomBar(
                                         val next = speeds.firstOrNull { it > (selectedSpeed + 0.01f) } ?: selectedSpeed
                                         if (next != selectedSpeed) {
                                             onSpeedChange(next)
-                                            exoPlayer.playbackParameters = PlaybackParameters(next)
                                             onSpeedFeedback("⚡ ${next}x Speed")
                                             coroutineScope.launch {
                                                 delay(750)
@@ -506,7 +505,9 @@ fun PlayerBottomBar(
                             onToggleDebugConsole = onToggleDebugConsole,
                             onSwitchStreamUrl = onSwitchStreamUrl,
                             coroutineScope = coroutineScope,
-                            onInteraction = onInteraction
+                            onInteraction = onInteraction,
+                            useWebPlayerFallback = useWebPlayerFallback,
+                            onRetryNativeStream = onRetryNativeStream
                         )
                     }
 

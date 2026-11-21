@@ -508,6 +508,28 @@ object YouTubeLiveSearchService {
     }
 
     /**
+     * Normalizes sort option aliases into a single canonical set:
+     * "Latest" (default), "Most Viewed", "Longest", "Shortest", "Oldest", "Top Rated", "Relevance".
+     * Backwards-compatible with legacy names ("Newest", "Most Popular", "View Count", "Default", "Recommended").
+     */
+    fun normalizeSortOption(sortOption: String, sortByUploadDate: Boolean = true): String = when {
+        sortOption.equals("Most Viewed", ignoreCase = true) ||
+        sortOption.equals("Most Popular", ignoreCase = true) ||
+        sortOption.equals("View Count", ignoreCase = true) -> "Most Viewed"
+        sortOption.equals("Longest", ignoreCase = true) -> "Longest"
+        sortOption.equals("Shortest", ignoreCase = true) -> "Shortest"
+        sortOption.equals("Oldest", ignoreCase = true) -> "Oldest"
+        sortOption.equals("Top Rated", ignoreCase = true) -> "Top Rated"
+        sortOption.equals("Relevance", ignoreCase = true) ||
+        sortOption.equals("Default", ignoreCase = true) ||
+        sortOption.equals("Recommended", ignoreCase = true) -> "Relevance"
+        sortOption.equals("Latest", ignoreCase = true) ||
+        sortOption.equals("Newest", ignoreCase = true) -> "Latest"
+        !sortByUploadDate && sortOption.isBlank() -> "Relevance"
+        else -> "Latest" // Default is strictly "Latest"
+    }
+
+    /**
      * Searches YouTube for any query using parallel standard relevance search, date-filtered search,
      * upload-date filters (Today/Last Hour), creator channel inspection, and InnerTube continuations.
      * Guaranteed to bring in the latest videos under a day.
@@ -517,31 +539,48 @@ object YouTubeLiveSearchService {
         sortByUploadDate: Boolean = true,
         forceRefresh: Boolean = false,
         sortOption: String = "Latest",
-        timeFilter: String = "Any Time"
+        timeFilter: String = "Any Time",
+        durationFilter: String = "Any Duration",
+        typeFilter: String = "All"
     ): List<VideoEntity> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
-        val effectiveSort = when {
-            sortOption.equals("Most Popular", ignoreCase = true) -> "Most Popular"
-            sortOption.equals("Relevance", ignoreCase = true) -> "Relevance"
-            !sortByUploadDate && sortOption.isBlank() -> "Relevance"
-            else -> "Latest" // Default is strictly "Latest"
-        }
+        val effectiveSort = normalizeSortOption(sortOption, sortByUploadDate)
 
-        val cacheKey = "search:$trimmed:$effectiveSort:$timeFilter"
+        val cacheKey = "search:$trimmed:$effectiveSort:$timeFilter:$durationFilter:$typeFilter"
         if (!forceRefresh) {
             getCached(cacheKey)?.let { return@withContext it }
         }
 
         val results = java.util.Collections.synchronizedList(mutableListOf<VideoEntity>())
 
-        val isTodayRequested = timeFilter.contains("24h", ignoreCase = true) || 
-                              timeFilter.contains("today", ignoreCase = true) || 
+        val isTodayRequested = timeFilter.contains("24h", ignoreCase = true) ||
+                              timeFilter.contains("today", ignoreCase = true) ||
                               timeFilter.contains("last 24", ignoreCase = true)
         val isHourRequested = timeFilter.contains("hour", ignoreCase = true)
         val isWeekRequested = timeFilter.contains("week", ignoreCase = true)
         val isMonthRequested = timeFilter.contains("month", ignoreCase = true)
+        val isYearRequested = timeFilter.contains("year", ignoreCase = true)
+
+        val durationSpParam = when {
+            durationFilter.contains("Under 4", ignoreCase = true) ||
+            durationFilter.contains("< 4", ignoreCase = true) ||
+            durationFilter.contains("Short", ignoreCase = true) -> "&sp=EgIYAQ%253D%253D"
+            durationFilter.contains("4 - 20", ignoreCase = true) ||
+            durationFilter.contains("4–20", ignoreCase = true) ||
+            durationFilter.contains("4-20", ignoreCase = true) ||
+            durationFilter.contains("Med", ignoreCase = true) -> "&sp=EgIYAw%253D%253D"
+            durationFilter.contains("Over 20", ignoreCase = true) ||
+            durationFilter.contains("> 20", ignoreCase = true) ||
+            durationFilter.contains("Long", ignoreCase = true) -> "&sp=EgIYAg%253D%253D"
+            else -> null
+        }
+        val typeSpParam = when {
+            typeFilter.equals("Live", ignoreCase = true) -> "&sp=EgJAAQ%253D%253D"
+            typeFilter.equals("Shorts", ignoreCase = true) -> "&sp=EgIYAQ%253D%253D"
+            else -> null
+        }
 
         val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
@@ -585,6 +624,14 @@ object YouTubeLiveSearchService {
                     results.addAll(thisMonth)
                 } catch (e: Exception) { }
             })
+        } else if (isYearRequested) {
+            jobs.add(async {
+                try {
+                    val thisYear = searchWebHtml(trimmed, customSortParam = "&sp=EgIIBQ%253D%253D")
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(thisYear)
+                } catch (e: Exception) { }
+            })
         } else if (effectiveSort == "Latest") {
             // Ultra-fast targeted query: single upload-date sorted search provides the freshest videos without flooding the network
             jobs.add(async {
@@ -596,14 +643,14 @@ object YouTubeLiveSearchService {
                     logD("YouTubeLiveSearchService", "Date search error: ${e.message}")
                 }
             })
-        } else if (effectiveSort == "Most Popular") {
+        } else if (effectiveSort == "Most Viewed") {
             jobs.add(async {
                 try {
                     val pop = searchWebHtml(trimmed, customSortParam = "&sp=CAMSAhAB")
                         .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
                     results.addAll(pop)
                 } catch (e: Exception) {
-                    logD("YouTubeLiveSearchService", "Popular search error: ${e.message}")
+                    logD("YouTubeLiveSearchService", "Most Viewed search error: ${e.message}")
                 }
             })
         } else if (effectiveSort == "Top Rated") {
@@ -625,6 +672,31 @@ object YouTubeLiveSearchService {
                 } catch (e: Exception) {
                     logD("YouTubeLiveSearchService", "Std search error: ${e.message}")
                 }
+            })
+        }
+
+        // Parallel server-side duration / content-type fetch when active so matching videos populate results
+        val effectiveDurationOrLengthSp = durationSpParam ?: when (effectiveSort) {
+            "Longest" -> "&sp=EgIYAg%253D%253D"
+            "Shortest" -> "&sp=EgIYAQ%253D%253D"
+            else -> null
+        }
+        if (effectiveDurationOrLengthSp != null) {
+            jobs.add(async {
+                try {
+                    val durFiltered = searchWebHtml(trimmed, customSortParam = effectiveDurationOrLengthSp)
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(durFiltered)
+                } catch (e: Exception) { }
+            })
+        }
+        if (typeSpParam != null && typeSpParam != effectiveDurationOrLengthSp) {
+            jobs.add(async {
+                try {
+                    val typeFiltered = searchWebHtml(trimmed, customSortParam = typeSpParam)
+                        .filter { !YouTubeUtils.isForeignLanguageContent(it.title, it.channelName) }
+                    results.addAll(typeFiltered)
+                } catch (e: Exception) { }
             })
         }
 
@@ -705,7 +777,7 @@ object YouTubeLiveSearchService {
         val distinctList = results.distinctBy { it.youtubeId }
 
         val finalResults = when (effectiveSort) {
-            "Most Popular" -> {
+            "Most Viewed" -> {
                 distinctList.sortedWith(
                     compareByDescending<VideoEntity> { YouTubeUtils.parseViewCount(it.viewCountText) }
                         .thenBy { YouTubeUtils.parsePublishedTimeToSeconds(it.publishedTimeText) }
@@ -990,7 +1062,14 @@ object YouTubeLiveSearchService {
     /**
      * Continuous search batch fetcher for endless infinite scroll on search results.
      */
-    suspend fun searchRealYouTubeVideosBatch(query: String, batchIndex: Int = 0): List<VideoEntity> {
+    suspend fun searchRealYouTubeVideosBatch(
+        query: String,
+        batchIndex: Int = 0,
+        sortOption: String = "Latest",
+        timeFilter: String = "Any Time",
+        durationFilter: String = "Any Duration",
+        typeFilter: String = "All"
+    ): List<VideoEntity> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
@@ -1015,7 +1094,15 @@ object YouTubeLiveSearchService {
             )
             variations[(batchIndex - 1) % variations.size]
         }
-        return searchRealYouTubeVideos(targetQuery)
+        val normalized = normalizeSortOption(sortOption)
+        return searchRealYouTubeVideos(
+            query = targetQuery,
+            sortByUploadDate = (normalized == "Latest"),
+            sortOption = normalized,
+            timeFilter = timeFilter,
+            durationFilter = durationFilter,
+            typeFilter = typeFilter
+        )
     }
 
     private fun parseJsonResponse(json: String, query: String): List<VideoEntity> {

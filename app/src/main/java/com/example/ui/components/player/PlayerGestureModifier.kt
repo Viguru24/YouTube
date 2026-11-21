@@ -43,6 +43,7 @@ fun Modifier.playerGestureEngine(
     useWebPlayerFallback: Boolean,
     webViewRef: android.webkit.WebView?,
     totalDurationMs: Long,
+    currentPosMs: Long = 0L,
     zoomScale: Float,
     panOffsetX: Float,
     panOffsetY: Float,
@@ -61,7 +62,10 @@ fun Modifier.playerGestureEngine(
     activity: Activity?,
     audioManager: AudioManager,
     maxAudioVolume: Int,
-    coroutineScope: CoroutineScope
+    coroutineScope: CoroutineScope,
+    onSeekToMs: ((Long) -> Unit)? = null,
+    onPlayPauseToggle: ((Boolean) -> Unit)? = null,
+    onInteraction: () -> Unit = {}
 ): Modifier {
     val currentZoomScale by rememberUpdatedState(zoomScale)
     val currentPanOffsetX by rememberUpdatedState(panOffsetX)
@@ -78,10 +82,14 @@ fun Modifier.playerGestureEngine(
     val currentOnAdjustingVolume by rememberUpdatedState(onAdjustingVolume)
     val currentOnVolumeFractionChange by rememberUpdatedState(onVolumeFractionChange)
     val currentTotalDurationMs by rememberUpdatedState(totalDurationMs)
+    val currentPosMsValue by rememberUpdatedState(currentPosMs)
     val currentOnToggleFullscreen by rememberUpdatedState(onToggleFullscreen)
     val currentStreamUrl by rememberUpdatedState(streamUrl)
     val currentUseWebPlayerFallback by rememberUpdatedState(useWebPlayerFallback)
     val currentWebViewRef by rememberUpdatedState(webViewRef)
+    val currentOnSeekToMs by rememberUpdatedState(onSeekToMs)
+    val currentOnPlayPauseToggle by rememberUpdatedState(onPlayPauseToggle)
+    val currentOnInteraction by rememberUpdatedState(onInteraction)
 
     val viewConfig = ViewConfiguration.get(context)
     val touchSlop = viewConfig.scaledTouchSlop.toFloat()
@@ -154,6 +162,7 @@ fun Modifier.playerGestureEngine(
                             // FASTBACK (REWIND) ZONE
                             singleTapJob?.cancel()
                             singleTapJob = null
+                            currentOnInteraction()
 
                             val isConsecutive = (now - lastTapTime < 600L) && (lastSeekDirection == -1)
                             if (isConsecutive) {
@@ -165,13 +174,19 @@ fun Modifier.playerGestureEngine(
                             lastTapTime = now
                             lastTapX = startPos.x
 
-                            if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
-                                val currentPos = exoPlayer.currentPosition
-                                val newPos = (currentPos - 10_000L).coerceAtLeast(0L)
+                            val basePos = if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                exoPlayer.currentPosition
+                            } else {
+                                currentPosMsValue
+                            }
+                            val newPos = (basePos - 10_000L).coerceAtLeast(0L)
+                            if (currentOnSeekToMs != null) {
+                                currentOnSeekToMs!!.invoke(newPos)
+                            } else if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
                                 exoPlayer.seekTo(newPos)
                             } else {
                                 currentWebViewRef?.evaluateJavascript(
-                                    "if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(Math.max(0, cur - 10)); } else { var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); }",
+                                    "if (window.__vixzSeekTo) window.__vixzSeekTo(${newPos / 1000.0}); else if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(Math.max(0, cur - 10)); } else { var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); }",
                                     null
                                 )
                             }
@@ -189,6 +204,7 @@ fun Modifier.playerGestureEngine(
                             // FAST FORWARD ZONE
                             singleTapJob?.cancel()
                             singleTapJob = null
+                            currentOnInteraction()
 
                             val isConsecutive = (now - lastTapTime < 600L) && (lastSeekDirection == 1)
                             if (isConsecutive) {
@@ -200,14 +216,20 @@ fun Modifier.playerGestureEngine(
                             lastTapTime = now
                             lastTapX = startPos.x
 
-                            if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
-                                val currentPos = exoPlayer.currentPosition
-                                val dur = if (currentTotalDurationMs > 0) currentTotalDurationMs else Long.MAX_VALUE
-                                val newPos = (currentPos + 10_000L).coerceAtMost(dur)
+                            val basePos = if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                exoPlayer.currentPosition
+                            } else {
+                                currentPosMsValue
+                            }
+                            val dur = if (currentTotalDurationMs > 0) currentTotalDurationMs else Long.MAX_VALUE
+                            val newPos = (basePos + 10_000L).coerceAtMost(dur)
+                            if (currentOnSeekToMs != null) {
+                                currentOnSeekToMs!!.invoke(newPos)
+                            } else if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
                                 exoPlayer.seekTo(newPos)
                             } else {
                                 currentWebViewRef?.evaluateJavascript(
-                                    "if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(cur + 10); } else { var v = document.querySelector('video'); if (v) v.currentTime = v.currentTime + 10; }",
+                                    "if (window.__vixzSeekTo) window.__vixzSeekTo(${newPos / 1000.0}); else if (window.seekToSeconds) { var v = document.querySelector('video'); var cur = v ? v.currentTime : 0; window.seekToSeconds(cur + 10); } else { var v = document.querySelector('video'); if (v) v.currentTime = v.currentTime + 10; }",
                                     null
                                 )
                             }
@@ -247,6 +269,7 @@ fun Modifier.playerGestureEngine(
                                 singleTapJob?.cancel()
                                 singleTapJob = coroutineScope.launch {
                                     delay(220L)
+                                    currentOnInteraction()
 
                                     val wasPlaying = if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
                                         exoPlayer.isPlaying
@@ -261,17 +284,21 @@ fun Modifier.playerGestureEngine(
                                     } else {
                                         val willPlay = !wasPlaying
 
-                                        if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                        if (currentOnPlayPauseToggle != null) {
+                                            currentOnPlayPauseToggle!!.invoke(willPlay)
+                                        } else if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
                                             if (willPlay) {
                                                 exoPlayer.play()
                                             } else {
                                                 exoPlayer.pause()
                                             }
                                         } else {
-                                            currentWebViewRef?.evaluateJavascript(
-                                                "var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); }",
-                                                null
-                                            )
+                                            val js = if (willPlay) {
+                                                "if (window.__vixzPlay) window.__vixzPlay(); else { window.__vixzUserPaused = false; var v = document.querySelector('video'); if (v) v.play(); }"
+                                            } else {
+                                                "if (window.__vixzPause) window.__vixzPause(); else { window.__vixzUserPaused = true; var v = document.querySelector('video'); if (v) v.pause(); }"
+                                            }
+                                            currentWebViewRef?.evaluateJavascript(js, null)
                                         }
                                         currentOnPlayingStateChange(willPlay)
                                         currentOnControlsVisibilityChange(!willPlay || !currentAreControlsVisible)
@@ -288,7 +315,17 @@ fun Modifier.playerGestureEngine(
 
                     if (isDragging) {
                         if (dragMode == 3) {
-                            exoPlayer.seekTo(scrubTargetPos)
+                            currentOnInteraction()
+                            if (currentOnSeekToMs != null) {
+                                currentOnSeekToMs!!.invoke(scrubTargetPos)
+                            } else if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                exoPlayer.seekTo(scrubTargetPos)
+                            } else {
+                                currentWebViewRef?.evaluateJavascript(
+                                    "if (window.__vixzSeekTo) window.__vixzSeekTo(${scrubTargetPos / 1000.0}); else { var v = document.querySelector('video'); if (v) v.currentTime = ${scrubTargetPos / 1000.0}; }",
+                                    null
+                                )
+                            }
                             coroutineScope.launch {
                                 delay(800)
                                 currentOnSeekFeedback(null)
@@ -407,7 +444,11 @@ fun Modifier.playerGestureEngine(
                             else if (absX > touchSlop && absX > absY * 1.15f) {
                                 isDragging = true
                                 dragMode = 3 // Horizontal Scrub
-                                scrubStartPos = exoPlayer.currentPosition
+                                scrubStartPos = if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                    exoPlayer.currentPosition
+                                } else {
+                                    currentPosMsValue
+                                }
                                 scrubTargetPos = scrubStartPos
                             }
                         }
@@ -438,7 +479,9 @@ fun Modifier.playerGestureEngine(
                                     val delta = -dragDeltaY / effectiveHeight
                                     localVolume = (localVolume + delta).coerceIn(0f, 1f)
                                     currentOnVolumeFractionChange(localVolume)
-                                    exoPlayer.volume = localVolume
+                                    if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                        exoPlayer.volume = localVolume
+                                    }
                                     val targetVol = round(localVolume * maxAudioVolume).toInt().coerceIn(0, maxAudioVolume)
                                     if (targetVol != lastAppliedVolume) {
                                         lastAppliedVolume = targetVol
@@ -449,7 +492,13 @@ fun Modifier.playerGestureEngine(
                                 }
                                 3 -> {
                                     // Scrub / Seek (Left/Right Swiping)
-                                    val maxDur = if (currentTotalDurationMs > 0) currentTotalDurationMs else (exoPlayer.duration.takeIf { it > 0 } ?: 3600_000L)
+                                    val maxDur = if (currentTotalDurationMs > 0) {
+                                        currentTotalDurationMs
+                                    } else if (currentStreamUrl != null && !currentUseWebPlayerFallback) {
+                                        exoPlayer.duration.takeIf { it > 0 } ?: 3600_000L
+                                    } else {
+                                        3600_000L
+                                    }
                                     val scrubSpanMs = if (maxDur < 90_000L) maxDur else 90_000L
                                     val seekOffsetMs = ((totalDx / w) * scrubSpanMs).toLong()
                                     scrubTargetPos = (scrubStartPos + seekOffsetMs).coerceIn(0L, maxDur)

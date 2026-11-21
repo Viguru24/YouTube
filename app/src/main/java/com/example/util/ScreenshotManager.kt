@@ -89,56 +89,61 @@ object ScreenshotManager {
     }
 
     /**
-     * Captures high-resolution frame from PlayerView using PixelCopy or TextureView bitmap.
+     * Captures high-resolution frame from PlayerView using PixelCopy or TextureView bitmap,
+     * falling back to capturing the fallback WebView surface when active.
      */
     suspend fun capturePlayerFrame(
         playerView: PlayerView?,
-        activity: Activity?
+        activity: Activity?,
+        fallbackView: View? = null
     ): Bitmap? = withContext(Dispatchers.Main) {
-        if (playerView == null) return@withContext null
+        val targetView: View? = playerView ?: fallbackView
+        if (targetView == null) return@withContext null
 
-        val surfaceView = playerView.videoSurfaceView as? SurfaceView
-        val textureView = playerView.videoSurfaceView as? TextureView
+        if (playerView != null) {
+            val surfaceView = playerView.videoSurfaceView as? SurfaceView
+            val textureView = playerView.videoSurfaceView as? TextureView
 
-        // 1. TextureView direct bitmap
-        if (textureView != null) {
-            val bmp = textureView.bitmap
-            if (bmp != null) return@withContext bmp
-        }
-
-        // 2. SurfaceView PixelCopy (Hardware accelerated API 26+)
-        if (surfaceView != null && surfaceView.holder.surface.isValid && surfaceView.width > 0 && surfaceView.height > 0) {
-            val bitmap = Bitmap.createBitmap(surfaceView.width, surfaceView.height, Bitmap.Config.ARGB_8888)
-            val result = suspendCancellableCoroutine<Boolean> { cont ->
-                try {
-                    PixelCopy.request(
-                        surfaceView,
-                        bitmap,
-                        { copyResult ->
-                            if (cont.isActive) {
-                                cont.resume(copyResult == PixelCopy.SUCCESS)
-                            }
-                        },
-                        Handler(Looper.getMainLooper())
-                    )
-                } catch (e: Exception) {
-                    if (cont.isActive) cont.resume(false)
-                }
+            // 1. TextureView direct bitmap
+            if (textureView != null) {
+                val bmp = textureView.bitmap
+                if (bmp != null) return@withContext bmp
             }
-            if (result) return@withContext bitmap
+
+            // 2. SurfaceView PixelCopy (Hardware accelerated API 26+)
+            if (surfaceView != null && surfaceView.holder.surface.isValid && surfaceView.width > 0 && surfaceView.height > 0) {
+                val bitmap = Bitmap.createBitmap(surfaceView.width, surfaceView.height, Bitmap.Config.ARGB_8888)
+                val result = suspendCancellableCoroutine<Boolean> { cont ->
+                    try {
+                        PixelCopy.request(
+                            surfaceView,
+                            bitmap,
+                            { copyResult ->
+                                if (cont.isActive) {
+                                    cont.resume(copyResult == PixelCopy.SUCCESS)
+                                }
+                            },
+                            Handler(Looper.getMainLooper())
+                        )
+                    } catch (e: Exception) {
+                        if (cont.isActive) cont.resume(false)
+                    }
+                }
+                if (result) return@withContext bitmap
+            }
         }
 
         // 3. Fallback Window PixelCopy
-        if (activity != null && activity.window != null && playerView.width > 0 && playerView.height > 0) {
+        if (activity != null && activity.window != null && targetView.width > 0 && targetView.height > 0) {
             val location = IntArray(2)
-            playerView.getLocationInWindow(location)
+            targetView.getLocationInWindow(location)
             val rect = Rect(
                 location[0],
                 location[1],
-                location[0] + playerView.width,
-                location[1] + playerView.height
+                location[0] + targetView.width,
+                location[1] + targetView.height
             )
-            val bitmap = Bitmap.createBitmap(playerView.width, playerView.height, Bitmap.Config.ARGB_8888)
+            val bitmap = Bitmap.createBitmap(targetView.width, targetView.height, Bitmap.Config.ARGB_8888)
             val result = suspendCancellableCoroutine<Boolean> { cont ->
                 try {
                     PixelCopy.request(
@@ -161,10 +166,10 @@ object ScreenshotManager {
 
         // 4. View Canvas draw fallback
         try {
-            if (playerView.width > 0 && playerView.height > 0) {
-                val bitmap = Bitmap.createBitmap(playerView.width, playerView.height, Bitmap.Config.ARGB_8888)
+            if (targetView.width > 0 && targetView.height > 0) {
+                val bitmap = Bitmap.createBitmap(targetView.width, targetView.height, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(bitmap)
-                playerView.draw(canvas)
+                targetView.draw(canvas)
                 return@withContext bitmap
             }
         } catch (e: Exception) { }
