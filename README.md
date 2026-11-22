@@ -8,7 +8,7 @@
 <br/>
 
 [![Stars](https://img.shields.io/github/stars/Viguru24/YouTube?style=for-the-badge&color=FFD700&logo=github)](https://github.com/Viguru24/YouTube/stargazers)
-[![License](https://img.shields.io/badge/License-GPLv3-blue?style=for-the-badge&logo=open-source-initiative&logoColor=white)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&logo=open-source-initiative&logoColor=white)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://www.android.com)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Viguru24/VixzDesktop)
 [![Obtainium](https://img.shields.io/badge/⚡%20Auto--Update-Obtainium-9C27B0?style=for-the-badge&logo=android&logoColor=white)](https://apps.obtainium.imranr.dev/add?r=https://github.com/Viguru24/YouTube)
